@@ -1,7 +1,5 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
-import signatureService, {
-  type SignatureData,
-} from '@/services/signatureService';
+import signatureService, { type SignatureData } from '@/services/signatureService';
 
 /**
  * Custom hooks for signature operations using TanStack Query

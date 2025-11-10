@@ -13,12 +13,7 @@ interface FieldPaletteItemProps {
   icon: string;
 }
 
-const FieldPaletteItem: React.FC<FieldPaletteItemProps> = ({
-  type,
-  label,
-  color,
-  icon,
-}) => {
+const FieldPaletteItem: React.FC<FieldPaletteItemProps> = ({ type, label, color, icon }) => {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `palette-${type}`,
     data: { type, isNew: true },

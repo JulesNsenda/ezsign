@@ -50,9 +50,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         />
 
         <main className="flex-1 overflow-auto bg-base-200 lg:ml-0 flex flex-col">
-          <div className="animate-fade-in flex-1">
-            {children}
-          </div>
+          <div className="animate-fade-in flex-1">{children}</div>
           <Footer />
         </main>
       </div>

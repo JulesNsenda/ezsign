@@ -28,13 +28,8 @@ export const useCreateSigner = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      documentId,
-      data,
-    }: {
-      documentId: string;
-      data: CreateSignerData;
-    }) => signerService.create(documentId, data),
+    mutationFn: ({ documentId, data }: { documentId: string; data: CreateSignerData }) =>
+      signerService.create(documentId, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['signers', variables.documentId] });
     },

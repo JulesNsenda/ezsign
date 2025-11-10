@@ -1,6 +1,5 @@
 import React from 'react';
 import { useDraggable } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
 import type { Field, FieldType } from '@/types';
 
 /**
@@ -45,7 +44,13 @@ export const DraggableField: React.FC<DraggableFieldProps> = ({
   // Use custom border color if provided, otherwise use field type color
   const fieldColor = borderColor || FIELD_COLORS[field.type];
 
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform: _transform,
+    isDragging,
+  } = useDraggable({
     id: field.id,
     data: field,
   });
@@ -117,7 +122,9 @@ export const DraggableField: React.FC<DraggableFieldProps> = ({
     >
       {/* Field Label - no pointer events so drag works */}
       <div style={{ pointerEvents: 'none', textAlign: 'center', padding: '4px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+        <div
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+        >
           <span>{FIELD_LABELS[field.type]}</span>
           {field.required && <span style={{ color: '#dc3545', fontSize: '1.2em' }}>*</span>}
         </div>

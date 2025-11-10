@@ -27,12 +27,16 @@ export const Button: React.FC<ButtonProps> = ({
 }) => {
   const getVariantClasses = () => {
     const variants = {
-      primary: 'bg-neutral text-base-100 hover:bg-neutral/90 active:bg-neutral/80 shadow-sm hover:shadow-md',
-      secondary: 'bg-secondary text-white hover:bg-secondary/90 active:bg-secondary/80 shadow-sm hover:shadow-md',
+      primary:
+        'bg-neutral text-base-100 hover:bg-neutral/90 active:bg-neutral/80 shadow-sm hover:shadow-md',
+      secondary:
+        'bg-secondary text-white hover:bg-secondary/90 active:bg-secondary/80 shadow-sm hover:shadow-md',
       danger: 'bg-error text-white hover:bg-error/90 active:bg-error/80 shadow-sm hover:shadow-md',
-      success: 'bg-success text-white hover:bg-success/90 active:bg-success/80 shadow-sm hover:shadow-md',
+      success:
+        'bg-success text-white hover:bg-success/90 active:bg-success/80 shadow-sm hover:shadow-md',
       ghost: 'bg-transparent hover:bg-base-200 active:bg-base-300 text-base-content',
-      outline: 'bg-transparent border-2 border-neutral text-neutral hover:bg-neutral hover:text-base-100 active:bg-neutral/90',
+      outline:
+        'bg-transparent border-2 border-neutral text-neutral hover:bg-neutral hover:text-base-100 active:bg-neutral/90',
       link: 'bg-transparent text-neutral hover:text-neutral/80 hover:underline underline-offset-4',
     };
 
@@ -49,7 +53,8 @@ export const Button: React.FC<ButtonProps> = ({
     return sizes[size];
   };
 
-  const baseClasses = 'inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral/50';
+  const baseClasses =
+    'inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral/50';
 
   return (
     <button

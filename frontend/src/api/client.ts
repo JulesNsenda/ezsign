@@ -1,4 +1,8 @@
-import axios, { type AxiosInstance, type InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
+import axios, {
+  type AxiosInstance,
+  type InternalAxiosRequestConfig,
+  type AxiosResponse,
+} from 'axios';
 
 /**
  * Axios client configuration with interceptors
@@ -30,7 +34,7 @@ apiClient.interceptors.request.use(
   },
   (error) => {
     return Promise.reject(error);
-  }
+  },
 );
 
 /**
@@ -81,7 +85,7 @@ apiClient.interceptors.response.use(
     }
 
     return Promise.reject(error);
-  }
+  },
 );
 
 export default apiClient;

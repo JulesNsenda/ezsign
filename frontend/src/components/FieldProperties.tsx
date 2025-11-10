@@ -128,7 +128,9 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
               />
             </div>
             <div>
-              <span className="text-sm font-semibold text-neutral group-hover:text-secondary transition-colors">Required field</span>
+              <span className="text-sm font-semibold text-neutral group-hover:text-secondary transition-colors">
+                Required field
+              </span>
               <div className="text-xs text-base-content/50">Must be filled by signer</div>
             </div>
           </label>
@@ -155,9 +157,7 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
             ))}
           </select>
           {signers.length === 0 && (
-            <p className="text-xs text-amber-600 mt-2">
-              Add signers first to assign fields
-            </p>
+            <p className="text-xs text-amber-600 mt-2">Add signers first to assign fields</p>
           )}
         </div>
 

@@ -25,9 +25,7 @@ const queryClient = new QueryClient({
 });
 
 const renderWithProviders = (component: React.ReactElement) => {
-  return render(
-    <QueryClientProvider client={queryClient}>{component}</QueryClientProvider>
-  );
+  return render(<QueryClientProvider client={queryClient}>{component}</QueryClientProvider>);
 };
 
 describe('DocumentUpload Component', () => {
@@ -59,9 +57,7 @@ describe('DocumentUpload Component', () => {
 
   it('should allow typing in title field', () => {
     renderWithProviders(<DocumentUpload />);
-    const titleInput = screen.getByPlaceholderText(
-      'Enter document title'
-    ) as HTMLInputElement;
+    const titleInput = screen.getByPlaceholderText('Enter document title') as HTMLInputElement;
 
     fireEvent.change(titleInput, { target: { value: 'My Document' } });
     expect(titleInput.value).toBe('My Document');

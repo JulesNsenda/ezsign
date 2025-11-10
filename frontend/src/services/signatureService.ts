@@ -51,12 +51,11 @@ export const signatureService = {
    */
   async submitSignatures(
     token: string,
-    signatures: SignatureData[]
+    signatures: SignatureData[],
   ): Promise<SubmitSignaturesResponse> {
-    const response = await apiClient.post<SubmitSignaturesResponse>(
-      `/signing/${token}/sign`,
-      { signatures }
-    );
+    const response = await apiClient.post<SubmitSignaturesResponse>(`/signing/${token}/sign`, {
+      signatures,
+    });
     return response.data;
   },
 

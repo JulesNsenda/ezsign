@@ -35,17 +35,20 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
 
-  const addToast = useCallback((message: string, type: ToastType = 'info') => {
-    const id = `toast-${Date.now()}-${Math.random()}`;
-    const newToast: Toast = { id, message, type };
+  const addToast = useCallback(
+    (message: string, type: ToastType = 'info') => {
+      const id = `toast-${Date.now()}-${Math.random()}`;
+      const newToast: Toast = { id, message, type };
 
-    setToasts((prev) => [...prev, newToast]);
+      setToasts((prev) => [...prev, newToast]);
 
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-      removeToast(id);
-    }, 5000);
-  }, [removeToast]);
+      // Auto-remove after 5 seconds
+      setTimeout(() => {
+        removeToast(id);
+      }, 5000);
+    },
+    [removeToast],
+  );
 
   const success = useCallback((message: string) => addToast(message, 'success'), [addToast]);
   const error = useCallback((message: string) => addToast(message, 'error'), [addToast]);
@@ -72,15 +75,17 @@ const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onRemove }) => 
   if (toasts.length === 0) return null;
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: '1rem',
-      right: '1rem',
-      zIndex: 9999,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '0.5rem',
-    }}>
+    <div
+      style={{
+        position: 'fixed',
+        top: '1rem',
+        right: '1rem',
+        zIndex: 9999,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.5rem',
+      }}
+    >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onRemove={onRemove} />
       ))}
@@ -128,19 +133,21 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast, onRemove }) => {
   };
 
   return (
-    <div style={{
-      backgroundColor: getBackgroundColor(),
-      color: 'white',
-      padding: '1rem 1.5rem',
-      borderRadius: '4px',
-      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.75rem',
-      minWidth: '300px',
-      maxWidth: '500px',
-      animation: 'slideIn 0.3s ease-out',
-    }}>
+    <div
+      style={{
+        backgroundColor: getBackgroundColor(),
+        color: 'white',
+        padding: '1rem 1.5rem',
+        borderRadius: '4px',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.75rem',
+        minWidth: '300px',
+        maxWidth: '500px',
+        animation: 'slideIn 0.3s ease-out',
+      }}
+    >
       <style>{`
         @keyframes slideIn {
           from {
@@ -154,13 +161,9 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast, onRemove }) => {
         }
       `}</style>
 
-      <span style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>
-        {getIcon()}
-      </span>
+      <span style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>{getIcon()}</span>
 
-      <span style={{ flex: 1, fontSize: '0.875rem' }}>
-        {toast.message}
-      </span>
+      <span style={{ flex: 1, fontSize: '0.875rem' }}>{toast.message}</span>
 
       <button
         onClick={() => onRemove(toast.id)}
@@ -173,8 +176,12 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast, onRemove }) => {
           padding: '0',
           opacity: 0.8,
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.8'; }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.opacity = '1';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.opacity = '0.8';
+        }}
       >
         ×
       </button>

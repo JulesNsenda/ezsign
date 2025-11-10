@@ -37,7 +37,7 @@ export const fieldService = {
   async create(documentId: string, data: CreateFieldData): Promise<Field> {
     const response = await apiClient.post<{ field: Field }>(
       `/documents/${documentId}/fields`,
-      data
+      data,
     );
     return response.data.field;
   },
@@ -47,7 +47,7 @@ export const fieldService = {
    */
   async list(documentId: string): Promise<Field[]> {
     const response = await apiClient.get<{ success: boolean; data: Field[] }>(
-      `/documents/${documentId}/fields`
+      `/documents/${documentId}/fields`,
     );
     return response.data.data || [];
   },
@@ -57,7 +57,7 @@ export const fieldService = {
    */
   async getById(documentId: string, fieldId: string): Promise<Field> {
     const response = await apiClient.get<{ field: Field }>(
-      `/documents/${documentId}/fields/${fieldId}`
+      `/documents/${documentId}/fields/${fieldId}`,
     );
     return response.data.field;
   },
@@ -65,14 +65,10 @@ export const fieldService = {
   /**
    * Update a field
    */
-  async update(
-    documentId: string,
-    fieldId: string,
-    data: UpdateFieldData
-  ): Promise<Field> {
+  async update(documentId: string, fieldId: string, data: UpdateFieldData): Promise<Field> {
     const response = await apiClient.put<{ field: Field }>(
       `/documents/${documentId}/fields/${fieldId}`,
-      data
+      data,
     );
     return response.data.field;
   },

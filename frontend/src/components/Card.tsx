@@ -42,12 +42,8 @@ export const Card: React.FC<CardProps> = ({
     >
       {(title || subtitle) && (
         <div className={`border-b border-base-300 ${getPaddingClasses()}`}>
-          {title && (
-            <h3 className="text-xl font-semibold text-neutral">{title}</h3>
-          )}
-          {subtitle && (
-            <p className="text-sm text-base-content/60 mt-1">{subtitle}</p>
-          )}
+          {title && <h3 className="text-xl font-semibold text-neutral">{title}</h3>}
+          {subtitle && <p className="text-sm text-base-content/60 mt-1">{subtitle}</p>}
         </div>
       )}
       <div className={getPaddingClasses()}>{children}</div>

@@ -1,8 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import fieldService, {
-  type CreateFieldData,
-  type UpdateFieldData,
-} from '@/services/fieldService';
+import fieldService, { type CreateFieldData, type UpdateFieldData } from '@/services/fieldService';
 
 /**
  * Custom hooks for field operations using TanStack Query
@@ -28,13 +25,8 @@ export const useCreateField = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      documentId,
-      data,
-    }: {
-      documentId: string;
-      data: CreateFieldData;
-    }) => fieldService.create(documentId, data),
+    mutationFn: ({ documentId, data }: { documentId: string; data: CreateFieldData }) =>
+      fieldService.create(documentId, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['fields', variables.documentId] });
     },

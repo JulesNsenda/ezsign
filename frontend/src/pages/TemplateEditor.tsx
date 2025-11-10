@@ -153,12 +153,21 @@ export const TemplateEditor: React.FC = () => {
   }
 
   const currentPageFields = fields.filter((f) => f.page === currentPage);
-  const selectedField = selectedFieldId ? fields.find((f) => f.id === selectedFieldId) || null : null;
+  const selectedField = selectedFieldId
+    ? fields.find((f) => f.id === selectedFieldId) || null
+    : null;
 
   return (
     <Layout>
       <div style={{ padding: '2rem' }}>
-        <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div
+          style={{
+            marginBottom: '2rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
           <h1>Edit Template: {template.name}</h1>
           <div style={{ display: 'flex', gap: '1rem' }}>
             <Button variant="secondary" onClick={() => navigate('/templates')}>
@@ -167,14 +176,27 @@ export const TemplateEditor: React.FC = () => {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: showFieldProperties ? '250px 1fr 300px 300px' : '250px 1fr 300px', gap: '2rem' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: showFieldProperties ? '250px 1fr 300px 300px' : '250px 1fr 300px',
+            gap: '2rem',
+          }}
+        >
           <div>
             <FieldPalette />
           </div>
 
           <DndContext onDragEnd={handleDragEnd}>
             <div>
-              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', alignItems: 'center' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '0.5rem',
+                  marginBottom: '1rem',
+                  alignItems: 'center',
+                }}
+              >
                 <Button
                   size="small"
                   onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
@@ -192,11 +214,7 @@ export const TemplateEditor: React.FC = () => {
                 >
                   +
                 </Button>
-                <Button
-                  size="small"
-                  onClick={() => setZoom(1)}
-                  variant="secondary"
-                >
+                <Button size="small" onClick={() => setZoom(1)} variant="secondary">
                   Reset
                 </Button>
               </div>
@@ -242,8 +260,22 @@ export const TemplateEditor: React.FC = () => {
           </DndContext>
 
           <div>
-            <div style={{ padding: '1rem', backgroundColor: '#f8f9fa', borderRadius: '8px', border: '1px solid #dee2e6' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div
+              style={{
+                padding: '1rem',
+                backgroundColor: '#f8f9fa',
+                borderRadius: '8px',
+                border: '1px solid #dee2e6',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '1rem',
+                }}
+              >
                 <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>Template Info</h3>
                 {!isEditingInfo && (
                   <Button size="small" onClick={() => setIsEditingInfo(true)}>
@@ -255,7 +287,14 @@ export const TemplateEditor: React.FC = () => {
               {isEditingInfo ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', fontSize: '0.875rem' }}>
+                    <label
+                      style={{
+                        display: 'block',
+                        marginBottom: '0.5rem',
+                        fontWeight: '500',
+                        fontSize: '0.875rem',
+                      }}
+                    >
                       Name
                     </label>
                     <input
@@ -272,7 +311,14 @@ export const TemplateEditor: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', fontSize: '0.875rem' }}>
+                    <label
+                      style={{
+                        display: 'block',
+                        marginBottom: '0.5rem',
+                        fontWeight: '500',
+                        fontSize: '0.875rem',
+                      }}
+                    >
                       Description
                     </label>
                     <textarea
@@ -324,7 +370,16 @@ export const TemplateEditor: React.FC = () => {
                 </div>
               )}
 
-              <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#e7f3ff', borderRadius: '4px', fontSize: '0.75rem', color: '#666' }}>
+              <div
+                style={{
+                  marginTop: '1rem',
+                  padding: '0.75rem',
+                  backgroundColor: '#e7f3ff',
+                  borderRadius: '4px',
+                  fontSize: '0.75rem',
+                  color: '#666',
+                }}
+              >
                 <strong>Fields:</strong> {fields.length}
                 <br />
                 <strong>Pages:</strong> {numPages}
@@ -337,7 +392,9 @@ export const TemplateEditor: React.FC = () => {
               <FieldProperties
                 field={selectedField}
                 signers={[]}
-                onUpdate={(updates) => selectedFieldId && handleUpdateFieldProperty(selectedFieldId, updates)}
+                onUpdate={(updates) =>
+                  selectedFieldId && handleUpdateFieldProperty(selectedFieldId, updates)
+                }
                 onDelete={() => selectedFieldId && handleDeleteField(selectedFieldId)}
                 onClose={() => {
                   setShowFieldProperties(false);

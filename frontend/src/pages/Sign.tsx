@@ -39,7 +39,7 @@ export const Sign: React.FC = () => {
         (field) =>
           !session.signatures.some((sig) => sig.field_id === field.id) &&
           !collectedSignatures.some((sig) => sig.field_id === field.id) &&
-          (!field.signer_email || field.signer_email === session.signer.email)
+          (!field.signer_email || field.signer_email === session.signer.email),
       );
       const currentField = unsignedFields[currentFieldIndex];
       if (currentField && currentField.page >= 0) {
@@ -67,8 +67,18 @@ export const Sign: React.FC = () => {
       <div className="min-h-screen bg-base-200 flex items-center justify-center p-4">
         <div className="card-docuseal max-w-md text-center animate-fade-in">
           <div className="w-20 h-20 mx-auto mb-6 bg-error/10 rounded-full flex items-center justify-center">
-            <svg className="w-10 h-10 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            <svg
+              className="w-10 h-10 text-error"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+              />
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-neutral mb-3">Invalid or Expired Link</h1>
@@ -85,14 +95,25 @@ export const Sign: React.FC = () => {
       <div className="min-h-screen bg-base-200 flex items-center justify-center p-4">
         <div className="card-docuseal max-w-xl text-center animate-fade-in">
           <div className="w-24 h-24 mx-auto mb-6 bg-success/10 rounded-full flex items-center justify-center">
-            <svg className="w-12 h-12 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg
+              className="w-12 h-12 text-success"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2.5}
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
           </div>
           <h1 className="text-3xl font-bold text-neutral mb-4">Successfully Signed!</h1>
           <p className="text-base-content/60 mb-6 leading-relaxed">
-            Thank you for signing <span className="font-semibold text-neutral">"{session.document.title}"</span>.
-            You will receive a confirmation email shortly.
+            Thank you for signing{' '}
+            <span className="font-semibold text-neutral">"{session.document.title}"</span>. You will
+            receive a confirmation email shortly.
           </p>
           <Button
             variant="primary"
@@ -102,7 +123,12 @@ export const Sign: React.FC = () => {
             }}
             icon={
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
               </svg>
             }
           >
@@ -118,8 +144,18 @@ export const Sign: React.FC = () => {
       <div className="min-h-screen bg-base-200 flex items-center justify-center p-4">
         <div className="card-docuseal max-w-md text-center animate-fade-in">
           <div className="w-20 h-20 mx-auto mb-6 bg-warning/10 rounded-full flex items-center justify-center">
-            <svg className="w-10 h-10 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg
+              className="w-10 h-10 text-warning"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-neutral mb-3">Document Declined</h1>
@@ -140,7 +176,7 @@ export const Sign: React.FC = () => {
     (field) =>
       !signatures.some((sig) => sig.field_id === field.id) &&
       !collectedSignatures.some((sig) => sig.field_id === field.id) &&
-      (!field.signer_email || field.signer_email === session.signer.email)
+      (!field.signer_email || field.signer_email === session.signer.email),
   );
 
   const currentField = unsignedFields[currentFieldIndex];
@@ -183,7 +219,7 @@ export const Sign: React.FC = () => {
     signatureData: string,
     signatureType: SignatureType,
     textValue?: string,
-    fontFamily?: string
+    fontFamily?: string,
   ) => {
     if (!currentField) return;
 
@@ -227,7 +263,12 @@ export const Sign: React.FC = () => {
               </h1>
               <div className="flex items-center gap-2 text-sm text-base-content/60">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                  />
                 </svg>
                 <span>{session.signer.name}</span>
               </div>
@@ -356,8 +397,18 @@ export const Sign: React.FC = () => {
               {unsignedFields.length === 0 ? (
                 <div className="text-center">
                   <div className="w-20 h-20 mx-auto mb-4 bg-success/10 rounded-full flex items-center justify-center">
-                    <svg className="w-10 h-10 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <svg
+                      className="w-10 h-10 text-success"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2.5}
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
                     </svg>
                   </div>
                   <h3 className="text-lg font-bold text-neutral mb-2">All Fields Signed!</h3>
@@ -372,8 +423,18 @@ export const Sign: React.FC = () => {
                     disabled={collectedSignatures.length === 0}
                     size="lg"
                     icon={
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
                       </svg>
                     }
                   >
@@ -386,7 +447,9 @@ export const Sign: React.FC = () => {
                   {currentField && (
                     <div className="mb-6">
                       <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-sm font-semibold text-base-content/60">Current Field</h3>
+                        <h3 className="text-sm font-semibold text-base-content/60">
+                          Current Field
+                        </h3>
                         <span className="text-xs font-medium text-accent bg-accent/10 px-2 py-1 rounded-full">
                           {currentFieldIndex + 1} of {unsignedFields.length}
                         </span>
@@ -394,17 +457,38 @@ export const Sign: React.FC = () => {
                       <div className="bg-accent/5 border-2 border-accent rounded-xl p-4 mb-4">
                         <div className="flex items-start gap-3 mb-3">
                           <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center flex-shrink-0">
-                            <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            <svg
+                              className="w-5 h-5 text-accent"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                              />
                             </svg>
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="font-semibold text-neutral mb-1">
-                              {currentField.type.charAt(0).toUpperCase() + currentField.type.slice(1)}
+                              {currentField.type.charAt(0).toUpperCase() +
+                                currentField.type.slice(1)}
                             </div>
                             <div className="flex items-center gap-2 text-xs text-base-content/60">
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                              <svg
+                                className="w-3.5 h-3.5"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                                />
                               </svg>
                               <span>Page {currentField.page + 1}</span>
                               {currentField.required && (
@@ -422,8 +506,18 @@ export const Sign: React.FC = () => {
                           onClick={() => setIsSignatureModalOpen(true)}
                           size="lg"
                           icon={
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            <svg
+                              className="w-5 h-5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                              />
                             </svg>
                           }
                         >
@@ -440,8 +534,18 @@ export const Sign: React.FC = () => {
                           disabled={currentFieldIndex === 0}
                           fullWidth
                           icon={
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15 19l-7-7 7-7"
+                              />
                             </svg>
                           }
                         >
@@ -454,8 +558,18 @@ export const Sign: React.FC = () => {
                           disabled={currentFieldIndex >= unsignedFields.length - 1}
                           fullWidth
                           icon={
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 5l7 7-7 7"
+                              />
                             </svg>
                           }
                         >
@@ -481,9 +595,13 @@ export const Sign: React.FC = () => {
                           }`}
                         >
                           <div className="flex items-center gap-2 mb-1">
-                            <span className={`flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold ${
-                              index === currentFieldIndex ? 'bg-accent text-white' : 'bg-base-300 text-base-content/60'
-                            }`}>
+                            <span
+                              className={`flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold ${
+                                index === currentFieldIndex
+                                  ? 'bg-accent text-white'
+                                  : 'bg-base-300 text-base-content/60'
+                              }`}
+                            >
                               {index + 1}
                             </span>
                             <span className="text-sm font-medium text-neutral truncate">
@@ -533,10 +651,7 @@ export const Sign: React.FC = () => {
         title={`Sign ${currentField?.type || 'Field'}`}
         width="500px"
       >
-        <SignaturePad
-          onSave={handleSignField}
-          onCancel={() => setIsSignatureModalOpen(false)}
-        />
+        <SignaturePad onSave={handleSignField} onCancel={() => setIsSignatureModalOpen(false)} />
       </Modal>
     </div>
   );

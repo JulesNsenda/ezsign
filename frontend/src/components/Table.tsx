@@ -112,9 +112,7 @@ export const Table = <T extends Record<string, any>>({
                     key={`${row[keyField]}-${column.key}`}
                     className="px-6 py-4 text-sm text-base-content"
                   >
-                    {column.render
-                      ? column.render(row[column.key], row)
-                      : row[column.key]}
+                    {column.render ? column.render(row[column.key], row) : row[column.key]}
                   </td>
                 ))}
               </tr>
@@ -128,17 +126,13 @@ export const Table = <T extends Record<string, any>>({
           <div className="text-sm text-base-content/60">
             Showing{' '}
             <span className="font-medium text-base-content">
-              {((pagination.currentPage - 1) * pagination.pageSize) + 1}
-            </span>
-            {' '}to{' '}
+              {(pagination.currentPage - 1) * pagination.pageSize + 1}
+            </span>{' '}
+            to{' '}
             <span className="font-medium text-base-content">
               {Math.min(pagination.currentPage * pagination.pageSize, pagination.totalItems)}
-            </span>
-            {' '}of{' '}
-            <span className="font-medium text-base-content">
-              {pagination.totalItems}
-            </span>
-            {' '}items
+            </span>{' '}
+            of <span className="font-medium text-base-content">{pagination.totalItems}</span> items
           </div>
 
           <div className="flex items-center gap-2">
@@ -149,7 +143,12 @@ export const Table = <T extends Record<string, any>>({
               onClick={() => pagination.onPageChange(pagination.currentPage - 1)}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 19l-7-7 7-7"
+                />
               </svg>
               Previous
             </Button>
@@ -170,9 +169,7 @@ export const Table = <T extends Record<string, any>>({
 
                   return (
                     <React.Fragment key={page}>
-                      {showEllipsisBefore && (
-                        <span className="px-2 text-base-content/40">...</span>
-                      )}
+                      {showEllipsisBefore && <span className="px-2 text-base-content/40">...</span>}
                       <Button
                         size="sm"
                         variant={page === pagination.currentPage ? 'primary' : 'ghost'}
@@ -193,7 +190,12 @@ export const Table = <T extends Record<string, any>>({
             >
               Next
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5l7 7-7 7"
+                />
               </svg>
             </Button>
           </div>

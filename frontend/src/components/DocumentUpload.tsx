@@ -52,18 +52,21 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({ onSuccess, onCan
     e.stopPropagation();
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
 
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && droppedFile.type === 'application/pdf') {
-      setFile(droppedFile);
-    } else {
-      toast.error('Please upload a PDF file');
-    }
-  }, [toast]);
+      const droppedFile = e.dataTransfer.files[0];
+      if (droppedFile && droppedFile.type === 'application/pdf') {
+        setFile(droppedFile);
+      } else {
+        toast.error('Please upload a PDF file');
+      }
+    },
+    [toast],
+  );
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -176,9 +179,7 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({ onSuccess, onCan
               <div style={{ marginBottom: '0.5rem' }}>
                 <strong>Click to upload</strong> or drag and drop
               </div>
-              <div style={{ fontSize: '0.875rem', color: '#666' }}>
-                PDF files only (Max 10MB)
-              </div>
+              <div style={{ fontSize: '0.875rem', color: '#666' }}>PDF files only (Max 10MB)</div>
             </div>
           )}
         </div>
@@ -190,12 +191,7 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({ onSuccess, onCan
             Cancel
           </Button>
         )}
-        <Button
-          type="submit"
-          variant="primary"
-          loading={uploadMutation.isPending}
-          disabled={!file}
-        >
+        <Button type="submit" variant="primary" loading={uploadMutation.isPending} disabled={!file}>
           Upload
         </Button>
       </div>

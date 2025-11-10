@@ -32,58 +32,58 @@ function App() {
         <ToastProvider>
           <AuthProvider>
             <Routes>
-            {/* Public routes */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/sign/:token" element={<Sign />} />
+              {/* Public routes */}
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/sign/:token" element={<Sign />} />
 
-            {/* Protected routes */}
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/documents"
-              element={
-                <ProtectedRoute>
-                  <Documents />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/documents/:id/prepare"
-              element={
-                <ProtectedRoute>
-                  <PrepareDocument />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/templates"
-              element={
-                <ProtectedRoute>
-                  <Templates />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <ProtectedRoute>
-                  <Settings />
-                </ProtectedRoute>
-              }
-            />
+              {/* Protected routes */}
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/documents"
+                element={
+                  <ProtectedRoute>
+                    <Documents />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/documents/:id/prepare"
+                element={
+                  <ProtectedRoute>
+                    <PrepareDocument />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/templates"
+                element={
+                  <ProtectedRoute>
+                    <Templates />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/settings"
+                element={
+                  <ProtectedRoute>
+                    <Settings />
+                  </ProtectedRoute>
+                }
+              />
 
-            {/* Redirect unknown routes to dashboard */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+              {/* Redirect unknown routes to dashboard */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
           </AuthProvider>
         </ToastProvider>
       </BrowserRouter>

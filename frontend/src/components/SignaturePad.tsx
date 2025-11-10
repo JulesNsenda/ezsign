@@ -9,7 +9,12 @@ import Button from './Button';
 export type SignatureType = 'drawn' | 'typed' | 'uploaded';
 
 export interface SignaturePadProps {
-  onSave: (signatureData: string, type: SignatureType, textValue?: string, fontFamily?: string) => void;
+  onSave: (
+    signatureData: string,
+    type: SignatureType,
+    textValue?: string,
+    fontFamily?: string,
+  ) => void;
   onCancel?: () => void;
   width?: number;
   height?: number;
@@ -118,9 +123,10 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
           onClick={() => setMode('drawn')}
           className={`
             px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
-            ${mode === 'drawn'
-              ? 'bg-accent text-white shadow-sm'
-              : 'bg-base-200 text-base-content hover:bg-base-300'
+            ${
+              mode === 'drawn'
+                ? 'bg-accent text-white shadow-sm'
+                : 'bg-base-200 text-base-content hover:bg-base-300'
             }
           `}
         >
@@ -133,9 +139,10 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
           onClick={() => setMode('typed')}
           className={`
             px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
-            ${mode === 'typed'
-              ? 'bg-accent text-white shadow-sm'
-              : 'bg-base-200 text-base-content hover:bg-base-300'
+            ${
+              mode === 'typed'
+                ? 'bg-accent text-white shadow-sm'
+                : 'bg-base-200 text-base-content hover:bg-base-300'
             }
           `}
         >
@@ -148,9 +155,10 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
           onClick={() => setMode('uploaded')}
           className={`
             px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
-            ${mode === 'uploaded'
-              ? 'bg-accent text-white shadow-sm'
-              : 'bg-base-200 text-base-content hover:bg-base-300'
+            ${
+              mode === 'uploaded'
+                ? 'bg-accent text-white shadow-sm'
+                : 'bg-base-200 text-base-content hover:bg-base-300'
             }
           `}
         >
@@ -164,12 +172,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
       {/* Signature Input Area */}
       <div className="border-2 border-base-300 rounded-lg bg-base-100 overflow-hidden shadow-sm">
         {mode === 'drawn' && (
-          <canvas
-            ref={canvasRef}
-            width={width}
-            height={height}
-            className="block touch-none"
-          />
+          <canvas ref={canvasRef} width={width} height={height} className="block touch-none" />
         )}
 
         {mode === 'typed' && (
@@ -211,14 +214,17 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
                   />
                   <span className="inline-flex items-center gap-2 px-4 py-2.5 bg-accent text-white rounded-lg font-medium text-sm hover:bg-accent/90 transition-all duration-200 shadow-sm">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                      />
                     </svg>
                     Choose File
                   </span>
                 </label>
-                <div className="text-xs text-base-content/60">
-                  Upload PNG or JPG image
-                </div>
+                <div className="text-xs text-base-content/60">Upload PNG or JPG image</div>
               </>
             )}
           </div>

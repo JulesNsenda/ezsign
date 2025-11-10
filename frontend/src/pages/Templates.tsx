@@ -65,15 +65,17 @@ export const Templates: React.FC = () => {
       navigate(`/documents/${doc.id}/prepare`);
     } catch (error: any) {
       toast.error(
-        error.response?.data?.error?.message || 'Failed to create document from template'
+        error.response?.data?.error?.message || 'Failed to create document from template',
       );
     }
   };
 
   // Filter templates by search query
-  const filteredTemplates = (data?.items || []).filter((template) =>
-    template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (template.description && template.description.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredTemplates = (data?.items || []).filter(
+    (template) =>
+      template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (template.description &&
+        template.description.toLowerCase().includes(searchQuery.toLowerCase())),
   );
 
   return (
@@ -83,15 +85,27 @@ export const Templates: React.FC = () => {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
           <div>
             <h1 className="text-3xl sm:text-4xl font-bold text-neutral mb-2">Templates</h1>
-            <p className="text-base-content/60">Create reusable templates from your prepared documents</p>
+            <p className="text-base-content/60">
+              Create reusable templates from your prepared documents
+            </p>
           </div>
         </div>
 
         {/* Search Bar */}
         <div className="mb-6 p-4 sm:p-5 bg-base-100 rounded-xl border border-base-300/50 shadow-sm">
           <div className="relative max-w-md">
-            <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-base-content/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            <svg
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-base-content/40"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
             </svg>
             <input
               type="text"
@@ -112,22 +126,40 @@ export const Templates: React.FC = () => {
         ) : !data?.items || data.items.length === 0 ? (
           /* Empty State */
           <div className="card-docuseal text-center py-16">
-            <svg className="w-20 h-20 mx-auto mb-4 text-base-content/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+            <svg
+              className="w-20 h-20 mx-auto mb-4 text-base-content/20"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"
+              />
             </svg>
             <h3 className="text-xl font-semibold text-neutral mb-2">No templates yet</h3>
             <p className="text-base-content/60 mb-6 max-w-md mx-auto">
               Create templates from your documents to reuse them quickly
             </p>
-            <Button onClick={() => navigate('/documents')}>
-              Go to Documents
-            </Button>
+            <Button onClick={() => navigate('/documents')}>Go to Documents</Button>
           </div>
         ) : filteredTemplates.length === 0 ? (
           /* No Results State */
           <div className="card-docuseal text-center py-16">
-            <svg className="w-20 h-20 mx-auto mb-4 text-base-content/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            <svg
+              className="w-20 h-20 mx-auto mb-4 text-base-content/20"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
             </svg>
             <h3 className="text-xl font-semibold text-neutral mb-2">No templates found</h3>
             <p className="text-base-content/60 mb-6 max-w-md mx-auto">
@@ -156,7 +188,8 @@ export const Templates: React.FC = () => {
                         e.currentTarget.style.display = 'none';
                         const parent = e.currentTarget.parentElement;
                         if (parent) {
-                          parent.innerHTML = '<svg class="w-16 h-16 text-base-content/20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>';
+                          parent.innerHTML =
+                            '<svg class="w-16 h-16 text-base-content/20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>';
                         }
                       }}
                     />
@@ -173,8 +206,18 @@ export const Templates: React.FC = () => {
                       </p>
                     )}
                     <div className="text-xs text-base-content/50 mb-4 flex items-center gap-1">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      <svg
+                        className="w-3.5 h-3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                        />
                       </svg>
                       {new Date(template.created_at).toLocaleDateString()}
                     </div>
@@ -194,8 +237,18 @@ export const Templates: React.FC = () => {
                         variant="danger"
                         onClick={() => setTemplateToDelete(template.id)}
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
                         </svg>
                       </Button>
                     </div>
@@ -243,7 +296,8 @@ export const Templates: React.FC = () => {
           {selectedTemplate && (
             <div>
               <p className="text-base-content/80 mb-4">
-                Creating a new document from template: <strong className="text-neutral">{selectedTemplate.name}</strong>
+                Creating a new document from template:{' '}
+                <strong className="text-neutral">{selectedTemplate.name}</strong>
               </p>
               <div className="mb-6">
                 <label className="block text-sm font-semibold text-neutral mb-2">
@@ -298,11 +352,7 @@ export const Templates: React.FC = () => {
             <Button variant="outline" onClick={() => setTemplateToDelete(null)}>
               Cancel
             </Button>
-            <Button
-              variant="danger"
-              onClick={handleDelete}
-              loading={deleteMutation.isPending}
-            >
+            <Button variant="danger" onClick={handleDelete} loading={deleteMutation.isPending}>
               Delete
             </Button>
           </div>

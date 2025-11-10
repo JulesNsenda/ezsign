@@ -22,7 +22,11 @@ describe('Button', () => {
 
   it('should be disabled when disabled prop is true', () => {
     const handleClick = vi.fn();
-    render(<Button disabled onClick={handleClick}>Click me</Button>);
+    render(
+      <Button disabled onClick={handleClick}>
+        Click me
+      </Button>,
+    );
 
     const button = screen.getByText('Click me') as HTMLButtonElement;
     expect(button.disabled).toBe(true);

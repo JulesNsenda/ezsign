@@ -27,7 +27,9 @@ export const Documents: React.FC = () => {
     limit: 10,
     sort_by: 'created_at',
     sort_order: 'desc',
-    status: statusFilter ? (statusFilter as 'draft' | 'pending' | 'completed' | 'cancelled') : undefined,
+    status: statusFilter
+      ? (statusFilter as 'draft' | 'pending' | 'completed' | 'cancelled')
+      : undefined,
   });
 
   const deleteMutation = useDeleteDocument();
@@ -65,7 +67,9 @@ export const Documents: React.FC = () => {
     };
 
     return (
-      <span className={`px-3 py-1 rounded-full text-xs font-medium ${styles[status] || styles.draft}`}>
+      <span
+        className={`px-3 py-1 rounded-full text-xs font-medium ${styles[status] || styles.draft}`}
+      >
         {status.toUpperCase()}
       </span>
     );
@@ -73,7 +77,7 @@ export const Documents: React.FC = () => {
 
   // Filter documents by search query
   const filteredDocuments = (data?.documents || []).filter((doc) =>
-    doc.title.toLowerCase().includes(searchQuery.toLowerCase())
+    doc.title.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const columns: TableColumn<Document>[] = [
@@ -110,11 +114,7 @@ export const Documents: React.FC = () => {
               Prepare
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setSelectedDocument(row)}
-          >
+          <Button size="sm" variant="outline" onClick={() => setSelectedDocument(row)}>
             View
           </Button>
           <Button
@@ -125,11 +125,7 @@ export const Documents: React.FC = () => {
           >
             Download
           </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={() => setDocumentToDelete(row.id)}
-          >
+          <Button size="sm" variant="danger" onClick={() => setDocumentToDelete(row.id)}>
             Delete
           </Button>
         </div>
@@ -149,7 +145,12 @@ export const Documents: React.FC = () => {
             onClick={() => setIsUploadModalOpen(true)}
             icon={
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                />
               </svg>
             }
           >
@@ -161,8 +162,18 @@ export const Documents: React.FC = () => {
         <div className="flex flex-col sm:flex-row gap-4 mb-6 p-4 sm:p-5 bg-base-100 rounded-xl border border-base-300/50 shadow-sm">
           <div className="flex-1">
             <div className="relative">
-              <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-base-content/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              <svg
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-base-content/40"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
               </svg>
               <input
                 type="text"
@@ -200,7 +211,12 @@ export const Documents: React.FC = () => {
               }}
               icon={
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               }
             >
@@ -214,13 +230,17 @@ export const Documents: React.FC = () => {
           data={filteredDocuments}
           loading={isLoading}
           emptyMessage="No documents yet. Upload your first document to get started."
-          pagination={data?.pagination ? {
-            currentPage,
-            totalPages: data.pagination.total_pages,
-            pageSize: data.pagination.limit,
-            totalItems: data.pagination.total,
-            onPageChange: setCurrentPage,
-          } : undefined}
+          pagination={
+            data?.pagination
+              ? {
+                  currentPage,
+                  totalPages: data.pagination.total_pages,
+                  pageSize: data.pagination.limit,
+                  totalItems: data.pagination.total,
+                  onPageChange: setCurrentPage,
+                }
+              : undefined
+          }
         />
 
         {/* Upload Modal */}
@@ -253,11 +273,7 @@ export const Documents: React.FC = () => {
             <Button variant="outline" onClick={() => setDocumentToDelete(null)}>
               Cancel
             </Button>
-            <Button
-              variant="danger"
-              onClick={handleDelete}
-              loading={deleteMutation.isPending}
-            >
+            <Button variant="danger" onClick={handleDelete} loading={deleteMutation.isPending}>
               Delete
             </Button>
           </div>
@@ -273,31 +289,23 @@ export const Documents: React.FC = () => {
           {selectedDocument && (
             <div className="flex flex-col gap-4">
               <div>
-                <div className="text-sm font-semibold text-base-content/60 mb-1">
-                  Title
-                </div>
+                <div className="text-sm font-semibold text-base-content/60 mb-1">Title</div>
                 <div className="text-base text-neutral">{selectedDocument.title}</div>
               </div>
 
               <div>
-                <div className="text-sm font-semibold text-base-content/60 mb-1">
-                  Status
-                </div>
+                <div className="text-sm font-semibold text-base-content/60 mb-1">Status</div>
                 <div>{getStatusBadge(selectedDocument.status)}</div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <div className="text-sm font-semibold text-base-content/60 mb-1">
-                    Pages
-                  </div>
+                  <div className="text-sm font-semibold text-base-content/60 mb-1">Pages</div>
                   <div className="text-base">{selectedDocument.page_count}</div>
                 </div>
 
                 <div>
-                  <div className="text-sm font-semibold text-base-content/60 mb-1">
-                    File Size
-                  </div>
+                  <div className="text-sm font-semibold text-base-content/60 mb-1">File Size</div>
                   <div className="text-base">
                     {(selectedDocument.file_size / 1024 / 1024).toFixed(2)} MB
                   </div>
@@ -308,32 +316,26 @@ export const Documents: React.FC = () => {
                 <div className="text-sm font-semibold text-base-content/60 mb-1">
                   Original Filename
                 </div>
-                <div className="text-sm text-base-content/60">{selectedDocument.original_filename}</div>
+                <div className="text-sm text-base-content/60">
+                  {selectedDocument.original_filename}
+                </div>
               </div>
 
               <div>
-                <div className="text-sm font-semibold text-base-content/60 mb-1">
-                  Workflow Type
-                </div>
-                <div className="text-base capitalize">
-                  {selectedDocument.workflow_type}
-                </div>
+                <div className="text-sm font-semibold text-base-content/60 mb-1">Workflow Type</div>
+                <div className="text-base capitalize">{selectedDocument.workflow_type}</div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <div className="text-sm font-semibold text-base-content/60 mb-1">
-                    Created
-                  </div>
+                  <div className="text-sm font-semibold text-base-content/60 mb-1">Created</div>
                   <div className="text-sm">
                     {new Date(selectedDocument.created_at).toLocaleString()}
                   </div>
                 </div>
 
                 <div>
-                  <div className="text-sm font-semibold text-base-content/60 mb-1">
-                    Updated
-                  </div>
+                  <div className="text-sm font-semibold text-base-content/60 mb-1">Updated</div>
                   <div className="text-sm">
                     {new Date(selectedDocument.updated_at).toLocaleString()}
                   </div>

@@ -64,8 +64,18 @@ export const Register: React.FC = () => {
 
           {error && (
             <div className="alert alert-error mb-6 bg-error/10 border border-error/20 rounded-lg p-4">
-              <svg className="w-5 h-5 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <svg
+                className="w-5 h-5 text-error"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
               </svg>
               <span className="text-error text-sm">{error}</span>
             </div>
@@ -82,17 +92,11 @@ export const Register: React.FC = () => {
                 placeholder="John Doe"
                 className="input-docuseal"
               />
-              {errors.name && (
-                <div className="text-error text-sm mt-1">
-                  {errors.name.message}
-                </div>
-              )}
+              {errors.name && <div className="text-error text-sm mt-1">{errors.name.message}</div>}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral mb-2">
-                Email
-              </label>
+              <label className="block text-sm font-medium text-neutral mb-2">Email</label>
               <input
                 {...register('email')}
                 type="email"
@@ -100,16 +104,12 @@ export const Register: React.FC = () => {
                 className="input-docuseal"
               />
               {errors.email && (
-                <div className="text-error text-sm mt-1">
-                  {errors.email.message}
-                </div>
+                <div className="text-error text-sm mt-1">{errors.email.message}</div>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral mb-2">
-                Password
-              </label>
+              <label className="block text-sm font-medium text-neutral mb-2">Password</label>
               <input
                 {...register('password')}
                 type="password"
@@ -117,28 +117,24 @@ export const Register: React.FC = () => {
                 className="input-docuseal"
               />
               {errors.password && (
-                <div className="text-error text-sm mt-1">
-                  {errors.password.message}
-                </div>
+                <div className="text-error text-sm mt-1">{errors.password.message}</div>
               )}
               <div className="text-xs text-base-content/50 mt-1">
                 Must be at least 8 characters with letters and numbers
               </div>
             </div>
 
-            <Button
-              type="submit"
-              loading={isSubmitting}
-              fullWidth
-              size="lg"
-            >
+            <Button type="submit" loading={isSubmitting} fullWidth size="lg">
               {isSubmitting ? 'Creating account...' : 'Create Account'}
             </Button>
           </form>
 
           <div className="mt-6 pt-6 border-t border-base-300 text-center text-sm">
             <span className="text-base-content/60">Already have an account? </span>
-            <Link to="/login" className="text-neutral font-medium hover:text-neutral/80 transition-colors">
+            <Link
+              to="/login"
+              className="text-neutral font-medium hover:text-neutral/80 transition-colors"
+            >
               Sign in
             </Link>
           </div>

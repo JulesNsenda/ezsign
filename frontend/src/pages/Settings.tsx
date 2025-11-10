@@ -39,9 +39,9 @@ export const Settings: React.FC = () => {
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'apikeys' | 'webhooks' | 'teams'>(
-    'profile'
-  );
+  const [activeTab, setActiveTab] = useState<
+    'profile' | 'security' | 'apikeys' | 'webhooks' | 'teams'
+  >('profile');
 
   // Profile
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -235,9 +235,10 @@ export const Settings: React.FC = () => {
                 className={`
                   flex items-center gap-2 px-4 py-3 font-semibold text-sm transition-all
                   border-b-2 whitespace-nowrap
-                  ${activeTab === tab.id
-                    ? 'border-neutral text-neutral'
-                    : 'border-transparent text-base-content/60 hover:text-base-content hover:border-base-300'
+                  ${
+                    activeTab === tab.id
+                      ? 'border-neutral text-neutral'
+                      : 'border-transparent text-base-content/60 hover:text-base-content hover:border-base-300'
                   }
                 `}
               >
@@ -266,9 +267,7 @@ export const Settings: React.FC = () => {
                   <p className="text-xs text-base-content/60 mt-1">Your email cannot be changed</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-neutral mb-2">
-                    Role
-                  </label>
+                  <label className="block text-sm font-semibold text-neutral mb-2">Role</label>
                   <input
                     type="text"
                     value={user?.role || ''}
@@ -282,7 +281,9 @@ export const Settings: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={user?.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}
+                    value={
+                      user?.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'
+                    }
                     disabled
                     className="input-docuseal bg-base-200 cursor-not-allowed"
                   />
@@ -294,7 +295,9 @@ export const Settings: React.FC = () => {
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                   <h3 className="font-semibold text-error mb-1">Sign Out</h3>
-                  <p className="text-sm text-base-content/60">Sign out of your account on this device</p>
+                  <p className="text-sm text-base-content/60">
+                    Sign out of your account on this device
+                  </p>
                 </div>
                 <Button variant="danger" onClick={logout}>
                   Sign Out
@@ -311,11 +314,11 @@ export const Settings: React.FC = () => {
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                   <h3 className="font-semibold text-neutral mb-1">Password</h3>
-                  <p className="text-sm text-base-content/60">Update your password to keep your account secure</p>
+                  <p className="text-sm text-base-content/60">
+                    Update your password to keep your account secure
+                  </p>
                 </div>
-                <Button onClick={() => setIsPasswordModalOpen(true)}>
-                  Change Password
-                </Button>
+                <Button onClick={() => setIsPasswordModalOpen(true)}>Change Password</Button>
               </div>
             </Card>
 
@@ -324,7 +327,8 @@ export const Settings: React.FC = () => {
                 <div>
                   <h3 className="font-semibold text-neutral mb-1">2FA Status</h3>
                   <p className="text-sm text-base-content/60">
-                    <span className="text-warning font-medium">Not Enabled</span> - Add an extra layer of security
+                    <span className="text-warning font-medium">Not Enabled</span> - Add an extra
+                    layer of security
                   </p>
                 </div>
                 <Button variant="outline" disabled>
@@ -337,8 +341,18 @@ export const Settings: React.FC = () => {
               <div>
                 <h3 className="font-semibold text-neutral mb-3">Current Session</h3>
                 <div className="flex items-start gap-3 p-3 bg-base-200 rounded-lg">
-                  <svg className="w-6 h-6 text-success flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  <svg
+                    className="w-6 h-6 text-success flex-shrink-0 mt-0.5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                    />
                   </svg>
                   <div className="flex-1">
                     <p className="font-medium text-sm">This Device</p>
@@ -357,13 +371,23 @@ export const Settings: React.FC = () => {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
               <div>
                 <h2 className="text-xl font-semibold text-neutral">API Keys</h2>
-                <p className="text-sm text-base-content/60 mt-1">Manage API keys for programmatic access</p>
+                <p className="text-sm text-base-content/60 mt-1">
+                  Manage API keys for programmatic access
+                </p>
               </div>
-              <Button onClick={() => setIsApiKeyModalOpen(true)} icon={
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              }>
+              <Button
+                onClick={() => setIsApiKeyModalOpen(true)}
+                icon={
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                }
+              >
                 Create API Key
               </Button>
             </div>
@@ -371,11 +395,23 @@ export const Settings: React.FC = () => {
             {apiKeys.length === 0 ? (
               <Card>
                 <div className="text-center py-12">
-                  <svg className="w-16 h-16 mx-auto mb-4 text-base-content/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                  <svg
+                    className="w-16 h-16 mx-auto mb-4 text-base-content/20"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+                    />
                   </svg>
                   <h3 className="text-lg font-semibold text-neutral mb-2">No API keys yet</h3>
-                  <p className="text-base-content/60 mb-4">Create an API key to integrate with external systems</p>
+                  <p className="text-base-content/60 mb-4">
+                    Create an API key to integrate with external systems
+                  </p>
                 </div>
               </Card>
             ) : (
@@ -385,22 +421,52 @@ export const Settings: React.FC = () => {
                     <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-neutral mb-2 flex items-center gap-2">
-                          <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                          <svg
+                            className="w-5 h-5 flex-shrink-0"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+                            />
                           </svg>
                           {key.name}
                         </h3>
                         <div className="flex flex-col gap-1 text-sm text-base-content/60">
                           <div className="flex items-center gap-2">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                              />
                             </svg>
                             Created {new Date(key.created_at).toLocaleDateString()}
                           </div>
                           {key.last_used_at && (
                             <div className="flex items-center gap-2">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
                               </svg>
                               Last used {new Date(key.last_used_at).toLocaleDateString()}
                             </div>
@@ -411,13 +477,27 @@ export const Settings: React.FC = () => {
                         variant="danger"
                         size="sm"
                         onClick={() => {
-                          if (confirm('Are you sure you want to delete this API key? This action cannot be undone.')) {
+                          if (
+                            confirm(
+                              'Are you sure you want to delete this API key? This action cannot be undone.',
+                            )
+                          ) {
                             deleteApiKeyMutation.mutate(key.id);
                           }
                         }}
                         icon={
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
                           </svg>
                         }
                       >
@@ -437,13 +517,24 @@ export const Settings: React.FC = () => {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
               <div>
                 <h2 className="text-xl font-semibold text-neutral">Webhooks</h2>
-                <p className="text-sm text-base-content/60 mt-1">Receive real-time notifications about document events</p>
+                <p className="text-sm text-base-content/60 mt-1">
+                  Receive real-time notifications about document events
+                </p>
               </div>
-              <Button onClick={() => setIsWebhookModalOpen(true)} disabled icon={
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              }>
+              <Button
+                onClick={() => setIsWebhookModalOpen(true)}
+                disabled
+                icon={
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                }
+              >
                 Create Webhook
               </Button>
             </div>
@@ -451,11 +542,23 @@ export const Settings: React.FC = () => {
             {webhooks.length === 0 ? (
               <Card>
                 <div className="text-center py-12">
-                  <svg className="w-16 h-16 mx-auto mb-4 text-base-content/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                  <svg
+                    className="w-16 h-16 mx-auto mb-4 text-base-content/20"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                    />
                   </svg>
                   <h3 className="text-lg font-semibold text-neutral mb-2">Webhooks Coming Soon</h3>
-                  <p className="text-base-content/60 mb-4">Webhook functionality is currently under development and will be available soon</p>
+                  <p className="text-base-content/60 mb-4">
+                    Webhook functionality is currently under development and will be available soon
+                  </p>
                 </div>
               </Card>
             ) : (
@@ -497,8 +600,18 @@ export const Settings: React.FC = () => {
                             }
                           }}
                           icon={
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
                             </svg>
                           }
                         >
@@ -506,7 +619,9 @@ export const Settings: React.FC = () => {
                         </Button>
                       </div>
                       <div>
-                        <p className="text-sm font-semibold text-neutral mb-2">Subscribed Events:</p>
+                        <p className="text-sm font-semibold text-neutral mb-2">
+                          Subscribed Events:
+                        </p>
                         <div className="flex flex-wrap gap-2">
                           {webhook.events.map((event) => (
                             <span
@@ -531,14 +646,26 @@ export const Settings: React.FC = () => {
           <div>
             <div className="mb-6">
               <h2 className="text-xl font-semibold text-neutral">Teams</h2>
-              <p className="text-sm text-base-content/60 mt-1">Collaborate with your team members</p>
+              <p className="text-sm text-base-content/60 mt-1">
+                Collaborate with your team members
+              </p>
             </div>
 
             {teams.length === 0 ? (
               <Card>
                 <div className="text-center py-12">
-                  <svg className="w-16 h-16 mx-auto mb-4 text-base-content/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  <svg
+                    className="w-16 h-16 mx-auto mb-4 text-base-content/20"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                    />
                   </svg>
                   <h3 className="text-lg font-semibold text-neutral mb-2">No teams yet</h3>
                   <p className="text-base-content/60 mb-4">You haven't joined any teams yet</p>
@@ -550,8 +677,18 @@ export const Settings: React.FC = () => {
                   <Card key={team.id}>
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-gradient-to-br from-neutral/20 to-neutral/30 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <svg className="w-6 h-6 text-neutral" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        <svg
+                          className="w-6 h-6 text-neutral"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                          />
                         </svg>
                       </div>
                       <div className="flex-1">
@@ -591,9 +728,7 @@ export const Settings: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-neutral mb-2">
-                New Password
-              </label>
+              <label className="block text-sm font-semibold text-neutral mb-2">New Password</label>
               <input
                 type="password"
                 value={newPassword}
@@ -626,10 +761,7 @@ export const Settings: React.FC = () => {
               >
                 Cancel
               </Button>
-              <Button
-                onClick={handleChangePassword}
-                loading={changePasswordMutation.isPending}
-              >
+              <Button onClick={handleChangePassword} loading={changePasswordMutation.isPending}>
                 Change Password
               </Button>
             </div>
@@ -651,17 +783,33 @@ export const Settings: React.FC = () => {
             <div className="flex flex-col gap-4">
               <div className="p-4 bg-warning/10 border border-warning/30 rounded-xl">
                 <div className="flex gap-3">
-                  <svg className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  <svg
+                    className="w-5 h-5 text-warning flex-shrink-0 mt-0.5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                    />
                   </svg>
                   <div>
-                    <p className="font-semibold text-neutral mb-1">Important: Save this API key now!</p>
-                    <p className="text-sm text-base-content/70">You won't be able to see it again after closing this dialog.</p>
+                    <p className="font-semibold text-neutral mb-1">
+                      Important: Save this API key now!
+                    </p>
+                    <p className="text-sm text-base-content/70">
+                      You won't be able to see it again after closing this dialog.
+                    </p>
                   </div>
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-neutral mb-2">Your API Key</label>
+                <label className="block text-sm font-semibold text-neutral mb-2">
+                  Your API Key
+                </label>
                 <div className="p-3 bg-base-200 border border-base-300 rounded-lg font-mono text-sm break-all">
                   {createdApiKey}
                 </div>
@@ -675,16 +823,23 @@ export const Settings: React.FC = () => {
                   }}
                   icon={
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                      />
                     </svg>
                   }
                 >
                   Copy to Clipboard
                 </Button>
-                <Button onClick={() => {
-                  setIsApiKeyModalOpen(false);
-                  setCreatedApiKey(null);
-                }}>
+                <Button
+                  onClick={() => {
+                    setIsApiKeyModalOpen(false);
+                    setCreatedApiKey(null);
+                  }}
+                >
                   Done
                 </Button>
               </div>
@@ -703,7 +858,9 @@ export const Settings: React.FC = () => {
                   className="input-docuseal"
                   autoFocus
                 />
-                <p className="text-xs text-base-content/60 mt-2">Choose a descriptive name to identify this key</p>
+                <p className="text-xs text-base-content/60 mt-2">
+                  Choose a descriptive name to identify this key
+                </p>
               </div>
               <div className="flex gap-3 justify-end pt-2">
                 <Button
@@ -747,7 +904,9 @@ export const Settings: React.FC = () => {
                 className="input-docuseal"
                 autoFocus
               />
-              <p className="text-xs text-base-content/60 mt-2">The URL where webhook events will be sent</p>
+              <p className="text-xs text-base-content/60 mt-2">
+                The URL where webhook events will be sent
+              </p>
             </div>
             <div>
               <label className="block text-sm font-semibold text-neutral mb-3">

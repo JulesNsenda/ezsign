@@ -176,11 +176,10 @@ export const PdfViewer = React.memo(PdfViewerComponent, (prevProps, nextProps) =
   // Return true if props are the same (skip re-render)
   // We intentionally ignore the 'children' prop because it's always a new function reference
   // but the actual content it renders depends on currentPage which we do check
-  const areEqual = (
+  const areEqual =
     prevProps.fileUrl === nextProps.fileUrl &&
     prevProps.currentPage === nextProps.currentPage &&
-    prevProps.width === nextProps.width
-  );
+    prevProps.width === nextProps.width;
   return areEqual;
 });
 

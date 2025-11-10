@@ -9,17 +9,19 @@ import authService from '@/services/authService';
  * Reset password page
  */
 
-const resetPasswordSchema = z.object({
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .regex(/[A-Za-z]/, 'Password must contain at least one letter')
-    .regex(/[0-9]/, 'Password must contain at least one number'),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ['confirmPassword'],
-});
+const resetPasswordSchema = z
+  .object({
+    password: z
+      .string()
+      .min(8, 'Password must be at least 8 characters')
+      .regex(/[A-Za-z]/, 'Password must contain at least one letter')
+      .regex(/[0-9]/, 'Password must contain at least one number'),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ['confirmPassword'],
+  });
 
 type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
 
@@ -67,22 +69,26 @@ export const ResetPassword: React.FC = () => {
 
   if (!token) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#f5f5f5',
-      }}>
-        <div style={{
-          backgroundColor: 'white',
-          padding: '2rem',
-          borderRadius: '8px',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-          width: '100%',
-          maxWidth: '400px',
-          textAlign: 'center',
-        }}>
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: '#f5f5f5',
+        }}
+      >
+        <div
+          style={{
+            backgroundColor: 'white',
+            padding: '2rem',
+            borderRadius: '8px',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+            width: '100%',
+            maxWidth: '400px',
+            textAlign: 'center',
+          }}
+        >
           <h2 style={{ marginBottom: '1rem', color: '#c33' }}>Invalid Reset Link</h2>
           <p style={{ marginBottom: '1.5rem' }}>
             This password reset link is invalid or has expired.
@@ -107,35 +113,48 @@ export const ResetPassword: React.FC = () => {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: '#f5f5f5',
-    }}>
-      <div style={{
-        backgroundColor: 'white',
-        padding: '2rem',
-        borderRadius: '8px',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-        width: '100%',
-        maxWidth: '400px',
-      }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#f5f5f5',
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: 'white',
+          padding: '2rem',
+          borderRadius: '8px',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+          width: '100%',
+          maxWidth: '400px',
+        }}
+      >
         <h1 style={{ marginBottom: '0.5rem', textAlign: 'center' }}>Reset Password</h1>
-        <p style={{ marginBottom: '1.5rem', textAlign: 'center', color: '#666', fontSize: '0.875rem' }}>
+        <p
+          style={{
+            marginBottom: '1.5rem',
+            textAlign: 'center',
+            color: '#666',
+            fontSize: '0.875rem',
+          }}
+        >
           Enter your new password below
         </p>
 
         {error && (
-          <div style={{
-            padding: '0.75rem',
-            marginBottom: '1rem',
-            backgroundColor: '#fee',
-            border: '1px solid #fcc',
-            borderRadius: '4px',
-            color: '#c33',
-          }}>
+          <div
+            style={{
+              padding: '0.75rem',
+              marginBottom: '1rem',
+              backgroundColor: '#fee',
+              border: '1px solid #fcc',
+              borderRadius: '4px',
+              color: '#c33',
+            }}
+          >
             {error}
           </div>
         )}

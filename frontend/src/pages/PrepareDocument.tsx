@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { DndContext, DragOverlay, useDroppable, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import {
+  DndContext,
+  DragOverlay,
+  useDroppable,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import Layout from '@/components/Layout';
 import PdfViewer from '@/components/PdfViewer';
@@ -29,7 +36,11 @@ export const PrepareDocument: React.FC = () => {
   const [numPages, setNumPages] = useState(0);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'signers' | 'properties'>('signers');
-  const [activeDragItem, setActiveDragItem] = useState<{ id: string; type: FieldType; isNew: boolean } | null>(null);
+  const [activeDragItem, setActiveDragItem] = useState<{
+    id: string;
+    type: FieldType;
+    isNew: boolean;
+  } | null>(null);
   const [isSignerModalOpen, setIsSignerModalOpen] = useState(false);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [newSignerEmail, setNewSignerEmail] = useState('');
@@ -58,7 +69,7 @@ export const PrepareDocument: React.FC = () => {
       activationConstraint: {
         distance: 8, // Require 8px movement before drag activates
       },
-    })
+    }),
   );
 
   // Memoize PDF URL to prevent unnecessary reloads
@@ -70,9 +81,10 @@ export const PrepareDocument: React.FC = () => {
   }, [id]);
 
   // Memoize selected field
-  const selectedField = useMemo(() => (
-    selectedFieldId ? fields.find((f) => f.id === selectedFieldId) || null : null
-  ), [selectedFieldId, fields]);
+  const selectedField = useMemo(
+    () => (selectedFieldId ? fields.find((f) => f.id === selectedFieldId) || null : null),
+    [selectedFieldId, fields],
+  );
 
   // Memoize PDF width calculation to prevent re-renders
   const pdfWidth = useMemo(() => {
@@ -135,14 +147,17 @@ export const PrepareDocument: React.FC = () => {
   }, [currentPage, numPages, zoom]);
 
   // Signer colors for visual consistency
-  const signerColors = useMemo(() => ["#3B82F6", "#10B981", "#F59E0B", "#EF4444"], []);
+  const signerColors = useMemo(() => ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'], []);
 
   // Get field color based on assigned signer (memoized to prevent re-renders)
-  const getFieldColor = useCallback((field: Field) => {
-    if (!field.signer_email) return "#6B7280"; // Gray for unassigned
-    const signerIndex = signers.findIndex(s => s.email === field.signer_email);
-    return signerIndex >= 0 ? signerColors[signerIndex % signerColors.length] : "#6B7280";
-  }, [signers, signerColors]);
+  const getFieldColor = useCallback(
+    (field: Field) => {
+      if (!field.signer_email) return '#6B7280'; // Gray for unassigned
+      const signerIndex = signers.findIndex((s) => s.email === field.signer_email);
+      return signerIndex >= 0 ? signerColors[signerIndex % signerColors.length] : '#6B7280';
+    },
+    [signers, signerColors],
+  );
 
   // Drag handlers
   const handleDragStart = (event: DragStartEvent) => {
@@ -175,12 +190,12 @@ export const PrepareDocument: React.FC = () => {
       if (!pdfContainer) return;
 
       const rect = pdfContainer.getBoundingClientRect();
-      const dropX = event.activatorEvent ?
-        (event.activatorEvent as MouseEvent).clientX - rect.left :
-        delta.x;
-      const dropY = event.activatorEvent ?
-        (event.activatorEvent as MouseEvent).clientY - rect.top :
-        delta.y;
+      const dropX = event.activatorEvent
+        ? (event.activatorEvent as MouseEvent).clientX - rect.left
+        : delta.x;
+      const dropY = event.activatorEvent
+        ? (event.activatorEvent as MouseEvent).clientY - rect.top
+        : delta.y;
 
       // Convert to PDF coordinates (accounting for zoom)
       const x = Math.max(0, (dropX + delta.x) / zoom);
@@ -206,7 +221,9 @@ export const PrepareDocument: React.FC = () => {
         refetchFields();
         toast.success('Field added');
       } catch (error: any) {
-        toast.error(error.response?.data?.error || error.response?.data?.message || 'Failed to add field');
+        toast.error(
+          error.response?.data?.error || error.response?.data?.message || 'Failed to add field',
+        );
       }
     } else {
       // Update existing field position
@@ -254,7 +271,11 @@ export const PrepareDocument: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Field update error:', error);
-      toast.error(error.response?.data?.error?.message || error.response?.data?.error || 'Failed to update field');
+      toast.error(
+        error.response?.data?.error?.message ||
+          error.response?.data?.error ||
+          'Failed to update field',
+      );
     }
   };
 
@@ -344,9 +365,9 @@ export const PrepareDocument: React.FC = () => {
   };
 
   // Backend uses 0-indexed pages, frontend uses 1-indexed (must be before early return)
-  const currentPageFields = useMemo(() =>
-    fields.filter((f) => f.page === currentPage - 1),
-    [fields, currentPage]
+  const currentPageFields = useMemo(
+    () => fields.filter((f) => f.page === currentPage - 1),
+    [fields, currentPage],
   );
 
   if (!doc) {
@@ -369,12 +390,14 @@ export const PrepareDocument: React.FC = () => {
     });
 
     return (
-      <div ref={(node) => {
-        setNodeRef(node);
-        if (node) {
-          pdfContainerRef.current = node;
-        }
-      }}>
+      <div
+        ref={(node) => {
+          setNodeRef(node);
+          if (node) {
+            pdfContainerRef.current = node;
+          }
+        }}
+      >
         {children}
       </div>
     );
@@ -388,7 +411,9 @@ export const PrepareDocument: React.FC = () => {
           <div className="max-w-[1800px] mx-auto">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex-1 min-w-0">
-                <h1 className="text-xl sm:text-2xl font-bold text-neutral mb-1 truncate">Prepare Document</h1>
+                <h1 className="text-xl sm:text-2xl font-bold text-neutral mb-1 truncate">
+                  Prepare Document
+                </h1>
                 <p className="text-sm text-base-content/70 truncate">{doc.title}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
@@ -424,7 +449,12 @@ export const PrepareDocument: React.FC = () => {
           </div>
         </div>
 
-        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
+        <DndContext
+          sensors={sensors}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
+        >
           <div className="w-full mx-auto px-2 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8">
             <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 max-w-[1800px] mx-auto">
               {/* Field Palette - Hidden on mobile, shown on desktop */}
@@ -439,7 +469,9 @@ export const PrepareDocument: React.FC = () => {
                   <div className="flex flex-col gap-2 sm:gap-3">
                     {/* Zoom Controls */}
                     <div className="flex items-center gap-2 w-full">
-                      <span className="text-xs sm:text-sm font-semibold text-neutral flex-shrink-0">Zoom</span>
+                      <span className="text-xs sm:text-sm font-semibold text-neutral flex-shrink-0">
+                        Zoom
+                      </span>
                       <div className="flex items-center gap-1 sm:gap-2 bg-base-200 rounded-lg p-1 flex-1 min-w-0">
                         <button
                           onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
@@ -456,7 +488,7 @@ export const PrepareDocument: React.FC = () => {
                           onChange={(e) => setZoom(Number(e.target.value) / 100)}
                           className="flex-1 min-w-0 h-2 bg-base-300 rounded-lg appearance-none cursor-pointer accent-neutral"
                           style={{
-                            background: `linear-gradient(to right, #291334 0%, #291334 ${((zoom * 100 - 50) / 150) * 100}%, #e7e2df ${((zoom * 100 - 50) / 150) * 100}%, #e7e2df 100%)`
+                            background: `linear-gradient(to right, #291334 0%, #291334 ${((zoom * 100 - 50) / 150) * 100}%, #e7e2df ${((zoom * 100 - 50) / 150) * 100}%, #e7e2df 100%)`,
                           }}
                         />
                         <span className="min-w-[40px] sm:min-w-[50px] text-center text-xs sm:text-sm font-medium text-neutral flex-shrink-0">
@@ -481,7 +513,8 @@ export const PrepareDocument: React.FC = () => {
                     {/* Page Navigation */}
                     <div className="flex items-center justify-between gap-2 sm:gap-3 w-full">
                       <span className="text-xs sm:text-sm text-base-content/70 font-medium flex-shrink-0">
-                        <span className="hidden xs:inline">Page </span>{currentPage} / {numPages}
+                        <span className="hidden xs:inline">Page </span>
+                        {currentPage} / {numPages}
                       </span>
                       <div className="flex gap-2 flex-shrink-0">
                         <button
@@ -515,36 +548,38 @@ export const PrepareDocument: React.FC = () => {
                         onLoadSuccess={setNumPages}
                         width={pdfWidth}
                       >
-                      {() => (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                            pointerEvents: 'none',
-                          }}
-                        >
-                          {currentPageFields.map((field) => {
-                            const isSelected = selectedFieldId === field.id;
-                            return (
-                              <div key={field.id} style={{ pointerEvents: 'auto' }}>
-                                <DraggableField
-                                  field={field}
-                                  scale={zoom}
-                                  isSelected={isSelected}
-                                  borderColor={getFieldColor(field)}
-                                  onClick={() => setSelectedFieldId(field.id)}
-                                  onDelete={() => handleDeleteField(field.id)}
-                                  onResize={(width, height) => handleResizeField(field.id, width, height)}
-                                />
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </PdfViewer>
+                        {() => (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              width: '100%',
+                              height: '100%',
+                              pointerEvents: 'none',
+                            }}
+                          >
+                            {currentPageFields.map((field) => {
+                              const isSelected = selectedFieldId === field.id;
+                              return (
+                                <div key={field.id} style={{ pointerEvents: 'auto' }}>
+                                  <DraggableField
+                                    field={field}
+                                    scale={zoom}
+                                    isSelected={isSelected}
+                                    borderColor={getFieldColor(field)}
+                                    onClick={() => setSelectedFieldId(field.id)}
+                                    onDelete={() => handleDeleteField(field.id)}
+                                    onResize={(width, height) =>
+                                      handleResizeField(field.id, width, height)
+                                    }
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </PdfViewer>
                     </DroppablePdfContainer>
                   </div>
                 </div>
@@ -553,21 +588,24 @@ export const PrepareDocument: React.FC = () => {
               {/* Right Panel - Tabbed Interface */}
               <div className="h-fit lg:sticky lg:top-6 order-1 lg:order-none lg:w-[340px] flex-shrink-0 w-full">
                 <div className="bg-base-100 rounded-xl shadow-sm border border-base-300">
-
                   {/* Tab Navigation */}
                   <div className="flex border-b border-base-300">
                     <button
-                      className={activeTab === 'signers'
-                        ? 'flex-1 text-center py-3 font-semibold text-xs sm:text-sm text-neutral border-b-2 border-neutral'
-                        : 'flex-1 text-center py-3 font-semibold text-xs sm:text-sm text-base-content/60 hover:bg-base-200 transition-colors'}
+                      className={
+                        activeTab === 'signers'
+                          ? 'flex-1 text-center py-3 font-semibold text-xs sm:text-sm text-neutral border-b-2 border-neutral'
+                          : 'flex-1 text-center py-3 font-semibold text-xs sm:text-sm text-base-content/60 hover:bg-base-200 transition-colors'
+                      }
                       onClick={() => setActiveTab('signers')}
                     >
                       Signers ({signers.length})
                     </button>
                     <button
-                      className={activeTab === 'properties'
-                        ? 'flex-1 text-center py-3 font-semibold text-xs sm:text-sm text-neutral border-b-2 border-neutral'
-                        : 'flex-1 text-center py-3 font-semibold text-xs sm:text-sm text-base-content/60 hover:bg-base-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'}
+                      className={
+                        activeTab === 'properties'
+                          ? 'flex-1 text-center py-3 font-semibold text-xs sm:text-sm text-neutral border-b-2 border-neutral'
+                          : 'flex-1 text-center py-3 font-semibold text-xs sm:text-sm text-base-content/60 hover:bg-base-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+                      }
                       onClick={() => selectedField && setActiveTab('properties')}
                       disabled={!selectedField}
                     >
@@ -593,55 +631,67 @@ export const PrepareDocument: React.FC = () => {
                           </button>
                         </div>
 
-                  {signers.length === 0 ? (
-                    <div className="py-6 sm:py-8 text-center">
-                      <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 opacity-40">👤</div>
-                      <p className="text-xs sm:text-sm text-base-content/60">No signers added yet</p>
-                      <p className="text-xs text-base-content/50 mt-1">Add signers to send document</p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-2 sm:gap-3">
-                      {signers.map((signer: Signer, index: number) => (
-                        <div
-                          key={signer.id}
-                          className="group relative p-2.5 sm:p-3.5 bg-base-200 hover:bg-base-300 border border-base-300 rounded-lg sm:rounded-xl transition-all"
-                        >
-                          <div className="flex items-start gap-2 sm:gap-3">
-                            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-neutral/20 to-neutral/30 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-neutral text-xs sm:text-sm">
-                              {signer.name.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-semibold text-xs sm:text-sm text-neutral truncate">{signer.name}</div>
-                              <div className="text-xs text-base-content/60 truncate">{signer.email}</div>
-                              {doc.workflow_type === 'sequential' && (
-                                <div className="mt-1 sm:mt-1.5 inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 bg-accent/10 text-accent text-xs font-medium rounded-full">
-                                  #{index + 1}
-                                </div>
-                              )}
-                            </div>
-                            <button
-                              onClick={() => handleDeleteSigner(signer.id)}
-                              className="opacity-0 group-hover:opacity-100 w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full hover:bg-error/10 text-error transition-all text-lg"
-                              title="Remove signer"
-                            >
-                              ×
-                            </button>
+                        {signers.length === 0 ? (
+                          <div className="py-6 sm:py-8 text-center">
+                            <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 opacity-40">👤</div>
+                            <p className="text-xs sm:text-sm text-base-content/60">
+                              No signers added yet
+                            </p>
+                            <p className="text-xs text-base-content/50 mt-1">
+                              Add signers to send document
+                            </p>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                        ) : (
+                          <div className="flex flex-col gap-2 sm:gap-3">
+                            {signers.map((signer: Signer, index: number) => (
+                              <div
+                                key={signer.id}
+                                className="group relative p-2.5 sm:p-3.5 bg-base-200 hover:bg-base-300 border border-base-300 rounded-lg sm:rounded-xl transition-all"
+                              >
+                                <div className="flex items-start gap-2 sm:gap-3">
+                                  <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-neutral/20 to-neutral/30 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-neutral text-xs sm:text-sm">
+                                    {signer.name.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-semibold text-xs sm:text-sm text-neutral truncate">
+                                      {signer.name}
+                                    </div>
+                                    <div className="text-xs text-base-content/60 truncate">
+                                      {signer.email}
+                                    </div>
+                                    {doc.workflow_type === 'sequential' && (
+                                      <div className="mt-1 sm:mt-1.5 inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 bg-accent/10 text-accent text-xs font-medium rounded-full">
+                                        #{index + 1}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={() => handleDeleteSigner(signer.id)}
+                                    className="opacity-0 group-hover:opacity-100 w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full hover:bg-error/10 text-error transition-all text-lg"
+                                    title="Remove signer"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
 
                         {/* Summary Stats */}
                         <div className="mt-4 sm:mt-5 pt-3 sm:pt-4 border-t border-base-300">
                           <div className="grid grid-cols-2 gap-2 sm:gap-3">
                             <div className="bg-gradient-to-br from-neutral/5 to-neutral/10 rounded-lg p-2 sm:p-3 border border-base-300">
                               <div className="text-xs text-neutral font-medium mb-1">Fields</div>
-                              <div className="text-xl sm:text-2xl font-bold text-neutral">{fields.length}</div>
+                              <div className="text-xl sm:text-2xl font-bold text-neutral">
+                                {fields.length}
+                              </div>
                             </div>
                             <div className="bg-gradient-to-br from-neutral/5 to-neutral/10 rounded-lg p-2 sm:p-3 border border-base-300">
                               <div className="text-xs text-neutral font-medium mb-1">Pages</div>
-                              <div className="text-xl sm:text-2xl font-bold text-neutral">{numPages}</div>
+                              <div className="text-xl sm:text-2xl font-bold text-neutral">
+                                {numPages}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -654,7 +704,10 @@ export const PrepareDocument: React.FC = () => {
                         signers={signers}
                         onUpdate={(updates) => handleUpdateFieldProperty(selectedField.id, updates)}
                         onDelete={() => handleDeleteField(selectedField.id)}
-                        onClose={() => { setSelectedFieldId(null); setActiveTab('signers'); }}
+                        onClose={() => {
+                          setSelectedFieldId(null);
+                          setActiveTab('signers');
+                        }}
                       />
                     )}
                   </div>
@@ -683,7 +736,12 @@ export const PrepareDocument: React.FC = () => {
             aria-label="Add fields"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
             </svg>
           </button>
         </DndContext>
@@ -699,11 +757,7 @@ export const PrepareDocument: React.FC = () => {
             <FieldPalette />
           </div>
           <div className="mt-4 pt-4 border-t border-base-300">
-            <Button
-              variant="ghost"
-              fullWidth
-              onClick={() => setShowMobileFieldPalette(false)}
-            >
+            <Button variant="ghost" fullWidth onClick={() => setShowMobileFieldPalette(false)}>
               Close
             </Button>
           </div>
@@ -736,7 +790,8 @@ export const PrepareDocument: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-semibold text-neutral mb-2">
-                Description <span className="text-xs text-base-content/50 font-normal">(optional)</span>
+                Description{' '}
+                <span className="text-xs text-base-content/50 font-normal">(optional)</span>
               </label>
               <textarea
                 value={templateDescription}
@@ -750,9 +805,12 @@ export const PrepareDocument: React.FC = () => {
               <div className="flex gap-2 sm:gap-3">
                 <span className="text-xl sm:text-2xl">📋</span>
                 <div className="flex-1">
-                  <p className="text-xs sm:text-sm font-medium text-neutral mb-1">What gets saved?</p>
+                  <p className="text-xs sm:text-sm font-medium text-neutral mb-1">
+                    What gets saved?
+                  </p>
                   <p className="text-xs text-base-content/70 leading-relaxed">
-                    This template will include all {fields.length} field{fields.length !== 1 ? 's' : ''} and their positions from this document.
+                    This template will include all {fields.length} field
+                    {fields.length !== 1 ? 's' : ''} and their positions from this document.
                   </p>
                 </div>
               </div>

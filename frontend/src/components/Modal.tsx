@@ -62,12 +62,7 @@ export const Modal: React.FC<ModalProps> = ({
               className="w-8 h-8 flex items-center justify-center rounded-lg text-base-content/60 hover:text-base-content hover:bg-base-200 transition-all duration-200"
               aria-label="Close modal"
             >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"

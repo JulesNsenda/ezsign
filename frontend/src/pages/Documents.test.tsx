@@ -67,7 +67,7 @@ const renderWithProviders = (component: React.ReactElement) => {
   return render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>{component}</BrowserRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 };
 
@@ -101,7 +101,7 @@ describe('Documents Page', () => {
   it('should filter documents when typing in search', () => {
     renderWithProviders(<Documents />);
     const searchInput = screen.getByPlaceholderText(
-      'Search documents by title...'
+      'Search documents by title...',
     ) as HTMLInputElement;
 
     fireEvent.change(searchInput, { target: { value: 'Test' } });

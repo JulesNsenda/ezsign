@@ -9,10 +9,7 @@ export interface LoaderProps {
   fullScreen?: boolean;
 }
 
-export const Loader: React.FC<LoaderProps> = ({
-  size = 'medium',
-  fullScreen = false,
-}) => {
+export const Loader: React.FC<LoaderProps> = ({ size = 'medium', fullScreen = false }) => {
   const getSizePixels = () => {
     const sizes = {
       small: 20,

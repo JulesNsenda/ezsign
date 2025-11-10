@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import documentService, { type CreateDocumentData, type ListDocumentsParams, type UpdateDocumentData } from '@/services/documentService';
+import documentService, {
+  type CreateDocumentData,
+  type ListDocumentsParams,
+  type UpdateDocumentData,
+} from '@/services/documentService';
 
 /**
  * Custom hook for document operations using TanStack Query

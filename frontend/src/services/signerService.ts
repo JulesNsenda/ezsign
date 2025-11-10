@@ -26,7 +26,7 @@ export const signerService = {
   async create(documentId: string, data: CreateSignerData): Promise<Signer> {
     const response = await apiClient.post<{ signer: Signer }>(
       `/documents/${documentId}/signers`,
-      data
+      data,
     );
     return response.data.signer;
   },
@@ -36,7 +36,7 @@ export const signerService = {
    */
   async list(documentId: string): Promise<Signer[]> {
     const response = await apiClient.get<{ success: boolean; data: Signer[] }>(
-      `/documents/${documentId}/signers`
+      `/documents/${documentId}/signers`,
     );
     return response.data.data || [];
   },
@@ -46,7 +46,7 @@ export const signerService = {
    */
   async getById(documentId: string, signerId: string): Promise<Signer> {
     const response = await apiClient.get<{ signer: Signer }>(
-      `/documents/${documentId}/signers/${signerId}`
+      `/documents/${documentId}/signers/${signerId}`,
     );
     return response.data.signer;
   },
@@ -54,14 +54,10 @@ export const signerService = {
   /**
    * Update a signer
    */
-  async update(
-    documentId: string,
-    signerId: string,
-    data: UpdateSignerData
-  ): Promise<Signer> {
+  async update(documentId: string, signerId: string, data: UpdateSignerData): Promise<Signer> {
     const response = await apiClient.put<{ signer: Signer }>(
       `/documents/${documentId}/signers/${signerId}`,
-      data
+      data,
     );
     return response.data.signer;
   },
