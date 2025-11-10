@@ -198,7 +198,7 @@ export const TemplateEditor: React.FC = () => {
                 }}
               >
                 <Button
-                  size="small"
+                  size="sm"
                   onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
                   disabled={zoom <= 0.5}
                 >
@@ -208,13 +208,13 @@ export const TemplateEditor: React.FC = () => {
                   {Math.round(zoom * 100)}%
                 </span>
                 <Button
-                  size="small"
+                  size="sm"
                   onClick={() => setZoom(Math.min(2, zoom + 0.1))}
                   disabled={zoom >= 2}
                 >
                   +
                 </Button>
-                <Button size="small" onClick={() => setZoom(1)} variant="secondary">
+                <Button size="sm" onClick={() => setZoom(1)} variant="secondary">
                   Reset
                 </Button>
               </div>
@@ -278,7 +278,7 @@ export const TemplateEditor: React.FC = () => {
               >
                 <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>Template Info</h3>
                 {!isEditingInfo && (
-                  <Button size="small" onClick={() => setIsEditingInfo(true)}>
+                  <Button size="sm" onClick={() => setIsEditingInfo(true)}>
                     Edit
                   </Button>
                 )}
@@ -337,7 +337,7 @@ export const TemplateEditor: React.FC = () => {
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <Button
-                      size="small"
+                      size="sm"
                       variant="primary"
                       onClick={handleUpdateTemplateInfo}
                       loading={updateTemplateMutation.isPending}
@@ -345,7 +345,7 @@ export const TemplateEditor: React.FC = () => {
                       Save
                     </Button>
                     <Button
-                      size="small"
+                      size="sm"
                       variant="secondary"
                       onClick={() => {
                         setTemplateName(template.name);

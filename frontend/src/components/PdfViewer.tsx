@@ -78,7 +78,7 @@ const PdfViewerComponent: React.FC<PdfViewerProps> = ({
           }}
         >
           <Button
-            size="small"
+            size="sm"
             variant="secondary"
             onClick={goToPrevPage}
             disabled={currentPage <= 1}
@@ -89,7 +89,7 @@ const PdfViewerComponent: React.FC<PdfViewerProps> = ({
             Page {currentPage} of {numPages}
           </span>
           <Button
-            size="small"
+            size="sm"
             variant="secondary"
             onClick={goToNextPage}
             disabled={currentPage >= numPages}
