@@ -114,6 +114,6 @@ describe('Documents Page', () => {
     const searchInput = screen.getByPlaceholderText('Search documents by title...');
 
     fireEvent.change(searchInput, { target: { value: 'Test' } });
-    expect(screen.getByText('Clear Filters')).toBeInTheDocument();
+    expect(screen.getByText('Clear')).toBeInTheDocument();
   });
 });

@@ -40,29 +40,29 @@ describe('Button', () => {
     expect(screen.getByText('Loading...')).toBeDefined();
   });
 
-  it('should apply variant styles', () => {
+  it('should apply variant classes', () => {
     const { rerender } = render(<Button variant="primary">Primary</Button>);
     let button = screen.getByText('Primary') as HTMLButtonElement;
-    expect(button.style.backgroundColor).toBe('rgb(0, 123, 255)');
+    expect(button.className).toContain('bg-neutral');
 
     rerender(<Button variant="danger">Danger</Button>);
     button = screen.getByText('Danger') as HTMLButtonElement;
-    expect(button.style.backgroundColor).toBe('rgb(220, 53, 69)');
+    expect(button.className).toContain('bg-error');
   });
 
-  it('should apply size styles', () => {
-    const { rerender } = render(<Button size="small">Small</Button>);
+  it('should apply size classes', () => {
+    const { rerender } = render(<Button size="sm">Small</Button>);
     let button = screen.getByText('Small') as HTMLButtonElement;
-    expect(button.style.fontSize).toBe('0.875rem');
+    expect(button.className).toContain('text-sm');
 
-    rerender(<Button size="large">Large</Button>);
+    rerender(<Button size="lg">Large</Button>);
     button = screen.getByText('Large') as HTMLButtonElement;
-    expect(button.style.fontSize).toBe('1.125rem');
+    expect(button.className).toContain('text-lg');
   });
 
   it('should have full width when fullWidth is true', () => {
     render(<Button fullWidth>Full Width</Button>);
     const button = screen.getByText('Full Width') as HTMLButtonElement;
-    expect(button.style.width).toBe('100%');
+    expect(button.className).toContain('w-full');
   });
 });

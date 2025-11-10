@@ -15,9 +15,9 @@ vi.mock('signature_pad', () => ({
 describe('SignaturePad Component', () => {
   it('should render signature pad with modes', () => {
     render(<SignaturePad onSave={vi.fn()} />);
-    expect(screen.getByText('✍️ Draw')).toBeInTheDocument();
-    expect(screen.getByText('📝 Type')).toBeInTheDocument();
-    expect(screen.getByText('📤 Upload')).toBeInTheDocument();
+    expect(screen.getByText('Draw')).toBeInTheDocument();
+    expect(screen.getByText('Type')).toBeInTheDocument();
+    expect(screen.getByText('Upload')).toBeInTheDocument();
   });
 
   it('should render clear button', () => {
@@ -37,14 +37,14 @@ describe('SignaturePad Component', () => {
 
   it('should switch to typed mode when clicked', () => {
     render(<SignaturePad onSave={vi.fn()} />);
-    const typeButton = screen.getByText('📝 Type');
+    const typeButton = screen.getByText('Type');
     fireEvent.click(typeButton);
     expect(screen.getByPlaceholderText('Type your name')).toBeInTheDocument();
   });
 
   it('should switch to upload mode when clicked', () => {
     render(<SignaturePad onSave={vi.fn()} />);
-    const uploadButton = screen.getByText('📤 Upload');
+    const uploadButton = screen.getByText('Upload');
     fireEvent.click(uploadButton);
     expect(screen.getByText(/Upload PNG or JPG image/)).toBeInTheDocument();
   });

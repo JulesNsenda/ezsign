@@ -24,7 +24,7 @@ describe('FieldPalette Component', () => {
 
   it('should render help text', () => {
     renderWithDnd(<FieldPalette />);
-    expect(screen.getByText(/Drag fields onto the PDF/)).toBeInTheDocument();
+    expect(screen.getByText(/Drag and drop fields onto the PDF/)).toBeInTheDocument();
   });
 
   it('should render field icons', () => {
