@@ -198,7 +198,7 @@ export class WebhookEvent {
   static calculateNextRetry(attempts: number): Date {
     // Exponential backoff: 1min, 5min, 15min, 1hr, 6hr
     const delays = [60, 300, 900, 3600, 21600]; // in seconds
-    const delaySeconds = delays[Math.min(attempts, delays.length - 1)];
+    const delaySeconds = delays[Math.min(attempts, delays.length - 1)] ?? 60;
     return new Date(Date.now() + delaySeconds * 1000);
   }
 

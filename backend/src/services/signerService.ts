@@ -441,6 +441,8 @@ export class SignerService {
       signed_at: row.signed_at,
       ip_address: row.ip_address,
       user_agent: row.user_agent,
+      last_reminder_sent_at: row.last_reminder_sent_at,
+      reminder_count: row.reminder_count,
       created_at: row.created_at,
       updated_at: row.updated_at,
     };
