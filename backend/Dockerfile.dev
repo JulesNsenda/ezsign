@@ -1,0 +1,37 @@
+# Development Dockerfile for EzSign Backend
+FROM node:20-alpine AS development
+
+# Install dumb-init and build dependencies for native modules
+RUN apk add --no-cache \
+    dumb-init \
+    python3 \
+    make \
+    g++ \
+    cairo-dev \
+    jpeg-dev \
+    pango-dev \
+    giflib-dev \
+    pixman-dev
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including devDependencies)
+RUN npm ci
+
+# Copy source code (can be overridden by volume mount)
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p storage logs
+
+# Expose port and debugger port
+EXPOSE 3001 9229
+
+# Use dumb-init to handle signals properly
+ENTRYPOINT ["dumb-init", "--"]
+
+# Development command with hot reload
+CMD ["npm", "run", "dev"]

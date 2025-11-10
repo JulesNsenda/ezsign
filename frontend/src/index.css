@@ -1,0 +1,154 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #e4e0e1;
+  --color-secondary: #ef9fbc;
+  --color-accent: #eeaf3a;
+  --color-neutral: #291334;
+  --color-base-100: #faf7f5;
+  --color-base-200: #efeae6;
+  --color-base-300: #e7e2df;
+  --color-base-content: #291334;
+  --color-success: #10b981;
+  --color-error: #ef4444;
+  --color-warning: #f59e0b;
+  --color-info: #3b82f6;
+
+  --rounded-btn: 0.5rem;
+  --rounded-box: 0.75rem;
+
+  /* Professional shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+}
+
+/* Professional custom styles */
+@layer base {
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-base-200 text-base-content;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Better focus styles */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-neutral ring-offset-2;
+  }
+}
+
+@layer components {
+  /* Enhanced button styles */
+  .btn-docuseal {
+    @apply rounded-lg px-5 py-2.5 font-medium transition-all duration-200 shadow-sm hover:shadow-md;
+  }
+
+  /* Professional card styles with hover effect */
+  .card-docuseal {
+    @apply bg-base-100 rounded-xl shadow-sm border border-base-300/50 p-6 transition-all duration-200 hover:shadow-md;
+  }
+
+  /* Modern input styles */
+  .input-docuseal {
+    @apply w-full px-4 py-3 border border-base-300 rounded-lg bg-base-100 text-base-content placeholder:text-base-content/40
+           focus:outline-none focus:ring-2 focus:ring-neutral/20 focus:border-neutral
+           transition-all duration-200 hover:border-base-content/30;
+  }
+
+  /* Select dropdown styling */
+  .select-docuseal {
+    @apply w-full px-4 py-3 border border-base-300 rounded-lg bg-base-100 text-base-content
+           focus:outline-none focus:ring-2 focus:ring-neutral/20 focus:border-neutral
+           transition-all duration-200 hover:border-base-content/30 cursor-pointer;
+  }
+
+  /* Badge styles */
+  .badge-docuseal {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200;
+  }
+
+  /* Link styles */
+  .link-docuseal {
+    @apply text-neutral hover:text-neutral/80 transition-colors duration-200 underline-offset-4 hover:underline;
+  }
+
+  /* Divider */
+  .divider-docuseal {
+    @apply border-t border-base-300 my-6;
+  }
+}
+
+/* Custom animations */
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-in;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+
+  .animate-slide-down {
+    animation: slideDown 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      transform: translateY(10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideDown {
+    from {
+      transform: translateY(-10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #e7e2df;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #d1ccc9;
+}

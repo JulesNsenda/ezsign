@@ -1,0 +1,139 @@
+services:
+  # PostgreSQL Database - Development Override
+  postgres:
+    environment:
+      POSTGRES_USER: ezsign_dev
+      POSTGRES_PASSWORD: dev_password
+      POSTGRES_DB: ezsign_dev
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ezsign_dev']
+
+  # Redis - Development Override
+  redis:
+    ports:
+      - '6379:6379'
+
+  # Backend API - Development Override
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: ezsign-backend-dev
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgresql://ezsign_dev:dev_password@postgres:5432/ezsign_dev
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ezsign_dev
+      DATABASE_USER: ezsign_dev
+      DATABASE_PASSWORD: dev_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      LOG_LEVEL: debug
+      DEBUG: 'true'
+      WATCH: 'true'
+      # Security secrets (development only - use secure values in production)
+      JWT_SECRET: dev-jwt-secret-change-in-production
+      JWT_REFRESH_SECRET: dev-jwt-refresh-secret-change-in-production
+      API_KEY_SECRET: dev-api-key-secret-change-in-production
+      WEBHOOK_SECRET: dev-webhook-secret-change-in-production
+      # Email configuration (optional for development)
+      EMAIL_SMTP_HOST: mailhog
+      EMAIL_SMTP_PORT: 1025
+      EMAIL_FROM_ADDRESS: noreply@ezsign.dev
+      # Application URL for email links
+      APP_URL: http://localhost:3002
+      # Ensure proper line endings on Windows
+      COMPOSE_CONVERT_WINDOWS_PATHS: 1
+    volumes:
+      # Use relative paths with forward slashes for cross-platform compatibility
+      - type: bind
+        source: ./backend
+        target: /app
+        consistency: cached
+      - type: volume
+        target: /app/node_modules
+      - type: bind
+        source: ./backend/storage
+        target: /app/storage
+        consistency: delegated
+      - type: bind
+        source: ./backend/logs
+        target: /app/logs
+        consistency: delegated
+    command: npm run dev
+    ports:
+      - '3001:3001'
+      - '9229:9229' # Node.js debugger port
+    stdin_open: true
+    tty: true
+
+  # Frontend Application - Development Override
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: ezsign-frontend-dev
+    environment:
+      VITE_API_URL: http://localhost:3001
+      VITE_ENABLE_DEBUG: 'true'
+      VITE_MOCK_API: 'false'
+      # Ensure proper line endings on Windows
+      COMPOSE_CONVERT_WINDOWS_PATHS: 1
+    volumes:
+      # Use relative paths with forward slashes for cross-platform compatibility
+      - type: bind
+        source: ./frontend
+        target: /app
+        consistency: cached
+      - type: volume
+        target: /app/node_modules
+    command: npm run dev -- --host 0.0.0.0
+    ports:
+      - '3002:5173' # Vite dev server - using 3002 to avoid conflicts
+    stdin_open: true
+    tty: true
+    depends_on:
+      - backend
+
+  # Adminer - Database Management Tool (Development Only)
+  adminer:
+    image: adminer:latest
+    container_name: ezsign-adminer
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    networks:
+      - ezsign-network
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: pepa-linha
+
+  # Redis Commander - Redis Management Tool (Development Only)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: ezsign-redis-commander
+    restart: unless-stopped
+    ports:
+      - '8081:8081'
+    networks:
+      - ezsign-network
+    environment:
+      REDIS_HOSTS: local:redis:6379
+
+  # MailHog - Email Testing Tool (Development Only)
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: ezsign-mailhog
+    restart: unless-stopped
+    ports:
+      - '1025:1025' # SMTP server
+      - '8025:8025' # Web UI
+    networks:
+      - ezsign-network

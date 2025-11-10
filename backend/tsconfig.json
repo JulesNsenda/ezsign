@@ -1,0 +1,60 @@
+{
+  "compilerOptions": {
+    /* Language and Environment */
+    "target": "ES2021",
+    "lib": ["ES2021"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    /* Modules */
+    "module": "commonjs",
+    "rootDir": "./src",
+    "moduleResolution": "node",
+    "baseUrl": "./",
+    "paths": {
+      "@/*": ["src/*"],
+      "@config/*": ["src/config/*"],
+      "@controllers/*": ["src/controllers/*"],
+      "@services/*": ["src/services/*"],
+      "@models/*": ["src/models/*"],
+      "@middleware/*": ["src/middleware/*"],
+      "@utils/*": ["src/utils/*"],
+      "@routes/*": ["src/routes/*"],
+      "@jobs/*": ["src/jobs/*"]
+    },
+    "resolveJsonModule": true,
+
+    /* Emit */
+    "outDir": "./dist",
+    "removeComments": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "incremental": true,
+
+    /* Interop Constraints */
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* Type Checking */
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": false,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+
+    /* Completeness */
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}

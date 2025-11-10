@@ -1,0 +1,106 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ezsign-postgres
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-ezsign}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-ezsign_password}
+      POSTGRES_DB: ${DATABASE_NAME:-ezsign}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ezsign-network
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: ezsign-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - ezsign-network
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ezsign-backend
+    restart: unless-stopped
+    ports:
+      - '3001:3001'
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${DATABASE_NAME:-ezsign}
+      DATABASE_USER: ${DATABASE_USER:-ezsign}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-ezsign_password}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      # Use named volumes for Windows compatibility
+      - backend_storage:/app/storage
+      - backend_logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ezsign-network
+    healthcheck:
+      test: ['CMD', 'node', '-e', "require('http').get('http://localhost:3001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ezsign-frontend
+    restart: unless-stopped
+    ports:
+      - '3000:80'
+    environment:
+      VITE_API_URL: http://localhost:3001
+    depends_on:
+      - backend
+    networks:
+      - ezsign-network
+
+networks:
+  ezsign-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_storage:
+    driver: local
+  backend_logs:
+    driver: local

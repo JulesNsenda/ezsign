@@ -1,0 +1,25 @@
+# Development Dockerfile for EzSign Frontend
+FROM node:20-alpine AS development
+
+# Install dumb-init for proper signal handling
+RUN apk add --no-cache dumb-init
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies
+RUN npm ci
+
+# Copy source code (can be overridden by volume mount)
+COPY . .
+
+# Expose Vite dev server port
+EXPOSE 5173
+
+# Use dumb-init to handle signals properly
+ENTRYPOINT ["dumb-init", "--"]
+
+# Development command with hot reload and host binding
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
