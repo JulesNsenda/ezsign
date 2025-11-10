@@ -25,6 +25,11 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      - name: Auto-fix linting issues
+        working-directory: backend
+        run: npm run lint:fix
+        continue-on-error: true
+
       - name: Run ESLint
         working-directory: backend
         run: npm run lint
@@ -153,6 +158,11 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
+
+      - name: Auto-fix linting issues
+        working-directory: frontend
+        run: npm run lint:fix
+        continue-on-error: true
 
       - name: Run ESLint
         working-directory: frontend

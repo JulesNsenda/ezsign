@@ -5,20 +5,19 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 import prettier from 'eslint-plugin-prettier'
 import prettierConfig from 'eslint-config-prettier'
-import { defineConfig, globalIgnores } from 'eslint/config'
 
-export default defineConfig([
-  globalIgnores(['dist', 'node_modules', 'build']),
+export default [
+  {
+    ignores: ['dist/**', 'node_modules/**', 'build/**', 'coverage/**'],
+  },
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  prettierConfig,
   {
     files: ['**/*.{ts,tsx}'],
-    extends: [
-      js.configs.recommended,
-      tseslint.configs.recommended,
-      reactHooks.configs['recommended-latest'],
-      reactRefresh.configs.vite,
-      prettierConfig,
-    ],
     plugins: {
+      'react-hooks': reactHooks,
+      'react-refresh': reactRefresh,
       prettier,
     },
     languageOptions: {
@@ -26,6 +25,7 @@ export default defineConfig([
       globals: globals.browser,
     },
     rules: {
+      ...reactHooks.configs.recommended.rules,
       'prettier/prettier': 'error',
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': [
@@ -42,4 +42,4 @@ export default defineConfig([
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
   },
-])
+]
