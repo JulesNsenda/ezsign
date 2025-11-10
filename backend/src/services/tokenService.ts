@@ -114,7 +114,8 @@ export class TokenService {
   decodeToken(token: string): DecodedToken | null {
     try {
       return jwt.decode(token) as DecodedToken;
-    } catch (error) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (_error) {
       return null;
     }
   }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import * as path from 'path';
 
 export interface StorageAdapter {

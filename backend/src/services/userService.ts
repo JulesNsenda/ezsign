@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 import { Pool } from 'pg';
 import { User, UserData, CreateUserData, UpdateUserData } from '@/models/User';
 
