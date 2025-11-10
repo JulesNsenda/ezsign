@@ -22,7 +22,7 @@ export class WebhookPayloadService {
        FROM signers
        WHERE document_id = $1
        ORDER BY signing_order ASC NULLS LAST`,
-      [document.id]
+      [document.id],
     );
 
     const signers = signersResult.rows.map((row) => ({
@@ -57,7 +57,7 @@ export class WebhookPayloadService {
       `SELECT id, user_id, title, status, workflow_type, page_count, created_at, updated_at
        FROM documents
        WHERE id = $1`,
-      [documentId]
+      [documentId],
     );
 
     if (docResult.rows.length === 0) {
@@ -72,7 +72,7 @@ export class WebhookPayloadService {
        FROM signers
        WHERE document_id = $1
        ORDER BY signing_order ASC NULLS LAST`,
-      [documentId]
+      [documentId],
     );
 
     const signers = signersResult.rows.map((row) => ({

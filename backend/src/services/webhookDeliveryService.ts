@@ -33,7 +33,7 @@ export class WebhookDeliveryService {
     event: string,
     deliveryId: string,
     timestamp: number,
-    signature: string
+    signature: string,
   ): Record<string, string> {
     return {
       'Content-Type': 'application/json',
@@ -53,7 +53,7 @@ export class WebhookDeliveryService {
     url: string,
     secret: string,
     eventType: string,
-    payload: Record<string, any>
+    payload: Record<string, any>,
   ): Promise<WebhookDeliveryResult> {
     const startTime = Date.now();
     const deliveryId = uuidv4();
@@ -75,9 +75,10 @@ export class WebhookDeliveryService {
       });
 
       const responseTime = Date.now() - startTime;
-      const responseBody = typeof response.data === 'string'
-        ? response.data.substring(0, 1000)
-        : JSON.stringify(response.data).substring(0, 1000);
+      const responseBody =
+        typeof response.data === 'string'
+          ? response.data.substring(0, 1000)
+          : JSON.stringify(response.data).substring(0, 1000);
 
       return {
         success: response.status >= 200 && response.status < 300,
@@ -95,9 +96,10 @@ export class WebhookDeliveryService {
 
       if (axiosError.response) {
         statusCode = axiosError.response.status;
-        responseBody = typeof axiosError.response.data === 'string'
-          ? axiosError.response.data.substring(0, 1000)
-          : JSON.stringify(axiosError.response.data).substring(0, 1000);
+        responseBody =
+          typeof axiosError.response.data === 'string'
+            ? axiosError.response.data.substring(0, 1000)
+            : JSON.stringify(axiosError.response.data).substring(0, 1000);
         errorMessage = `HTTP ${statusCode}: ${axiosError.message}`;
       } else if (axiosError.code === 'ECONNABORTED') {
         errorMessage = 'Request timeout after 10 seconds';
@@ -149,7 +151,7 @@ export class WebhookDeliveryService {
     eventId: string,
     statusCode: number,
     responseBody: string | null,
-    responseTimeMs: number
+    responseTimeMs: number,
   ): Promise<void> {
     await this.pool.query(
       `UPDATE webhook_events
@@ -160,7 +162,7 @@ export class WebhookDeliveryService {
            last_attempt_at = CURRENT_TIMESTAMP,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1`,
-      [eventId, statusCode, responseBody, responseTimeMs]
+      [eventId, statusCode, responseBody, responseTimeMs],
     );
   }
 
@@ -173,7 +175,7 @@ export class WebhookDeliveryService {
     errorMessage: string,
     responseBody: string | null,
     responseTimeMs: number,
-    attempts: number
+    attempts: number,
   ): Promise<void> {
     // Calculate next retry time with exponential backoff
     const nextRetryAt = this.calculateNextRetry(attempts);
@@ -190,7 +192,7 @@ export class WebhookDeliveryService {
            last_attempt_at = CURRENT_TIMESTAMP,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1`,
-      [eventId, statusCode, errorMessage, responseBody, responseTimeMs, attempts, nextRetryAt]
+      [eventId, statusCode, errorMessage, responseBody, responseTimeMs, attempts, nextRetryAt],
     );
   }
 
@@ -200,8 +202,8 @@ export class WebhookDeliveryService {
    */
   private calculateNextRetry(attempts: number): Date | null {
     const delays = [
-      60 * 1000,      // 1 minute
-      5 * 60 * 1000,  // 5 minutes
+      60 * 1000, // 1 minute
+      5 * 60 * 1000, // 5 minutes
       30 * 60 * 1000, // 30 minutes
     ];
 
@@ -224,7 +226,7 @@ export class WebhookDeliveryService {
        FROM webhook_events we
        JOIN webhooks w ON we.webhook_id = w.id
        WHERE we.id = $1`,
-      [eventId]
+      [eventId],
     );
 
     if (eventResult.rows.length === 0) {
@@ -236,10 +238,9 @@ export class WebhookDeliveryService {
     const currentAttempts = event.attempts || 0;
 
     // Increment attempt counter
-    await this.pool.query(
-      'UPDATE webhook_events SET attempts = attempts + 1 WHERE id = $1',
-      [eventId]
-    );
+    await this.pool.query('UPDATE webhook_events SET attempts = attempts + 1 WHERE id = $1', [
+      eventId,
+    ]);
 
     // Deliver webhook
     const result = await this.deliverWebhook(
@@ -247,7 +248,7 @@ export class WebhookDeliveryService {
       event.url,
       event.secret,
       event.event_type,
-      event.payload
+      event.payload,
     );
 
     if (result.success) {
@@ -256,7 +257,7 @@ export class WebhookDeliveryService {
         eventId,
         result.status_code!,
         result.response_body,
-        result.response_time_ms
+        result.response_time_ms,
       );
       console.log(`✓ Webhook event ${eventId} delivered successfully (${result.status_code})`);
     } else {
@@ -269,16 +270,16 @@ export class WebhookDeliveryService {
         result.error_message || 'Delivery failed',
         result.response_body,
         result.response_time_ms,
-        currentAttempts + 1
+        currentAttempts + 1,
       );
 
       if (shouldRetry) {
         console.log(
-          `✗ Webhook event ${eventId} failed (${result.status_code || 'network error'}), will retry (attempt ${currentAttempts + 1}/3)`
+          `✗ Webhook event ${eventId} failed (${result.status_code || 'network error'}), will retry (attempt ${currentAttempts + 1}/3)`,
         );
       } else {
         console.log(
-          `✗ Webhook event ${eventId} failed permanently (${result.status_code || 'network error'})`
+          `✗ Webhook event ${eventId} failed permanently (${result.status_code || 'network error'})`,
         );
       }
     }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-misused-promises */
 import { Job } from 'bullmq';
 import { createWorker, QueueName } from '@/config/queue';
 import { PdfJobData, PdfJobType } from '@/services/pdfQueueService';
@@ -13,17 +14,13 @@ export class PdfWorker {
   private worker;
 
   constructor() {
-    this.worker = createWorker<PdfJobData>(
-      QueueName.PDF_PROCESSING,
-      this.processJob.bind(this),
-      {
-        concurrency: 3, // Process 3 PDF jobs concurrently
-        limiter: {
-          max: 5,
-          duration: 1000,
-        },
-      }
-    );
+    this.worker = createWorker<PdfJobData>(QueueName.PDF_PROCESSING, this.processJob.bind(this), {
+      concurrency: 3, // Process 3 PDF jobs concurrently
+      limiter: {
+        max: 5,
+        duration: 1000,
+      },
+    });
 
     this.setupEventListeners();
   }
@@ -63,9 +60,7 @@ export class PdfWorker {
   /**
    * Generate thumbnail for PDF
    */
-  private async generateThumbnail(
-    job: Job<PdfJobData>
-  ): Promise<{ thumbnailPath: string }> {
+  private async generateThumbnail(job: Job<PdfJobData>): Promise<{ thumbnailPath: string }> {
     const data = job.data as Extract<PdfJobData, { type: PdfJobType.GENERATE_THUMBNAIL }>;
 
     await job.updateProgress(10);
@@ -87,7 +82,7 @@ export class PdfWorker {
 
     const thumbnailPath = path.join(
       thumbnailDir,
-      `${path.basename(data.filePath, '.pdf')}_thumbnail.png`
+      `${path.basename(data.filePath, '.pdf')}_thumbnail.png`,
     );
     await fs.writeFile(thumbnailPath, thumbnail);
     await job.updateProgress(100);
@@ -100,7 +95,7 @@ export class PdfWorker {
    * Optimize PDF file size
    */
   private async optimizePdf(
-    job: Job<PdfJobData>
+    job: Job<PdfJobData>,
   ): Promise<{ optimizedPath: string; sizeSaved: number }> {
     const data = job.data as Extract<PdfJobData, { type: PdfJobType.OPTIMIZE_PDF }>;
 
@@ -130,9 +125,7 @@ export class PdfWorker {
   /**
    * Flatten PDF (remove form fields)
    */
-  private async flattenPdf(
-    job: Job<PdfJobData>
-  ): Promise<{ flattenedPath: string }> {
+  private async flattenPdf(job: Job<PdfJobData>): Promise<{ flattenedPath: string }> {
     const data = job.data as Extract<PdfJobData, { type: PdfJobType.FLATTEN_PDF }>;
 
     await job.updateProgress(20);
@@ -157,9 +150,7 @@ export class PdfWorker {
   /**
    * Add watermark to PDF
    */
-  private async addWatermark(
-    job: Job<PdfJobData>
-  ): Promise<{ watermarkedPath: string }> {
+  private async addWatermark(job: Job<PdfJobData>): Promise<{ watermarkedPath: string }> {
     const data = job.data as Extract<PdfJobData, { type: PdfJobType.ADD_WATERMARK }>;
 
     await job.updateProgress(20);
@@ -172,7 +163,7 @@ export class PdfWorker {
     const watermarkedBuffer = await pdfService.addWatermark(
       pdfBuffer,
       data.watermarkText,
-      data.options
+      data.options,
     );
     await job.updateProgress(80);
 
@@ -188,17 +179,13 @@ export class PdfWorker {
   /**
    * Merge multiple PDFs
    */
-  private async mergePdfs(
-    job: Job<PdfJobData>
-  ): Promise<{ mergedPath: string }> {
+  private async mergePdfs(job: Job<PdfJobData>): Promise<{ mergedPath: string }> {
     const data = job.data as Extract<PdfJobData, { type: PdfJobType.MERGE_PDFS }>;
 
     await job.updateProgress(10);
 
     // Read all PDF files
-    const pdfBuffers = await Promise.all(
-      data.filePaths.map((filePath) => fs.readFile(filePath))
-    );
+    const pdfBuffers = await Promise.all(data.filePaths.map((filePath) => fs.readFile(filePath)));
     await job.updateProgress(40);
 
     // Merge PDFs

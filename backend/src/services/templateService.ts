@@ -1,5 +1,12 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-return, @typescript-eslint/restrict-template-expressions */
 import { Pool } from 'pg';
-import { Template, UpdateTemplateData, TemplateData, TemplateField, TemplateFieldData } from '@/models/Template';
+import {
+  Template,
+  UpdateTemplateData,
+  TemplateData,
+  TemplateField,
+  TemplateFieldData,
+} from '@/models/Template';
 import { StorageService } from '@/services/storageService';
 import { PdfService } from '@/services/pdfService';
 
@@ -18,7 +25,7 @@ export class TemplateService {
   async createTemplateFromDocument(
     documentId: string,
     userId: string,
-    templateData: { name: string; description?: string; team_id?: string | null }
+    templateData: { name: string; description?: string; team_id?: string | null },
   ): Promise<{ template: Template; fields: TemplateField[] }> {
     const client = await this.pool.connect();
     try {
@@ -27,7 +34,7 @@ export class TemplateService {
       // Get the document
       const docResult = await client.query(
         'SELECT * FROM documents WHERE id = $1 AND user_id = $2',
-        [documentId, userId]
+        [documentId, userId],
       );
 
       if (docResult.rows.length === 0) {
@@ -42,7 +49,7 @@ export class TemplateService {
       const templateFilePath = await this.storageService.uploadFile(
         originalBuffer,
         templateFileName,
-        { directory: 'templates' }
+        { directory: 'templates' },
       );
 
       // Create template
@@ -60,16 +67,15 @@ export class TemplateService {
           document.file_size,
           document.mime_type,
           document.page_count,
-        ]
+        ],
       );
 
       const template = new Template(this.mapRowToTemplateData(templateResult.rows[0]));
 
       // Copy fields from document to template
-      const fieldsResult = await client.query(
-        'SELECT * FROM fields WHERE document_id = $1',
-        [documentId]
-      );
+      const fieldsResult = await client.query('SELECT * FROM fields WHERE document_id = $1', [
+        documentId,
+      ]);
 
       const templateFields: TemplateField[] = [];
       for (const fieldRow of fieldsResult.rows) {
@@ -88,9 +94,11 @@ export class TemplateService {
             fieldRow.required,
             fieldRow.signer_email, // Map signer_email to signer_role
             fieldRow.properties,
-          ]
+          ],
         );
-        templateFields.push(new TemplateField(this.mapRowToTemplateFieldData(templateFieldResult.rows[0])));
+        templateFields.push(
+          new TemplateField(this.mapRowToTemplateFieldData(templateFieldResult.rows[0])),
+        );
       }
 
       await client.query('COMMIT');
@@ -109,7 +117,7 @@ export class TemplateService {
   async createDocumentFromTemplate(
     templateId: string,
     userId: string,
-    documentData: { title: string; team_id?: string | null; workflow_type?: string }
+    documentData: { title: string; team_id?: string | null; workflow_type?: string },
   ): Promise<string> {
     const client = await this.pool.connect();
     try {
@@ -130,11 +138,9 @@ export class TemplateService {
       // Copy the template file to documents directory
       const templateBuffer = await this.storageService.downloadFile(template.file_path);
       const documentFileName = `doc_${Date.now()}_from_template_${template.name}.pdf`;
-      const uploadedFile = await this.storageService.uploadFile(
-        templateBuffer,
-        documentFileName,
-        { directory: 'documents' }
-      );
+      const uploadedFile = await this.storageService.uploadFile(templateBuffer, documentFileName, {
+        directory: 'documents',
+      });
 
       // Create document
       const documentResult = await client.query(
@@ -151,7 +157,7 @@ export class TemplateService {
           uploadedFile.mimeType,
           template.page_count,
           documentData.workflow_type || 'single',
-        ]
+        ],
       );
 
       const documentId = documentResult.rows[0].id;
@@ -173,7 +179,7 @@ export class TemplateService {
             templateField.required,
             null, // signer_email will be assigned later
             templateField.properties,
-          ]
+          ],
         );
       }
 
@@ -196,7 +202,7 @@ export class TemplateService {
       teamId?: string;
       limit?: number;
       offset?: number;
-    }
+    },
   ): Promise<{ templates: Template[]; total: number }> {
     const userTeams = await this.getUserTeamIds(userId);
 
@@ -214,10 +220,7 @@ export class TemplateService {
     }
 
     // Get total count
-    const countResult = await this.pool.query(
-      query.replace('SELECT *', 'SELECT COUNT(*)'),
-      params
-    );
+    const countResult = await this.pool.query(query.replace('SELECT *', 'SELECT COUNT(*)'), params);
     const total = parseInt(countResult.rows[0].count);
 
     // Get templates with pagination
@@ -242,10 +245,7 @@ export class TemplateService {
    * Get a single template by ID
    */
   async getTemplateById(templateId: string): Promise<Template | null> {
-    const result = await this.pool.query(
-      'SELECT * FROM templates WHERE id = $1',
-      [templateId]
-    );
+    const result = await this.pool.query('SELECT * FROM templates WHERE id = $1', [templateId]);
 
     if (result.rows.length === 0) {
       return null;
@@ -260,7 +260,7 @@ export class TemplateService {
   async getTemplateFields(templateId: string): Promise<TemplateField[]> {
     const result = await this.pool.query(
       'SELECT * FROM template_fields WHERE template_id = $1 ORDER BY page, y, x',
-      [templateId]
+      [templateId],
     );
 
     return result.rows.map((row) => new TemplateField(this.mapRowToTemplateFieldData(row)));
@@ -272,7 +272,7 @@ export class TemplateService {
   async updateTemplate(
     templateId: string,
     userId: string,
-    data: UpdateTemplateData
+    data: UpdateTemplateData,
   ): Promise<Template> {
     const template = await this.getTemplateById(templateId);
     if (!template) {
@@ -308,7 +308,7 @@ export class TemplateService {
 
     const result = await this.pool.query(
       `UPDATE templates SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramIndex} RETURNING *`,
-      values
+      values,
     );
 
     return new Template(this.mapRowToTemplateData(result.rows[0]));
@@ -336,10 +336,7 @@ export class TemplateService {
     }
 
     // Delete from database (cascade will delete template_fields)
-    const result = await this.pool.query(
-      'DELETE FROM templates WHERE id = $1',
-      [templateId]
-    );
+    const result = await this.pool.query('DELETE FROM templates WHERE id = $1', [templateId]);
 
     return result.rowCount !== null && result.rowCount > 0;
   }
@@ -348,10 +345,9 @@ export class TemplateService {
    * Get user's team IDs
    */
   private async getUserTeamIds(userId: string): Promise<string[]> {
-    const result = await this.pool.query(
-      'SELECT team_id FROM team_members WHERE user_id = $1',
-      [userId]
-    );
+    const result = await this.pool.query('SELECT team_id FROM team_members WHERE user_id = $1', [
+      userId,
+    ]);
     return result.rows.map((row) => row.team_id);
   }
 

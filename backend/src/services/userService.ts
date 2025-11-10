@@ -129,11 +129,7 @@ export class UserService {
   /**
    * Update user's email verification token
    */
-  async updateEmailVerificationToken(
-    id: string,
-    token: string,
-    expires: Date
-  ): Promise<void> {
+  async updateEmailVerificationToken(id: string, token: string, expires: Date): Promise<void> {
     const query = `
       UPDATE users
       SET email_verification_token = $1,
@@ -162,11 +158,7 @@ export class UserService {
   /**
    * Update user's password reset token
    */
-  async updatePasswordResetToken(
-    id: string,
-    token: string,
-    expires: Date
-  ): Promise<void> {
+  async updatePasswordResetToken(id: string, token: string, expires: Date): Promise<void> {
     const query = `
       UPDATE users
       SET password_reset_token = $1,

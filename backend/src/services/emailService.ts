@@ -125,9 +125,7 @@ export class EmailService {
   /**
    * Send password change notification
    */
-  async sendPasswordChangeNotification(
-    data: PasswordChangeEmailData
-  ): Promise<void> {
+  async sendPasswordChangeNotification(data: PasswordChangeEmailData): Promise<void> {
     const subject = 'Password Changed - EzSign';
 
     const html = this.generatePasswordChangeHtml(data);
@@ -181,9 +179,10 @@ export class EmailService {
             </div>
             <div class="content">
               <p>Hello ${data.recipientName},</p>
-              ${data.isReminder
-                ? `<p>This is a friendly reminder that <strong>${data.senderName}</strong> is waiting for your signature on the following document:</p>`
-                : `<p><strong>${data.senderName}</strong> has requested your signature on the following document:</p>`
+              ${
+                data.isReminder
+                  ? `<p>This is a friendly reminder that <strong>${data.senderName}</strong> is waiting for your signature on the following document:</p>`
+                  : `<p><strong>${data.senderName}</strong> has requested your signature on the following document:</p>`
               }
               <h3>${data.documentTitle}</h3>
               ${data.isReminder ? '<div class="reminder"><strong>⏰ Action Required:</strong> Please review and sign this document at your earliest convenience.</div>' : ''}
@@ -272,12 +271,16 @@ This is an automated email from EzSign. Please do not reply to this email.
               <div class="info">
                 <strong>Completed on:</strong> ${formattedDate}
               </div>
-              ${data.downloadUrl ? `
+              ${
+                data.downloadUrl
+                  ? `
               <p>You can download the signed document using the button below:</p>
               <div style="text-align: center;">
                 <a href="${data.downloadUrl}" class="button">Download Document</a>
               </div>
-              ` : ''}
+              `
+                  : ''
+              }
             </div>
             <div class="footer">
               <p>This is an automated email from EzSign. Please do not reply to this email.</p>
@@ -437,11 +440,15 @@ This is an automated email from EzSign. Please do not reply to this email.
               <div class="warning">
                 <strong>⚠️ Didn't make this change?</strong><br>
                 If you did not change your password, someone may have accessed your account. Please reset your password immediately.
-                ${data.resetPasswordUrl ? `
+                ${
+                  data.resetPasswordUrl
+                    ? `
                 <div style="text-align: center; margin-top: 15px;">
                   <a href="${data.resetPasswordUrl}" class="button">Reset Password</a>
                 </div>
-                ` : ''}
+                `
+                    : ''
+                }
               </div>
               <p>If you made this change, you can safely ignore this email.</p>
             </div>

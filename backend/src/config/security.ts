@@ -23,7 +23,7 @@ export const configureSecurity = (app: Express): void => {
         includeSubDomains: true,
         preload: true,
       },
-    })
+    }),
   );
 
   // CORS configuration
@@ -46,7 +46,7 @@ export const configureSecurity = (app: Express): void => {
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
-    })
+    }),
   );
 
   // Request logging
@@ -55,7 +55,7 @@ export const configureSecurity = (app: Express): void => {
     app.use(
       morgan('combined', {
         skip: (_req, res) => res.statusCode < 400,
-      })
+      }),
     );
   } else {
     // Development: Log all requests

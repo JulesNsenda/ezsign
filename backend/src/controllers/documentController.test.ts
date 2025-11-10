@@ -367,13 +367,10 @@ describe('DocumentController', () => {
 
       await controller.download(mockRequest, mockResponse);
 
-      expect(mockResponse.setHeader).toHaveBeenCalledWith(
-        'Content-Type',
-        'application/pdf'
-      );
+      expect(mockResponse.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
       expect(mockResponse.setHeader).toHaveBeenCalledWith(
         'Content-Disposition',
-        'attachment; filename="test.pdf"'
+        'attachment; filename="test.pdf"',
       );
       expect(mockResponse.send).toHaveBeenCalledWith(mockFileBuffer);
     });

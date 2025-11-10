@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-namespace, @typescript-eslint/no-unused-vars */
 import { Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { ApiKeyService } from '@/services/apiKeyService';
@@ -39,11 +40,7 @@ export const createApiKeyAuth = (pool: Pool) => {
    * Middleware to authenticate API keys
    * Extracts key from X-API-Key header and validates it
    */
-  return async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<void> => {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const apiKeyHeader = req.headers['x-api-key'] as string | undefined;
 
@@ -99,11 +96,7 @@ export const createApiKeyAuth = (pool: Pool) => {
 export const createDualAuth = (pool: Pool) => {
   const apiKeyService = new ApiKeyService(pool);
 
-  return async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<void> => {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     // Check for JWT token first
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -160,8 +153,6 @@ export const createDualAuth = (pool: Pool) => {
 /**
  * Type guard to check if request is API key authenticated
  */
-export const isApiKeyAuthenticated = (
-  req: Request
-): req is ApiKeyAuthenticatedRequest => {
+export const isApiKeyAuthenticated = (req: Request): req is ApiKeyAuthenticatedRequest => {
   return req.apiKey !== undefined;
 };

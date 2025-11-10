@@ -23,9 +23,7 @@ describe('TokenService', () => {
       const originalSecret = process.env.JWT_SECRET;
       delete process.env.JWT_SECRET;
 
-      expect(() => new TokenService()).toThrow(
-        'JWT_SECRET environment variable is required'
-      );
+      expect(() => new TokenService()).toThrow('JWT_SECRET environment variable is required');
 
       process.env.JWT_SECRET = originalSecret;
     });
@@ -109,9 +107,7 @@ describe('TokenService', () => {
     });
 
     it('should throw error for invalid token', () => {
-      expect(() => tokenService.verifyAccessToken('invalid-token')).toThrow(
-        'Invalid access token'
-      );
+      expect(() => tokenService.verifyAccessToken('invalid-token')).toThrow('Invalid access token');
     });
 
     it('should throw error for expired token', () => {
@@ -130,7 +126,7 @@ describe('TokenService', () => {
       // Wait a moment to ensure token is expired
       setTimeout(() => {
         expect(() => tokenService.verifyAccessToken(expiredToken)).toThrow(
-          'Access token has expired'
+          'Access token has expired',
         );
       }, 100);
     });
@@ -154,7 +150,7 @@ describe('TokenService', () => {
 
     it('should throw error for invalid token', () => {
       expect(() => tokenService.verifyRefreshToken('invalid-token')).toThrow(
-        'Invalid refresh token'
+        'Invalid refresh token',
       );
     });
   });

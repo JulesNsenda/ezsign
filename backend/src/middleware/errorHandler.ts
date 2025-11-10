@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 import { Request, Response, NextFunction } from 'express';
 
 export interface ApiError extends Error {
@@ -13,7 +14,7 @@ export const errorHandler = (
   err: ApiError,
   _req: Request,
   res: Response,
-  _next: NextFunction
+  _next: NextFunction,
 ): void => {
   const statusCode = err.statusCode || 500;
   const message = err.message || 'Internal Server Error';
@@ -55,7 +56,7 @@ export const createApiError = (
   message: string,
   statusCode: number = 500,
   code?: string,
-  details?: any
+  details?: any,
 ): ApiError => {
   const error: ApiError = new Error(message);
   error.statusCode = statusCode;

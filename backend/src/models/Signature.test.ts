@@ -6,7 +6,8 @@ describe('Signature Model', () => {
     signer_id: 'signer-123',
     field_id: 'field-123',
     signature_type: 'drawn',
-    signature_data: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    signature_data:
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
     text_value: null,
     font_family: null,
     ip_address: '192.168.1.1',

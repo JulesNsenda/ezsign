@@ -146,7 +146,10 @@ export class Field {
   /**
    * Validate field position and dimensions
    */
-  validateBounds(pageWidth: number, pageHeight: number): {
+  validateBounds(
+    pageWidth: number,
+    pageHeight: number,
+  ): {
     valid: boolean;
     errors: string[];
   } {
@@ -175,14 +178,10 @@ export class Field {
 
     // Check if field fits within page bounds
     if (this.x + this.width > pageWidth) {
-      errors.push(
-        `Field extends beyond page width (${this.x + this.width} > ${pageWidth})`
-      );
+      errors.push(`Field extends beyond page width (${this.x + this.width} > ${pageWidth})`);
     }
     if (this.y + this.height > pageHeight) {
-      errors.push(
-        `Field extends beyond page height (${this.y + this.height} > ${pageHeight})`
-      );
+      errors.push(`Field extends beyond page height (${this.y + this.height} > ${pageHeight})`);
     }
 
     return {

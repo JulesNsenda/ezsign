@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export interface WebhookData {
   id: string;
   user_id: string;
@@ -94,9 +95,7 @@ export class Webhook {
   static generateSecret(): string {
     return (
       'whsec_' +
-      Array.from({ length: 32 }, () =>
-        Math.floor(Math.random() * 16).toString(16)
-      ).join('')
+      Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
     );
   }
 

@@ -32,10 +32,7 @@ export class TeamService {
         RETURNING id, name, owner_id, created_at, updated_at
       `;
 
-      const teamResult = await client.query<TeamData>(teamQuery, [
-        data.name,
-        data.owner_id,
-      ]);
+      const teamResult = await client.query<TeamData>(teamQuery, [data.name, data.owner_id]);
 
       const team = new Team(teamResult.rows[0]);
 
@@ -151,10 +148,7 @@ export class TeamService {
   /**
    * Add a member to a team
    */
-  async addMember(
-    teamId: string,
-    data: AddTeamMemberData
-  ): Promise<TeamMember> {
+  async addMember(teamId: string, data: AddTeamMemberData): Promise<TeamMember> {
     const role = data.role || 'member';
 
     const query = `
@@ -163,11 +157,7 @@ export class TeamService {
       RETURNING team_id, user_id, role, created_at
     `;
 
-    const result = await this.pool.query<TeamMemberData>(query, [
-      teamId,
-      data.user_id,
-      role,
-    ]);
+    const result = await this.pool.query<TeamMemberData>(query, [teamId, data.user_id, role]);
 
     return new TeamMember(result.rows[0]);
   }
@@ -205,20 +195,14 @@ export class TeamService {
   /**
    * Get a specific team member
    */
-  async getMember(
-    teamId: string,
-    userId: string
-  ): Promise<TeamMember | null> {
+  async getMember(teamId: string, userId: string): Promise<TeamMember | null> {
     const query = `
       SELECT team_id, user_id, role, created_at
       FROM team_members
       WHERE team_id = $1 AND user_id = $2
     `;
 
-    const result = await this.pool.query<TeamMemberData>(query, [
-      teamId,
-      userId,
-    ]);
+    const result = await this.pool.query<TeamMemberData>(query, [teamId, userId]);
 
     if (result.rows.length === 0) {
       return null;
@@ -233,7 +217,7 @@ export class TeamService {
   async updateMemberRole(
     teamId: string,
     userId: string,
-    role: 'owner' | 'admin' | 'member'
+    role: 'owner' | 'admin' | 'member',
   ): Promise<TeamMember | null> {
     const query = `
       UPDATE team_members
@@ -242,11 +226,7 @@ export class TeamService {
       RETURNING team_id, user_id, role, created_at
     `;
 
-    const result = await this.pool.query<TeamMemberData>(query, [
-      role,
-      teamId,
-      userId,
-    ]);
+    const result = await this.pool.query<TeamMemberData>(query, [role, teamId, userId]);
 
     if (result.rows.length === 0) {
       return null;
@@ -280,10 +260,7 @@ export class TeamService {
       WHERE team_id = $1 AND user_id = $2
     `;
 
-    const result = await this.pool.query<{ role: string }>(query, [
-      teamId,
-      userId,
-    ]);
+    const result = await this.pool.query<{ role: string }>(query, [teamId, userId]);
 
     if (result.rows.length === 0) {
       return false;

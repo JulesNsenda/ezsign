@@ -78,7 +78,7 @@ describe('PdfService', () => {
           x: 100,
           y: 700,
           text: 'Test',
-        })
+        }),
       ).rejects.toThrow('Page 10 does not exist');
     });
   });
@@ -135,10 +135,7 @@ describe('PdfService', () => {
       pdfDoc2.addPage([600, 800]);
       const pdf2Bytes = await pdfDoc2.save();
 
-      const result = await pdfService.mergePdfs([
-        Buffer.from(pdf1Bytes),
-        Buffer.from(pdf2Bytes),
-      ]);
+      const result = await pdfService.mergePdfs([Buffer.from(pdf1Bytes), Buffer.from(pdf2Bytes)]);
 
       expect(result).toBeInstanceOf(Buffer);
 
@@ -178,15 +175,11 @@ describe('PdfService', () => {
 
   describe('addWatermark', () => {
     it('should add watermark to all pages', async () => {
-      const result = await pdfService.addWatermark(
-        samplePdfBuffer,
-        'CONFIDENTIAL',
-        {
-          fontSize: 48,
-          opacity: 0.3,
-          rotation: 45,
-        }
-      );
+      const result = await pdfService.addWatermark(samplePdfBuffer, 'CONFIDENTIAL', {
+        fontSize: 48,
+        opacity: 0.3,
+        rotation: 45,
+      });
 
       expect(result).toBeInstanceOf(Buffer);
       expect(result.length).toBeGreaterThan(0);
@@ -197,10 +190,7 @@ describe('PdfService', () => {
     });
 
     it('should use default options if not provided', async () => {
-      const result = await pdfService.addWatermark(
-        samplePdfBuffer,
-        'WATERMARK'
-      );
+      const result = await pdfService.addWatermark(samplePdfBuffer, 'WATERMARK');
 
       expect(result).toBeInstanceOf(Buffer);
       expect(result.length).toBeGreaterThan(0);
@@ -227,10 +217,7 @@ describe('PdfService', () => {
         documentId: 'doc-123',
       };
 
-      const result = await pdfService.addCertificate(
-        samplePdfBuffer,
-        certificateData
-      );
+      const result = await pdfService.addCertificate(samplePdfBuffer, certificateData);
 
       expect(result).toBeInstanceOf(Buffer);
 

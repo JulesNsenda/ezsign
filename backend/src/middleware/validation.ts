@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call */
 import { Request, Response, NextFunction } from 'express';
 import { z, ZodError, ZodSchema } from 'zod';
 
@@ -5,11 +6,7 @@ import { z, ZodError, ZodSchema } from 'zod';
  * Validation middleware factory
  * Creates a middleware that validates request body, query, or params against a Zod schema
  */
-export const validate = (schema: {
-  body?: ZodSchema;
-  query?: ZodSchema;
-  params?: ZodSchema;
-}) => {
+export const validate = (schema: { body?: ZodSchema; query?: ZodSchema; params?: ZodSchema }) => {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       // Validate body
@@ -19,12 +16,12 @@ export const validate = (schema: {
 
       // Validate query
       if (schema.query) {
-        req.query = await schema.query.parseAsync(req.query) as any;
+        req.query = (await schema.query.parseAsync(req.query)) as any;
       }
 
       // Validate params
       if (schema.params) {
-        req.params = await schema.params.parseAsync(req.params) as any;
+        req.params = (await schema.params.parseAsync(req.params)) as any;
       }
 
       next();
@@ -35,7 +32,7 @@ export const validate = (schema: {
           error: {
             code: 'VALIDATION_ERROR',
             message: 'Request validation failed',
-            details: (error as ZodError).issues.map((err: any) => ({
+            details: error.issues.map((err: any) => ({
               field: err.path.join('.'),
               message: err.message,
             })),

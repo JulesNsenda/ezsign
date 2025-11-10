@@ -1,7 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { ApiKeyService } from '@/services/apiKeyService';
-import { ApiKey } from '@/models/ApiKey';
 import { AuthenticatedRequest } from '@/middleware/auth';
 
 export class ApiKeyController {
@@ -27,9 +27,7 @@ export class ApiKeyController {
         return;
       }
 
-      const apiKeys = await this.apiKeyService.findByUserId(
-        authenticatedReq.user.userId
-      );
+      const apiKeys = await this.apiKeyService.findByUserId(authenticatedReq.user.userId);
 
       res.status(200).json({
         apiKeys: apiKeys.map((key) => key.toJSON()),

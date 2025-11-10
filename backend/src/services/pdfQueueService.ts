@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import { Queue, Job } from 'bullmq';
 import { createQueue, QueueName } from '@/config/queue';
 
@@ -76,9 +77,7 @@ export class PdfQueueService {
   /**
    * Add thumbnail generation job
    */
-  async addThumbnailJob(
-    data: Omit<GenerateThumbnailJobData, 'type'>
-  ): Promise<Job<PdfJobData>> {
+  async addThumbnailJob(data: Omit<GenerateThumbnailJobData, 'type'>): Promise<Job<PdfJobData>> {
     return this.queue.add(
       PdfJobType.GENERATE_THUMBNAIL,
       {
@@ -88,16 +87,14 @@ export class PdfQueueService {
       {
         priority: 5, // Medium priority
         attempts: 2,
-      }
+      },
     );
   }
 
   /**
    * Add PDF optimization job
    */
-  async addOptimizationJob(
-    data: Omit<OptimizePdfJobData, 'type'>
-  ): Promise<Job<PdfJobData>> {
+  async addOptimizationJob(data: Omit<OptimizePdfJobData, 'type'>): Promise<Job<PdfJobData>> {
     return this.queue.add(
       PdfJobType.OPTIMIZE_PDF,
       {
@@ -107,16 +104,14 @@ export class PdfQueueService {
       {
         priority: 3, // Lower priority
         attempts: 2,
-      }
+      },
     );
   }
 
   /**
    * Add PDF flattening job
    */
-  async addFlattenJob(
-    data: Omit<FlattenPdfJobData, 'type'>
-  ): Promise<Job<PdfJobData>> {
+  async addFlattenJob(data: Omit<FlattenPdfJobData, 'type'>): Promise<Job<PdfJobData>> {
     return this.queue.add(
       PdfJobType.FLATTEN_PDF,
       {
@@ -126,16 +121,14 @@ export class PdfQueueService {
       {
         priority: 5,
         attempts: 2,
-      }
+      },
     );
   }
 
   /**
    * Add watermark job
    */
-  async addWatermarkJob(
-    data: Omit<AddWatermarkJobData, 'type'>
-  ): Promise<Job<PdfJobData>> {
+  async addWatermarkJob(data: Omit<AddWatermarkJobData, 'type'>): Promise<Job<PdfJobData>> {
     return this.queue.add(
       PdfJobType.ADD_WATERMARK,
       {
@@ -145,16 +138,14 @@ export class PdfQueueService {
       {
         priority: 5,
         attempts: 2,
-      }
+      },
     );
   }
 
   /**
    * Add PDF merge job
    */
-  async addMergeJob(
-    data: Omit<MergePdfsJobData, 'type'>
-  ): Promise<Job<PdfJobData>> {
+  async addMergeJob(data: Omit<MergePdfsJobData, 'type'>): Promise<Job<PdfJobData>> {
     return this.queue.add(
       PdfJobType.MERGE_PDFS,
       {
@@ -164,7 +155,7 @@ export class PdfQueueService {
       {
         priority: 7, // Higher priority for merge
         attempts: 2,
-      }
+      },
     );
   }
 

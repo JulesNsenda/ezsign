@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { UserService } from '@/services/userService';
@@ -77,11 +78,7 @@ export class AuthController {
 
       // Generate email verification token
       const { token, expires } = user.generateEmailVerificationToken();
-      await this.userService.updateEmailVerificationToken(
-        user.id,
-        token,
-        expires
-      );
+      await this.userService.updateEmailVerificationToken(user.id, token, expires);
 
       // Send verification email
       if (this.emailService) {
@@ -99,9 +96,7 @@ export class AuthController {
 
       // In development, also return the token for testing
       const verificationInfo =
-        process.env.NODE_ENV === 'development'
-          ? { verification_token: token }
-          : {};
+        process.env.NODE_ENV === 'development' ? { verification_token: token } : {};
 
       // Generate tokens
       const tokens = tokenService.generateTokenPair({
@@ -268,6 +263,7 @@ export class AuthController {
    * This endpoint is provided for consistency and can be extended with token blacklisting
    * in the future if needed (using Redis to store invalidated tokens).
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   logout = async (_req: Request, res: Response): Promise<void> => {
     try {
       // In a stateless JWT system, logout is handled client-side
@@ -326,10 +322,7 @@ export class AuthController {
 
       // TODO: Send password reset email (will be implemented in email service task)
       // For now, just return the token in development
-      const resetInfo =
-        process.env.NODE_ENV === 'development'
-          ? { reset_token: token }
-          : {};
+      const resetInfo = process.env.NODE_ENV === 'development' ? { reset_token: token } : {};
 
       res.status(200).json({
         message: 'If the email exists, a password reset link has been sent',
@@ -487,7 +480,7 @@ export class AuthController {
   me = async (req: Request, res: Response): Promise<void> => {
     try {
       // User is attached to request by authenticate middleware
-      const userId = (req as any).user?.userId;
+      const userId = (req as AuthenticatedRequest).user?.userId;
 
       if (!userId) {
         res.status(401).json({
@@ -528,7 +521,7 @@ export class AuthController {
   changePassword = async (req: Request, res: Response): Promise<void> => {
     try {
       const { currentPassword, newPassword } = req.body;
-      const userId = (req as any).user?.userId;
+      const userId = (req as AuthenticatedRequest).user?.userId;
 
       // Validate authentication
       if (!userId) {

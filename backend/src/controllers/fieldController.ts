@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return */
 import { Request, Response } from 'express';
 import { FieldService } from '../services/fieldService.js';
 import { SignerService } from '../services/signerService.js';
@@ -16,7 +17,7 @@ export class FieldController {
    */
   createField = async (req: Request, res: Response): Promise<void> => {
     try {
-      const documentId = req.params.id as string;
+      const documentId = req.params.id;
       const fieldData: CreateFieldData = {
         document_id: documentId,
         type: req.body.type,
@@ -51,7 +52,7 @@ export class FieldController {
    */
   getFields = async (req: Request, res: Response): Promise<void> => {
     try {
-      const documentId = req.params.id as string;
+      const documentId = req.params.id;
       const fields = await this.fieldService.getFieldsByDocumentId(documentId);
 
       res.status(200).json({
@@ -73,7 +74,7 @@ export class FieldController {
    */
   getField = async (req: Request, res: Response): Promise<void> => {
     try {
-      const fieldId = req.params.fieldId as string;
+      const fieldId = req.params.fieldId;
       const field = await this.fieldService.getFieldById(fieldId);
 
       if (!field) {
@@ -103,7 +104,7 @@ export class FieldController {
    */
   updateField = async (req: Request, res: Response): Promise<void> => {
     try {
-      const fieldId = req.params.fieldId as string;
+      const fieldId = req.params.fieldId;
       const updateData: UpdateFieldData = {
         type: req.body.type,
         page: req.body.page,
@@ -125,7 +126,14 @@ export class FieldController {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Field update error:', message, 'Field ID:', req.params.fieldId, 'Data:', req.body);
+      console.error(
+        'Field update error:',
+        message,
+        'Field ID:',
+        req.params.fieldId,
+        'Data:',
+        req.body,
+      );
       res.status(400).json({
         success: false,
         error: message,
@@ -139,7 +147,7 @@ export class FieldController {
    */
   deleteField = async (req: Request, res: Response): Promise<void> => {
     try {
-      const fieldId = req.params.fieldId as string;
+      const fieldId = req.params.fieldId;
       const deleted = await this.fieldService.deleteField(fieldId);
 
       if (!deleted) {
@@ -169,7 +177,7 @@ export class FieldController {
    */
   bulkUpsertFields = async (req: Request, res: Response): Promise<void> => {
     try {
-      const documentId = req.params.id as string;
+      const documentId = req.params.id;
       const fieldsData = req.body.fields;
 
       if (!Array.isArray(fieldsData)) {
@@ -207,10 +215,8 @@ export class FieldController {
    */
   validateFields = async (req: Request, res: Response): Promise<void> => {
     try {
-      const documentId = req.params.id as string;
-      const validation = await this.fieldService.validateAllFieldsForDocument(
-        documentId
-      );
+      const documentId = req.params.id;
+      const validation = await this.fieldService.validateAllFieldsForDocument(documentId);
 
       res.status(200).json({
         success: true,

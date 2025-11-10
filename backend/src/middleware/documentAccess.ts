@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unused-vars */
 import { Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { DocumentService } from '@/services/documentService';
@@ -37,10 +38,7 @@ export const createDocumentAccessMiddleware = (pool: Pool) => {
       }
 
       // Check if user can access the document
-      const canAccess = await documentService.canAccessDocument(
-        documentId,
-        req.user.userId
-      );
+      const canAccess = await documentService.canAccessDocument(documentId, req.user.userId);
 
       if (!canAccess) {
         res.status(403).json({

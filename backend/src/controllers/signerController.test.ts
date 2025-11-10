@@ -31,7 +31,7 @@ describe('SignerController - resendSigningEmail', () => {
       mockSignerService,
       mockPool,
       mockDocumentService,
-      mockEmailService
+      mockEmailService,
     );
 
     mockRequest = {
@@ -415,19 +415,13 @@ describe('SignerController - resendSigningEmail', () => {
         isReminder: true,
       });
 
-      expect(mockPool.query).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE signers'),
-        ['signer-123']
-      );
+      expect(mockPool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE signers'), [
+        'signer-123',
+      ]);
 
       expect(mockPool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO audit_events'),
-        [
-          'doc-123',
-          'user-123',
-          'signer_reminder_sent',
-          expect.stringContaining('signer-123'),
-        ]
+        ['doc-123', 'user-123', 'signer_reminder_sent', expect.stringContaining('signer-123')],
       );
 
       expect(mockResponse.status).toHaveBeenCalledWith(200);

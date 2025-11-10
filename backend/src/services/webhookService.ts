@@ -1,7 +1,14 @@
 import { Pool } from 'pg';
 import crypto from 'crypto';
 import axios from 'axios';
-import { Webhook, WebhookData, WebhookEvent, WebhookEventData, CreateWebhookData, UpdateWebhookData } from '@/models/Webhook';
+import {
+  Webhook,
+  WebhookData,
+  WebhookEvent,
+  WebhookEventData,
+  CreateWebhookData,
+  UpdateWebhookData,
+} from '@/models/Webhook';
 import { createQueue, QueueName } from '@/config/queue';
 import { WebhookJobData } from '@/workers/webhookWorker';
 
@@ -24,7 +31,7 @@ export class WebhookService {
       `INSERT INTO webhooks (user_id, url, events, secret, active)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [data.user_id, data.url, data.events, secret, data.active ?? true]
+      [data.user_id, data.url, data.events, secret, data.active ?? true],
     );
 
     return new Webhook(this.mapRowToWebhookData(result.rows[0]));
@@ -36,7 +43,7 @@ export class WebhookService {
   async getWebhooks(userId: string): Promise<Webhook[]> {
     const result = await this.pool.query(
       'SELECT * FROM webhooks WHERE user_id = $1 ORDER BY created_at DESC',
-      [userId]
+      [userId],
     );
 
     return result.rows.map((row) => new Webhook(this.mapRowToWebhookData(row)));
@@ -46,10 +53,7 @@ export class WebhookService {
    * Get webhook by ID
    */
   async getWebhookById(webhookId: string): Promise<Webhook | null> {
-    const result = await this.pool.query(
-      'SELECT * FROM webhooks WHERE id = $1',
-      [webhookId]
-    );
+    const result = await this.pool.query('SELECT * FROM webhooks WHERE id = $1', [webhookId]);
 
     if (result.rows.length === 0) {
       return null;
@@ -61,7 +65,11 @@ export class WebhookService {
   /**
    * Update webhook
    */
-  async updateWebhook(webhookId: string, userId: string, data: UpdateWebhookData): Promise<Webhook> {
+  async updateWebhook(
+    webhookId: string,
+    userId: string,
+    data: UpdateWebhookData,
+  ): Promise<Webhook> {
     const updates: string[] = [];
     const values: any[] = [];
     let paramIndex = 1;
@@ -91,7 +99,7 @@ export class WebhookService {
       `UPDATE webhooks SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP
        WHERE id = $${paramIndex} AND user_id = $${paramIndex + 1}
        RETURNING *`,
-      values
+      values,
     );
 
     if (result.rows.length === 0) {
@@ -105,10 +113,10 @@ export class WebhookService {
    * Delete webhook
    */
   async deleteWebhook(webhookId: string, userId: string): Promise<boolean> {
-    const result = await this.pool.query(
-      'DELETE FROM webhooks WHERE id = $1 AND user_id = $2',
-      [webhookId, userId]
-    );
+    const result = await this.pool.query('DELETE FROM webhooks WHERE id = $1 AND user_id = $2', [
+      webhookId,
+      userId,
+    ]);
 
     return result.rowCount !== null && result.rowCount > 0;
   }
@@ -117,11 +125,7 @@ export class WebhookService {
    * Trigger webhook event (queue for background delivery)
    * This method finds all active webhooks listening to the event type and queues them for delivery
    */
-  async trigger(
-    userId: string,
-    eventType: string,
-    payload: Record<string, any>
-  ): Promise<void> {
+  async trigger(userId: string, eventType: string, payload: Record<string, any>): Promise<void> {
     // Find all active webhooks for this user that listen to this event type
     const webhooks = await this.getWebhooks(userId);
     const activeWebhooks = webhooks.filter((w) => w.isActive() && w.listensToEvent(eventType));
@@ -141,7 +145,7 @@ export class WebhookService {
           `INSERT INTO webhook_events (webhook_id, event_type, payload, status, attempts)
            VALUES ($1, $2, $3, 'pending', 0)
            RETURNING id`,
-          [webhook.id, eventType, JSON.stringify(payload)]
+          [webhook.id, eventType, JSON.stringify(payload)],
         );
 
         const eventId = result.rows[0].id;
@@ -168,7 +172,11 @@ export class WebhookService {
   /**
    * Deliver webhook event
    */
-  async deliverWebhook(webhook: Webhook, eventType: string, payload: Record<string, any>): Promise<void> {
+  async deliverWebhook(
+    webhook: Webhook,
+    eventType: string,
+    payload: Record<string, any>,
+  ): Promise<void> {
     if (!webhook.isActive() || !webhook.listensToEvent(eventType)) {
       return;
     }
@@ -193,18 +201,14 @@ export class WebhookService {
       await this.markWebhookEventDelivered(
         webhookEvent.id,
         response.status,
-        response.data ? JSON.stringify(response.data).substring(0, 1000) : null
+        response.data ? JSON.stringify(response.data).substring(0, 1000) : null,
       );
     } catch (error: any) {
       const errorMessage = error.message || 'Unknown error';
       const responseStatus = error.response?.status || null;
 
       // Mark as failed and calculate next retry
-      await this.markWebhookEventFailed(
-        webhookEvent.id,
-        responseStatus,
-        errorMessage
-      );
+      await this.markWebhookEventFailed(webhookEvent.id, responseStatus, errorMessage);
     }
   }
 
@@ -214,13 +218,13 @@ export class WebhookService {
   private async createWebhookEvent(
     webhookId: string,
     eventType: string,
-    payload: Record<string, any>
+    payload: Record<string, any>,
   ): Promise<WebhookEvent> {
     const result = await this.pool.query(
       `INSERT INTO webhook_events (webhook_id, event_type, payload, status, attempts)
        VALUES ($1, $2, $3, 'pending', 1)
        RETURNING *`,
-      [webhookId, eventType, JSON.stringify(payload)]
+      [webhookId, eventType, JSON.stringify(payload)],
     );
 
     return new WebhookEvent(this.mapRowToWebhookEventData(result.rows[0]));
@@ -232,13 +236,13 @@ export class WebhookService {
   private async markWebhookEventDelivered(
     eventId: string,
     responseStatus: number,
-    responseBody: string | null
+    responseBody: string | null,
   ): Promise<void> {
     await this.pool.query(
       `UPDATE webhook_events
        SET status = 'delivered', last_attempt_at = CURRENT_TIMESTAMP, response_status = $2, response_body = $3
        WHERE id = $1`,
-      [eventId, responseStatus, responseBody]
+      [eventId, responseStatus, responseBody],
     );
   }
 
@@ -248,12 +252,11 @@ export class WebhookService {
   private async markWebhookEventFailed(
     eventId: string,
     responseStatus: number | null,
-    errorMessage: string
+    errorMessage: string,
   ): Promise<void> {
-    const result = await this.pool.query(
-      'SELECT attempts FROM webhook_events WHERE id = $1',
-      [eventId]
-    );
+    const result = await this.pool.query('SELECT attempts FROM webhook_events WHERE id = $1', [
+      eventId,
+    ]);
 
     const attempts = result.rows[0]?.attempts || 1;
     const nextRetry = WebhookEvent.calculateNextRetry(attempts);
@@ -262,7 +265,7 @@ export class WebhookService {
       `UPDATE webhook_events
        SET status = 'failed', last_attempt_at = CURRENT_TIMESTAMP, response_status = $2, error_message = $3, next_retry_at = $4
        WHERE id = $1`,
-      [eventId, responseStatus, errorMessage, nextRetry]
+      [eventId, responseStatus, errorMessage, nextRetry],
     );
   }
 
@@ -275,7 +278,7 @@ export class WebhookService {
       status?: string;
       limit?: number;
       offset?: number;
-    }
+    },
   ): Promise<{ events: WebhookEvent[]; total: number }> {
     let query = 'SELECT * FROM webhook_events WHERE webhook_id = $1';
     const params: any[] = [webhookId];
@@ -288,10 +291,7 @@ export class WebhookService {
     }
 
     // Get total count
-    const countResult = await this.pool.query(
-      query.replace('SELECT *', 'SELECT COUNT(*)'),
-      params
-    );
+    const countResult = await this.pool.query(query.replace('SELECT *', 'SELECT COUNT(*)'), params);
     const total = parseInt(countResult.rows[0].count);
 
     // Get events with pagination
@@ -316,10 +316,9 @@ export class WebhookService {
    * Retry webhook event
    */
   async retryWebhookEvent(eventId: string): Promise<void> {
-    const eventResult = await this.pool.query(
-      'SELECT * FROM webhook_events WHERE id = $1',
-      [eventId]
-    );
+    const eventResult = await this.pool.query('SELECT * FROM webhook_events WHERE id = $1', [
+      eventId,
+    ]);
 
     if (eventResult.rows.length === 0) {
       throw new Error('Webhook event not found');
@@ -327,10 +326,9 @@ export class WebhookService {
 
     const event = new WebhookEvent(this.mapRowToWebhookEventData(eventResult.rows[0]));
 
-    const webhookResult = await this.pool.query(
-      'SELECT * FROM webhooks WHERE id = $1',
-      [event.webhook_id]
-    );
+    const webhookResult = await this.pool.query('SELECT * FROM webhooks WHERE id = $1', [
+      event.webhook_id,
+    ]);
 
     if (webhookResult.rows.length === 0) {
       throw new Error('Webhook not found');
@@ -339,10 +337,9 @@ export class WebhookService {
     const webhook = new Webhook(this.mapRowToWebhookData(webhookResult.rows[0]));
 
     // Increment attempts
-    await this.pool.query(
-      'UPDATE webhook_events SET attempts = attempts + 1 WHERE id = $1',
-      [eventId]
-    );
+    await this.pool.query('UPDATE webhook_events SET attempts = attempts + 1 WHERE id = $1', [
+      eventId,
+    ]);
 
     // Attempt delivery
     await this.deliverWebhook(webhook, event.event_type, event.payload);

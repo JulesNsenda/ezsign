@@ -36,10 +36,13 @@ export const createDocumentRouter = (pool: Pool): Router => {
     host: process.env.EMAIL_SMTP_HOST || 'smtp.example.com',
     port: parseInt(process.env.EMAIL_SMTP_PORT || '587'),
     secure: process.env.EMAIL_SMTP_SECURE === 'true',
-    auth: emailUser && emailPass ? {
-      user: emailUser,
-      pass: emailPass,
-    } : undefined,
+    auth:
+      emailUser && emailPass
+        ? {
+            user: emailUser,
+            pass: emailPass,
+          }
+        : undefined,
     from: process.env.EMAIL_FROM || 'noreply@ezsign.com',
   };
 
@@ -95,8 +98,16 @@ export const createDocumentRouter = (pool: Pool): Router => {
   router.get('/:id/signers/:signerId/can-sign', checkDocumentAccess, signerController.canSign);
   router.put('/:id/signers/:signerId', checkDocumentAccess, signerController.updateSigner);
   router.delete('/:id/signers/:signerId', checkDocumentAccess, signerController.deleteSigner);
-  router.post('/:id/signers/:signerId/assign-fields', checkDocumentAccess, signerController.assignFields);
-  router.post('/:id/signers/:signerId/resend', checkDocumentAccess, signerController.resendSigningEmail);
+  router.post(
+    '/:id/signers/:signerId/assign-fields',
+    checkDocumentAccess,
+    signerController.assignFields,
+  );
+  router.post(
+    '/:id/signers/:signerId/resend',
+    checkDocumentAccess,
+    signerController.resendSigningEmail,
+  );
 
   return router;
 };

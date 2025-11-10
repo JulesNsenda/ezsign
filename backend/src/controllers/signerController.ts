@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any */
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { SignerService } from '../services/signerService.js';
@@ -15,7 +16,7 @@ export class SignerController {
     signerService: SignerService,
     pool?: Pool,
     _documentService?: DocumentService,
-    emailService?: EmailService
+    emailService?: EmailService,
   ) {
     this.signerService = signerService;
     this.pool = pool || (signerService as any).pool;
@@ -29,7 +30,7 @@ export class SignerController {
    */
   createSigner = async (req: Request, res: Response): Promise<void> => {
     try {
-      const documentId = req.params.id as string;
+      const documentId = req.params.id;
       const signerData: CreateSignerData = {
         document_id: documentId,
         email: req.body.email,
@@ -59,7 +60,7 @@ export class SignerController {
    */
   getSigners = async (req: Request, res: Response): Promise<void> => {
     try {
-      const documentId = req.params.id as string;
+      const documentId = req.params.id;
       const signers = await this.signerService.getSignersByDocumentId(documentId);
 
       res.status(200).json({
@@ -81,7 +82,7 @@ export class SignerController {
    */
   getSigner = async (req: Request, res: Response): Promise<void> => {
     try {
-      const signerId = req.params.signerId as string;
+      const signerId = req.params.signerId;
       const signer = await this.signerService.getSignerById(signerId);
 
       if (!signer) {
@@ -111,7 +112,7 @@ export class SignerController {
    */
   updateSigner = async (req: Request, res: Response): Promise<void> => {
     try {
-      const signerId = req.params.signerId as string;
+      const signerId = req.params.signerId;
       const updateData: UpdateSignerData = {
         email: req.body.email,
         name: req.body.name,
@@ -140,7 +141,7 @@ export class SignerController {
    */
   deleteSigner = async (req: Request, res: Response): Promise<void> => {
     try {
-      const signerId = req.params.signerId as string;
+      const signerId = req.params.signerId;
       const deleted = await this.signerService.deleteSigner(signerId);
 
       if (!deleted) {
@@ -170,7 +171,7 @@ export class SignerController {
    */
   assignFields = async (req: Request, res: Response): Promise<void> => {
     try {
-      const signerId = req.params.signerId as string;
+      const signerId = req.params.signerId;
       const fieldIds = req.body.field_ids;
 
       if (!Array.isArray(fieldIds)) {
@@ -202,10 +203,8 @@ export class SignerController {
    */
   validateSigners = async (req: Request, res: Response): Promise<void> => {
     try {
-      const documentId = req.params.id as string;
-      const validation = await this.signerService.validateAllSignersForDocument(
-        documentId
-      );
+      const documentId = req.params.id;
+      const validation = await this.signerService.validateAllSignersForDocument(documentId);
 
       res.status(200).json({
         success: true,
@@ -226,7 +225,7 @@ export class SignerController {
    */
   canSign = async (req: Request, res: Response): Promise<void> => {
     try {
-      const signerId = req.params.signerId as string;
+      const signerId = req.params.signerId;
       const result = await this.signerService.canSignInSequentialWorkflow(signerId);
 
       res.status(200).json({
@@ -264,7 +263,7 @@ export class SignerController {
       // Get document and verify access (checkDocumentAccess middleware handles ownership)
       const documentQuery = await this.pool.query(
         'SELECT id, title, status, workflow_type, user_id FROM documents WHERE id = $1',
-        [documentId]
+        [documentId],
       );
 
       if (documentQuery.rows.length === 0) {
@@ -289,7 +288,7 @@ export class SignerController {
       }
 
       // Get signer
-      const signer = await this.signerService.getSignerById(signerId as string);
+      const signer = await this.signerService.getSignerById(signerId);
 
       if (!signer) {
         res.status(404).json({
@@ -323,11 +322,13 @@ export class SignerController {
       // For sequential workflow, validate it's current signer's turn
       if (document.workflow_type === 'sequential') {
         const allSigners = await this.signerService.getSignersByDocumentId(documentId);
-        const pendingSigners = allSigners.filter(s => s.isPending()).sort((a, b) => {
-          if (a.signing_order === null) return 1;
-          if (b.signing_order === null) return -1;
-          return a.signing_order - b.signing_order;
-        });
+        const pendingSigners = allSigners
+          .filter((s) => s.isPending())
+          .sort((a, b) => {
+            if (a.signing_order === null) return 1;
+            if (b.signing_order === null) return -1;
+            return a.signing_order - b.signing_order;
+          });
 
         const currentSigner = pendingSigners[0];
         if (!currentSigner || currentSigner.id !== signerId) {
@@ -354,10 +355,9 @@ export class SignerController {
       }
 
       // Get document owner info for sender name
-      const ownerQuery = await this.pool.query(
-        'SELECT email FROM users WHERE id = $1',
-        [document.user_id]
-      );
+      const ownerQuery = await this.pool.query('SELECT email FROM users WHERE id = $1', [
+        document.user_id,
+      ]);
       const ownerEmail = ownerQuery.rows[0]?.email || 'Document Owner';
 
       // Send email (if emailService is available)

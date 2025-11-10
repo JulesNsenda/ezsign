@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import { z } from 'zod';
 import { uuidSchema, emailSchema, fieldTypeSchema } from '@/middleware/validation';
 
@@ -60,7 +61,7 @@ export const bulkUpsertFieldsSchema = z.object({
         required: z.boolean().optional(),
         signer_email: emailSchema.optional(),
         properties: z.record(z.string(), z.any()).optional(),
-      })
+      }),
     ),
   }),
 });

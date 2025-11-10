@@ -43,7 +43,7 @@ describe('Document Upload and Retrieval Integration Tests', () => {
       `INSERT INTO users (email, password_hash, role, email_verified)
        VALUES ($1, $2, $3, $4)
        RETURNING id`,
-      ['test-upload@example.com', 'hashed_password', 'user', true]
+      ['test-upload@example.com', 'hashed_password', 'user', true],
     );
     testUserId = userResult.rows[0].id;
 
@@ -52,7 +52,7 @@ describe('Document Upload and Retrieval Integration Tests', () => {
       `INSERT INTO teams (name, owner_id)
        VALUES ($1, $2)
        RETURNING id`,
-      ['Test Upload Team', testUserId]
+      ['Test Upload Team', testUserId],
     );
     testTeamId = teamResult.rows[0].id;
 
@@ -60,7 +60,7 @@ describe('Document Upload and Retrieval Integration Tests', () => {
     await pool.query(
       `INSERT INTO team_members (team_id, user_id, role)
        VALUES ($1, $2, $3)`,
-      [testTeamId, testUserId, 'admin']
+      [testTeamId, testUserId, 'admin'],
     );
   });
 
@@ -69,7 +69,8 @@ describe('Document Upload and Retrieval Integration Tests', () => {
     for (const docId of cleanupDocuments) {
       try {
         await documentService.deleteDocument(docId, testUserId);
-      } catch (error) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      } catch (_error) {
         // Ignore cleanup errors
       }
     }
@@ -85,7 +86,8 @@ describe('Document Upload and Retrieval Integration Tests', () => {
     const storagePath = path.join(process.cwd(), 'storage-test');
     try {
       await fs.rm(storagePath, { recursive: true, force: true });
-    } catch (error) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (_error) {
       // Ignore cleanup errors
     }
   });
@@ -134,7 +136,7 @@ describe('Document Upload and Retrieval Integration Tests', () => {
           title: 'Invalid Document',
           fileBuffer: invalidBuffer,
           originalFilename: 'invalid.pdf',
-        })
+        }),
       ).rejects.toThrow();
     });
 
@@ -145,7 +147,7 @@ describe('Document Upload and Retrieval Integration Tests', () => {
           title: '   ',
           fileBuffer: testPdfBuffer,
           originalFilename: 'test.pdf',
-        })
+        }),
       ).rejects.toThrow();
     });
   });
@@ -173,10 +175,7 @@ describe('Document Upload and Retrieval Integration Tests', () => {
     });
 
     it('should retrieve document file content', async () => {
-      const fileBuffer = await documentService.getDocumentFile(
-        uploadedDocumentId,
-        testUserId
-      );
+      const fileBuffer = await documentService.getDocumentFile(uploadedDocumentId, testUserId);
 
       expect(fileBuffer).toBeDefined();
       expect(Buffer.isBuffer(fileBuffer)).toBe(true);
@@ -186,7 +185,7 @@ describe('Document Upload and Retrieval Integration Tests', () => {
     it('should return null for non-existent document', async () => {
       const document = await documentService.findById(
         '00000000-0000-0000-0000-000000000000',
-        testUserId
+        testUserId,
       );
 
       expect(document).toBeNull();
@@ -198,7 +197,7 @@ describe('Document Upload and Retrieval Integration Tests', () => {
         `INSERT INTO users (email, password_hash, role, email_verified)
          VALUES ($1, $2, $3, $4)
          RETURNING id`,
-        ['other-user@example.com', 'hashed_password', 'user', true]
+        ['other-user@example.com', 'hashed_password', 'user', true],
       );
       const otherUserId = otherUserResult.rows[0].id;
 
@@ -297,7 +296,7 @@ describe('Document Upload and Retrieval Integration Tests', () => {
     it('should return false when deleting non-existent document', async () => {
       const deleted = await documentService.deleteDocument(
         '00000000-0000-0000-0000-000000000000',
-        testUserId
+        testUserId,
       );
       expect(deleted).toBe(false);
     });
@@ -324,7 +323,7 @@ describe('Document Upload and Retrieval Integration Tests', () => {
         `INSERT INTO users (email, password_hash, role, email_verified)
          VALUES ($1, $2, $3, $4)
          RETURNING id`,
-        ['team-member@example.com', 'hashed_password', 'user', true]
+        ['team-member@example.com', 'hashed_password', 'user', true],
       );
       teamMemberUserId = userResult.rows[0].id;
 
@@ -332,31 +331,23 @@ describe('Document Upload and Retrieval Integration Tests', () => {
       await pool.query(
         `INSERT INTO team_members (team_id, user_id, role)
          VALUES ($1, $2, $3)`,
-        [testTeamId, teamMemberUserId, 'member']
+        [testTeamId, teamMemberUserId, 'member'],
       );
     });
 
     afterAll(async () => {
       // Clean up team member
-      await pool.query('DELETE FROM team_members WHERE user_id = $1', [
-        teamMemberUserId,
-      ]);
+      await pool.query('DELETE FROM team_members WHERE user_id = $1', [teamMemberUserId]);
       await pool.query('DELETE FROM users WHERE id = $1', [teamMemberUserId]);
     });
 
     it('should allow team member to access team document', async () => {
-      const canAccess = await documentService.canAccessDocument(
-        teamDocument,
-        teamMemberUserId
-      );
+      const canAccess = await documentService.canAccessDocument(teamDocument, teamMemberUserId);
       expect(canAccess).toBe(true);
     });
 
     it('should allow owner to access document', async () => {
-      const canAccess = await documentService.canAccessDocument(
-        teamDocument,
-        testUserId
-      );
+      const canAccess = await documentService.canAccessDocument(teamDocument, testUserId);
       expect(canAccess).toBe(true);
     });
 
@@ -366,15 +357,12 @@ describe('Document Upload and Retrieval Integration Tests', () => {
         `INSERT INTO users (email, password_hash, role, email_verified)
          VALUES ($1, $2, $3, $4)
          RETURNING id`,
-        ['non-team@example.com', 'hashed_password', 'user', true]
+        ['non-team@example.com', 'hashed_password', 'user', true],
       );
       const nonTeamUserId = userResult.rows[0].id;
 
       try {
-        const canAccess = await documentService.canAccessDocument(
-          teamDocument,
-          nonTeamUserId
-        );
+        const canAccess = await documentService.canAccessDocument(teamDocument, nonTeamUserId);
         expect(canAccess).toBe(false);
       } finally {
         await pool.query('DELETE FROM users WHERE id = $1', [nonTeamUserId]);

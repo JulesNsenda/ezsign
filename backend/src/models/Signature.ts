@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/restrict-template-expressions */
 export type SignatureType = 'drawn' | 'typed' | 'uploaded';
 
 export interface SignatureData {

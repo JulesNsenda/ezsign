@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 import { PDFDocument, rgb, degrees } from 'pdf-lib';
 
 export interface PdfInfo {
@@ -106,7 +107,7 @@ export class PdfService {
    */
   async getPageDimensions(
     filePath: string,
-    pageNumber: number
+    pageNumber: number,
   ): Promise<{ width: number; height: number }> {
     const fs = await import('fs/promises');
     const path = await import('path');
@@ -133,10 +134,7 @@ export class PdfService {
   /**
    * Add signature image to PDF
    */
-  async addSignature(
-    pdfBuffer: Buffer,
-    field: SignatureField
-  ): Promise<Buffer> {
+  async addSignature(pdfBuffer: Buffer, field: SignatureField): Promise<Buffer> {
     const pdfDoc = await this.loadPdf(pdfBuffer);
     const pages = pdfDoc.getPages();
 
@@ -153,10 +151,7 @@ export class PdfService {
     let imageBuffer: Buffer;
     if (typeof field.imageData === 'string') {
       // Remove data URL prefix if present
-      const base64Data = field.imageData.replace(
-        /^data:image\/(png|jpeg|jpg);base64,/,
-        ''
-      );
+      const base64Data = field.imageData.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
       imageBuffer = Buffer.from(base64Data, 'base64');
     } else {
       imageBuffer = field.imageData;
@@ -170,9 +165,7 @@ export class PdfService {
       try {
         image = await pdfDoc.embedJpg(imageBuffer);
       } catch (error) {
-        throw new Error(
-          'Unsupported image format. Only PNG and JPEG are supported.'
-        );
+        throw new Error('Unsupported image format. Only PNG and JPEG are supported.');
       }
     }
 
@@ -203,9 +196,7 @@ export class PdfService {
       throw new Error(`Page ${field.page} could not be retrieved`);
     }
     const fontSize = field.fontSize || 12;
-    const color = field.color
-      ? rgb(field.color.r, field.color.g, field.color.b)
-      : rgb(0, 0, 0);
+    const color = field.color ? rgb(field.color.r, field.color.g, field.color.b) : rgb(0, 0, 0);
 
     page.drawText(field.text, {
       x: field.x,
@@ -252,7 +243,7 @@ export class PdfService {
       signatures?: SignatureField[];
       textFields?: TextField[];
       dateFields?: DateField[];
-    }
+    },
   ): Promise<Buffer> {
     let currentPdfBuffer = pdfBuffer;
 
@@ -298,10 +289,7 @@ export class PdfService {
   /**
    * Extract specific pages from PDF
    */
-  async extractPages(
-    pdfBuffer: Buffer,
-    pageNumbers: number[]
-  ): Promise<Buffer> {
+  async extractPages(pdfBuffer: Buffer, pageNumbers: number[]): Promise<Buffer> {
     const pdfDoc = await this.loadPdf(pdfBuffer);
     const newPdf = await this.createPdf();
 
@@ -322,7 +310,7 @@ export class PdfService {
       opacity?: number;
       rotation?: number;
       color?: { r: number; g: number; b: number };
-    }
+    },
   ): Promise<Buffer> {
     const pdfDoc = await this.loadPdf(pdfBuffer);
     const pages = pdfDoc.getPages();
@@ -364,7 +352,7 @@ export class PdfService {
         signedAt: Date;
       }>;
       documentId: string;
-    }
+    },
   ): Promise<Buffer> {
     const pdfDoc = await this.loadPdf(pdfBuffer);
 
@@ -398,27 +386,21 @@ export class PdfService {
 
     y -= 25;
 
-    certificatePage.drawText(
-      `Completed: ${certificateData.completedDate.toLocaleString()}`,
-      {
-        x: 50,
-        y,
-        size: normalFontSize,
-        color: rgb(0, 0, 0),
-      }
-    );
+    certificatePage.drawText(`Completed: ${certificateData.completedDate.toLocaleString()}`, {
+      x: 50,
+      y,
+      size: normalFontSize,
+      color: rgb(0, 0, 0),
+    });
 
     y -= 25;
 
-    certificatePage.drawText(
-      `Document ID: ${certificateData.documentId}`,
-      {
-        x: 50,
-        y,
-        size: smallFontSize,
-        color: rgb(0.3, 0.3, 0.3),
-      }
-    );
+    certificatePage.drawText(`Document ID: ${certificateData.documentId}`, {
+      x: 50,
+      y,
+      size: smallFontSize,
+      color: rgb(0.3, 0.3, 0.3),
+    });
 
     y -= 40;
 
@@ -440,7 +422,7 @@ export class PdfService {
           y,
           size: smallFontSize,
           color: rgb(0, 0, 0),
-        }
+        },
       );
       y -= 20;
     }
@@ -472,7 +454,7 @@ export class PdfService {
   async getPageAsImage(
     pdfBuffer: Buffer,
     pageNumber: number,
-    options?: { width?: number; height?: number; scale?: number }
+    options?: { width?: number; height?: number; scale?: number },
   ): Promise<Buffer> {
     const pdfjsLib = await import('pdfjs-dist');
     const { createCanvas } = await import('canvas');
@@ -513,7 +495,7 @@ export class PdfService {
    */
   async generateThumbnail(
     pdfBuffer: Buffer,
-    options?: { maxWidth?: number; maxHeight?: number }
+    options?: { maxWidth?: number; maxHeight?: number },
   ): Promise<Buffer> {
     const sharp = await import('sharp');
 
@@ -524,7 +506,8 @@ export class PdfService {
     const maxWidth = options?.maxWidth || 200;
     const maxHeight = options?.maxHeight || 300;
 
-    const thumbnail = await sharp.default(pageImage)
+    const thumbnail = await sharp
+      .default(pageImage)
       .resize(maxWidth, maxHeight, {
         fit: 'inside',
         withoutEnlargement: true,

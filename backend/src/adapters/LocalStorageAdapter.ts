@@ -1,10 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import {
-  StorageAdapter,
-  StorageOptions,
-  FileMetadata,
-} from '@/services/storageService';
+import { StorageAdapter, StorageOptions, FileMetadata } from '@/services/storageService';
 
 /**
  * Local filesystem storage adapter
@@ -35,11 +31,7 @@ export class LocalStorageAdapter implements StorageAdapter {
   /**
    * Save a file to local storage
    */
-  async save(
-    buffer: Buffer,
-    filename: string,
-    options?: StorageOptions
-  ): Promise<string> {
+  async save(buffer: Buffer, filename: string, options?: StorageOptions): Promise<string> {
     // Ensure base directory exists
     await this.initialize();
 
@@ -58,9 +50,7 @@ export class LocalStorageAdapter implements StorageAdapter {
       const sanitized = basename.replace(/[^a-zA-Z0-9-_]/g, '_');
       const uniqueName = `${sanitized}-${timestamp}-${random}${ext}`;
 
-      relativePath = options.directory
-        ? path.join(options.directory, uniqueName)
-        : uniqueName;
+      relativePath = options.directory ? path.join(options.directory, uniqueName) : uniqueName;
     }
 
     const fullPath = path.join(this.basePath, relativePath);
@@ -223,19 +213,13 @@ export class LocalStorageAdapter implements StorageAdapter {
    * Get metadata file path
    */
   private getMetadataPath(filePath: string): string {
-    return path.join(
-      this.basePath,
-      `${filePath}.meta.json`
-    );
+    return path.join(this.basePath, `${filePath}.meta.json`);
   }
 
   /**
    * Save metadata to a separate file
    */
-  private async saveMetadata(
-    filePath: string,
-    metadata: Record<string, string>
-  ): Promise<void> {
+  private async saveMetadata(filePath: string, metadata: Record<string, string>): Promise<void> {
     const metadataPath = this.getMetadataPath(filePath);
     const dir = path.dirname(metadataPath);
     await fs.mkdir(dir, { recursive: true });
@@ -248,7 +232,7 @@ export class LocalStorageAdapter implements StorageAdapter {
   private async readMetadata(filePath: string): Promise<Record<string, string>> {
     const metadataPath = this.getMetadataPath(filePath);
     const content = await fs.readFile(metadataPath, 'utf-8');
-    return JSON.parse(content);
+    return JSON.parse(content) as Record<string, string>;
   }
 
   /**
@@ -259,11 +243,9 @@ export class LocalStorageAdapter implements StorageAdapter {
     const mimeTypes: Record<string, string> = {
       '.pdf': 'application/pdf',
       '.doc': 'application/msword',
-      '.docx':
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       '.xls': 'application/vnd.ms-excel',
-      '.xlsx':
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       '.png': 'image/png',
       '.jpg': 'image/jpeg',
       '.jpeg': 'image/jpeg',

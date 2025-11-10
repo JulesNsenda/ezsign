@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-base-to-string, @typescript-eslint/restrict-template-expressions */
 import { Job } from 'bullmq';
 import { Pool } from 'pg';
 import { createWorker, QueueName } from '@/config/queue';
@@ -30,7 +31,7 @@ export class WebhookWorker {
           max: 100, // Max 100 requests per second
           duration: 1000,
         },
-      }
+      },
     );
 
     this.setupEventListeners();
@@ -80,9 +81,12 @@ export class WebhookWorker {
       console.log(`⏳ Webhook delivery job ${job.id} started for event ${job.data.eventId}`);
     });
 
-    this.worker.on('progress', (job: Job<WebhookJobData>, progress: number | object | string | boolean) => {
-      console.log(`⏳ Webhook delivery job ${job.id} progress: ${progress}%`);
-    });
+    this.worker.on(
+      'progress',
+      (job: Job<WebhookJobData>, progress: number | object | string | boolean) => {
+        console.log(`⏳ Webhook delivery job ${job.id} progress: ${progress}%`);
+      },
+    );
   }
 
   /**

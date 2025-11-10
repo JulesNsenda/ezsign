@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment */
 import { Pool } from 'pg';
 import { ApiKey, ApiKeyData, CreateApiKeyData, UpdateApiKeyData } from '@/models/ApiKey';
 

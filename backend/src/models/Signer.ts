@@ -214,10 +214,7 @@ export class Signer {
    * Check if signer is ready to sign in sequential workflow
    * This requires checking if all previous signers have signed
    */
-  static canSignInSequence(
-    currentSigner: Signer,
-    allSigners: Signer[]
-  ): boolean {
+  static canSignInSequence(currentSigner: Signer, allSigners: Signer[]): boolean {
     // If no signing order, not a sequential workflow
     if (currentSigner.signing_order === null) {
       return true;
@@ -225,9 +222,7 @@ export class Signer {
 
     // Check if all previous signers have signed
     const previousSigners = allSigners.filter(
-      (s) =>
-        s.signing_order !== null &&
-        s.signing_order < currentSigner.signing_order!
+      (s) => s.signing_order !== null && s.signing_order < currentSigner.signing_order!,
     );
 
     return previousSigners.every((s) => s.hasSigned());
@@ -249,8 +244,7 @@ export class Signer {
     // If at limit, check if 24 hours have passed
     if (this.last_reminder_sent_at) {
       const now = new Date();
-      const timeSinceLastSend =
-        now.getTime() - this.last_reminder_sent_at.getTime();
+      const timeSinceLastSend = now.getTime() - this.last_reminder_sent_at.getTime();
 
       if (timeSinceLastSend >= RESEND_WINDOW) {
         // 24 hours passed, can reset and resend
@@ -276,8 +270,7 @@ export class Signer {
 
     if (this.last_reminder_sent_at && this.reminder_count >= 5) {
       const now = new Date();
-      const timeSinceLastSend =
-        now.getTime() - this.last_reminder_sent_at.getTime();
+      const timeSinceLastSend = now.getTime() - this.last_reminder_sent_at.getTime();
 
       if (timeSinceLastSend >= RESEND_WINDOW) {
         this.reminder_count = 0;

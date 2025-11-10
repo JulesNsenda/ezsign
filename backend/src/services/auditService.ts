@@ -1,5 +1,11 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment */
 import { Pool } from 'pg';
-import { AuditEvent, AuditEventType, CreateAuditEventData, AuditEventData } from '@/models/AuditEvent';
+import {
+  AuditEvent,
+  AuditEventType,
+  CreateAuditEventData,
+  AuditEventData,
+} from '@/models/AuditEvent';
 
 export class AuditService {
   private pool: Pool;
@@ -23,7 +29,7 @@ export class AuditService {
         data.ip_address || null,
         data.user_agent || null,
         data.metadata ? JSON.stringify(data.metadata) : null,
-      ]
+      ],
     );
 
     return new AuditEvent(this.mapRowToAuditEventData(result.rows[0]));
@@ -38,7 +44,7 @@ export class AuditService {
       eventType?: AuditEventType;
       limit?: number;
       offset?: number;
-    }
+    },
   ): Promise<{ events: AuditEvent[]; total: number }> {
     let query = 'SELECT * FROM audit_events WHERE document_id = $1';
     const params: any[] = [documentId];
@@ -51,10 +57,7 @@ export class AuditService {
     }
 
     // Get total count
-    const countResult = await this.pool.query(
-      query.replace('SELECT *', 'SELECT COUNT(*)'),
-      params
-    );
+    const countResult = await this.pool.query(query.replace('SELECT *', 'SELECT COUNT(*)'), params);
     const total = parseInt(countResult.rows[0].count);
 
     // Get events with pagination
@@ -83,16 +86,13 @@ export class AuditService {
     options?: {
       limit?: number;
       offset?: number;
-    }
+    },
   ): Promise<{ events: AuditEvent[]; total: number }> {
     let query = 'SELECT * FROM audit_events WHERE user_id = $1';
     const params: any[] = [userId];
 
     // Get total count
-    const countResult = await this.pool.query(
-      query.replace('SELECT *', 'SELECT COUNT(*)'),
-      params
-    );
+    const countResult = await this.pool.query(query.replace('SELECT *', 'SELECT COUNT(*)'), params);
     const total = parseInt(countResult.rows[0].count);
 
     // Get events with pagination

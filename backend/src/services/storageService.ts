@@ -103,7 +103,7 @@ export class StorageService {
   async uploadFile(
     buffer: Buffer,
     filename: string,
-    options?: StorageOptions
+    options?: StorageOptions,
   ): Promise<UploadedFile> {
     const storedPath = await this.adapter.save(buffer, filename, options);
 

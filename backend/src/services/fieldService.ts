@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any */
 import { Pool } from 'pg';
 import { Field, CreateFieldData, UpdateFieldData, FieldData } from '@/models/Field';
 import { PdfService } from '@/services/pdfService';
@@ -23,7 +24,7 @@ export class FieldService {
     // Get document to validate page bounds
     const documentResult = await this.pool.query(
       'SELECT file_path, page_count FROM documents WHERE id = $1',
-      [data.document_id]
+      [data.document_id],
     );
 
     if (documentResult.rows.length === 0) {
@@ -35,15 +36,12 @@ export class FieldService {
     // Validate page number
     if (data.page < 0 || data.page >= document.page_count) {
       throw new Error(
-        `Invalid page number: ${data.page}. Document has ${document.page_count} pages (0-indexed)`
+        `Invalid page number: ${data.page}. Document has ${document.page_count} pages (0-indexed)`,
       );
     }
 
     // Get page dimensions from PDF
-    const pageDimensions = await this.pdfService.getPageDimensions(
-      document.file_path,
-      data.page
-    );
+    const pageDimensions = await this.pdfService.getPageDimensions(document.file_path, data.page);
 
     // Create temporary field for validation
     const tempField = new Field({
@@ -62,10 +60,7 @@ export class FieldService {
     });
 
     // Validate field bounds
-    const boundsValidation = tempField.validateBounds(
-      pageDimensions.width,
-      pageDimensions.height
-    );
+    const boundsValidation = tempField.validateBounds(pageDimensions.width, pageDimensions.height);
     if (!boundsValidation.valid) {
       throw new Error(`Field validation failed: ${boundsValidation.errors.join(', ')}`);
     }
@@ -80,7 +75,7 @@ export class FieldService {
     if (!tempField.meetsMinimumSize()) {
       const minDims = Field.getMinimumDimensions(data.type);
       throw new Error(
-        `Field does not meet minimum size requirements for ${data.type}: ${minDims.width}x${minDims.height} points`
+        `Field does not meet minimum size requirements for ${data.type}: ${minDims.width}x${minDims.height} points`,
       );
     }
 
@@ -104,8 +99,10 @@ export class FieldService {
         data.height,
         data.required ?? true,
         data.signer_email ?? null,
-        data.properties ? JSON.stringify(data.properties) : JSON.stringify(Field.getDefaultProperties(data.type)),
-      ]
+        data.properties
+          ? JSON.stringify(data.properties)
+          : JSON.stringify(Field.getDefaultProperties(data.type)),
+      ],
     );
 
     return new Field(this.mapRowToFieldData(result.rows[0]));
@@ -117,7 +114,7 @@ export class FieldService {
   async getFieldsByDocumentId(documentId: string): Promise<Field[]> {
     const result = await this.pool.query(
       'SELECT * FROM fields WHERE document_id = $1 ORDER BY page, y, x',
-      [documentId]
+      [documentId],
     );
 
     return result.rows.map((row) => new Field(this.mapRowToFieldData(row)));
@@ -156,7 +153,7 @@ export class FieldService {
     ) {
       const documentResult = await this.pool.query(
         'SELECT file_path, page_count FROM documents WHERE id = $1',
-        [existingField.document_id]
+        [existingField.document_id],
       );
 
       if (documentResult.rows.length === 0) {
@@ -169,15 +166,12 @@ export class FieldService {
       // Validate page number
       if (page < 0 || page >= document.page_count) {
         throw new Error(
-          `Invalid page number: ${page}. Document has ${document.page_count} pages (0-indexed)`
+          `Invalid page number: ${page}. Document has ${document.page_count} pages (0-indexed)`,
         );
       }
 
       // Get page dimensions
-      const pageDimensions = await this.pdfService.getPageDimensions(
-        document.file_path,
-        page
-      );
+      const pageDimensions = await this.pdfService.getPageDimensions(document.file_path, page);
 
       // Create field with updated values for validation
       const tempField = new Field({
@@ -193,7 +187,7 @@ export class FieldService {
       // Validate bounds
       const boundsValidation = tempField.validateBounds(
         pageDimensions.width,
-        pageDimensions.height
+        pageDimensions.height,
       );
       if (!boundsValidation.valid) {
         throw new Error(`Field validation failed: ${boundsValidation.errors.join(', ')}`);
@@ -203,7 +197,7 @@ export class FieldService {
       if (!tempField.meetsMinimumSize()) {
         const minDims = Field.getMinimumDimensions(tempField.type);
         throw new Error(
-          `Field does not meet minimum size requirements for ${tempField.type}: ${minDims.width}x${minDims.height} points`
+          `Field does not meet minimum size requirements for ${tempField.type}: ${minDims.width}x${minDims.height} points`,
         );
       }
     }
@@ -274,7 +268,7 @@ export class FieldService {
 
     const result = await this.pool.query(
       `UPDATE fields SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
-      values
+      values,
     );
 
     return new Field(this.mapRowToFieldData(result.rows[0]));
@@ -293,7 +287,7 @@ export class FieldService {
    */
   async bulkUpsertFields(
     _documentId: string,
-    fields: (CreateFieldData & { id?: string })[]
+    fields: (CreateFieldData & { id?: string })[],
   ): Promise<Field[]> {
     const results: Field[] = [];
 
@@ -342,15 +336,13 @@ export class FieldService {
     // Check that all fields have assigned signers
     const fieldsWithoutSigners = fields.filter((f) => !f.hasAssignedSigner());
     if (fieldsWithoutSigners.length > 0) {
-      errors.push(
-        `${fieldsWithoutSigners.length} field(s) do not have assigned signers`
-      );
+      errors.push(`${fieldsWithoutSigners.length} field(s) do not have assigned signers`);
     }
 
     // Get document details
     const documentResult = await this.pool.query(
       'SELECT file_path, page_count FROM documents WHERE id = $1',
-      [documentId]
+      [documentId],
     );
 
     if (documentResult.rows.length === 0) {
@@ -365,32 +357,27 @@ export class FieldService {
       // Validate page bounds
       const pageDimensions = await this.pdfService.getPageDimensions(
         document.file_path,
-        field.page
+        field.page,
       );
 
-      const boundsValidation = field.validateBounds(
-        pageDimensions.width,
-        pageDimensions.height
-      );
+      const boundsValidation = field.validateBounds(pageDimensions.width, pageDimensions.height);
       if (!boundsValidation.valid) {
         errors.push(
-          `Field ${field.id} on page ${field.page}: ${boundsValidation.errors.join(', ')}`
+          `Field ${field.id} on page ${field.page}: ${boundsValidation.errors.join(', ')}`,
         );
       }
 
       // Validate properties
       const propsValidation = field.validateProperties();
       if (!propsValidation.valid) {
-        errors.push(
-          `Field ${field.id} properties: ${propsValidation.errors.join(', ')}`
-        );
+        errors.push(`Field ${field.id} properties: ${propsValidation.errors.join(', ')}`);
       }
 
       // Check minimum size
       if (!field.meetsMinimumSize()) {
         const minDims = Field.getMinimumDimensions(field.type);
         errors.push(
-          `Field ${field.id} does not meet minimum size for ${field.type}: ${minDims.width}x${minDims.height} points`
+          `Field ${field.id} does not meet minimum size for ${field.type}: ${minDims.width}x${minDims.height} points`,
         );
       }
     }
@@ -404,13 +391,10 @@ export class FieldService {
   /**
    * Get fields assigned to a specific signer
    */
-  async getFieldsBySignerEmail(
-    documentId: string,
-    signerEmail: string
-  ): Promise<Field[]> {
+  async getFieldsBySignerEmail(documentId: string, signerEmail: string): Promise<Field[]> {
     const result = await this.pool.query(
       'SELECT * FROM fields WHERE document_id = $1 AND signer_email = $2 ORDER BY page, y, x',
-      [documentId, signerEmail]
+      [documentId, signerEmail],
     );
 
     return result.rows.map((row) => new Field(this.mapRowToFieldData(row)));

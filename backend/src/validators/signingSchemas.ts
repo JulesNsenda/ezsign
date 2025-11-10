@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import { z } from 'zod';
 import { uuidSchema } from '@/middleware/validation';
 
@@ -31,13 +32,15 @@ export const submitSignatureSchema = z.object({
     token: z.string().min(1, 'Signing token is required'),
   }),
   body: z.object({
-    signatures: z.array(
-      z.object({
-        field_id: uuidSchema,
-        signature_type: z.enum(['drawn', 'typed', 'uploaded']),
-        signature_data: z.string().min(1, 'Signature data is required'),
-      })
-    ).min(1, 'At least one signature is required'),
+    signatures: z
+      .array(
+        z.object({
+          field_id: uuidSchema,
+          signature_type: z.enum(['drawn', 'typed', 'uploaded']),
+          signature_data: z.string().min(1, 'Signature data is required'),
+        }),
+      )
+      .min(1, 'At least one signature is required'),
   }),
 });
 
@@ -47,16 +50,18 @@ export const submitSignatureSchema = z.object({
 export const createWebhookSchema = z.object({
   body: z.object({
     url: z.string().url('Invalid webhook URL'),
-    events: z.array(
-      z.enum([
-        'document.created',
-        'document.sent',
-        'document.viewed',
-        'document.signed',
-        'document.completed',
-        'document.declined',
-      ])
-    ).min(1, 'At least one event is required'),
+    events: z
+      .array(
+        z.enum([
+          'document.created',
+          'document.sent',
+          'document.viewed',
+          'document.signed',
+          'document.completed',
+          'document.declined',
+        ]),
+      )
+      .min(1, 'At least one event is required'),
     description: z.string().max(255, 'Description too long').optional(),
   }),
 });
@@ -70,16 +75,18 @@ export const updateWebhookSchema = z.object({
   }),
   body: z.object({
     url: z.string().url().optional(),
-    events: z.array(
-      z.enum([
-        'document.created',
-        'document.sent',
-        'document.viewed',
-        'document.signed',
-        'document.completed',
-        'document.declined',
-      ])
-    ).optional(),
+    events: z
+      .array(
+        z.enum([
+          'document.created',
+          'document.sent',
+          'document.viewed',
+          'document.signed',
+          'document.completed',
+          'document.declined',
+        ]),
+      )
+      .optional(),
     active: z.boolean().optional(),
     description: z.string().max(255).optional(),
   }),

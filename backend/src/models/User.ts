@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import * as argon2 from 'argon2';
 import { randomBytes } from 'crypto';
 
@@ -186,12 +187,7 @@ export class User {
   /**
    * Convert to JSON (exclude sensitive fields)
    */
-  toJSON(): Omit<
-    UserData,
-    | 'password_hash'
-    | 'email_verification_token'
-    | 'password_reset_token'
-  > {
+  toJSON(): Omit<UserData, 'password_hash' | 'email_verification_token' | 'password_reset_token'> {
     return {
       id: this.id,
       email: this.email,

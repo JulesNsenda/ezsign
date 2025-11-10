@@ -1,4 +1,4 @@
-import { Queue, Worker, QueueOptions, WorkerOptions } from 'bullmq';
+import { Queue, Worker, Job, QueueOptions, WorkerOptions } from 'bullmq';
 import Redis from 'ioredis';
 
 /**
@@ -63,31 +63,21 @@ export const createQueue = (name: QueueName): Queue => {
 /**
  * Create a worker instance
  */
-export const createWorker = <T = any>(
+export const createWorker = <T = unknown, R = unknown>(
   name: QueueName,
-  processor: (job: any) => Promise<any>,
-  options?: Partial<WorkerOptions>
-): Worker<T> => {
-  return new Worker<T>(
-    name,
-    processor,
-    {
-      ...defaultWorkerOptions,
-      ...options,
-      connection: getRedisConnection(),
-    } as WorkerOptions
-  );
+  processor: (job: Job<T>) => Promise<R>,
+  options?: Partial<WorkerOptions>,
+): Worker<T, R> => {
+  return new Worker<T>(name, processor, {
+    ...defaultWorkerOptions,
+    ...options,
+    connection: getRedisConnection(),
+  } as WorkerOptions) as Worker<T, R>;
 };
 
 /**
  * Gracefully close all queue connections
  */
-export const closeQueueConnections = async (
-  queues: Queue[],
-  workers: Worker[]
-): Promise<void> => {
-  await Promise.all([
-    ...queues.map((q) => q.close()),
-    ...workers.map((w) => w.close()),
-  ]);
+export const closeQueueConnections = async (queues: Queue[], workers: Worker[]): Promise<void> => {
+  await Promise.all([...queues.map((q) => q.close()), ...workers.map((w) => w.close())]);
 };

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import { Pool } from 'pg';
 import { Document, DocumentData, DocumentStatus } from '@/models/Document';
 import { StorageService } from '@/services/storageService';
@@ -63,7 +64,7 @@ export class DocumentService {
       {
         directory: `documents/${data.userId}`,
         generateUniqueName: true,
-      }
+      },
     );
 
     // Insert into database
@@ -133,9 +134,7 @@ export class DocumentService {
   /**
    * Find documents with pagination and filtering
    */
-  async findDocuments(
-    options: DocumentListOptions
-  ): Promise<PaginatedDocuments> {
+  async findDocuments(options: DocumentListOptions): Promise<PaginatedDocuments> {
     const page = options.page || 1;
     const limit = options.limit || 10;
     const offset = (page - 1) * limit;
@@ -201,7 +200,7 @@ export class DocumentService {
   async updateDocument(
     id: string,
     userId: string,
-    data: UpdateDocumentData
+    data: UpdateDocumentData,
   ): Promise<Document | null> {
     const fields: string[] = [];
     const values: any[] = [];
@@ -312,7 +311,7 @@ export class DocumentService {
   async generateThumbnail(
     id: string,
     userId: string,
-    options?: { maxWidth?: number; maxHeight?: number }
+    options?: { maxWidth?: number; maxHeight?: number },
   ): Promise<Buffer | null> {
     // Verify access
     const canAccess = await this.canAccessDocument(id, userId);

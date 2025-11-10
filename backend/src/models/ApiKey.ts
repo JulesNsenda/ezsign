@@ -73,10 +73,7 @@ export class ApiKey {
    */
   verifyKey(key: string): boolean {
     const hash = ApiKey.hashKey(key);
-    return crypto.timingSafeEqual(
-      Buffer.from(this.key_hash, 'hex'),
-      Buffer.from(hash, 'hex')
-    );
+    return crypto.timingSafeEqual(Buffer.from(this.key_hash, 'hex'), Buffer.from(hash, 'hex'));
   }
 
   /**

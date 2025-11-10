@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { TeamService } from '@/services/teamService';
@@ -26,19 +27,17 @@ export class TeamController {
         return;
       }
 
-      const teams = await this.teamService.findByUserId(
-        authenticatedReq.user.userId
-      );
+      const teams = await this.teamService.findByUserId(authenticatedReq.user.userId);
 
       // Get role for each team
       const teamsWithRoles = await Promise.all(
         teams.map(async (team) => {
-          const member = await this.teamService.getMember(team.id, authenticatedReq.user!.userId);
+          const member = await this.teamService.getMember(team.id, authenticatedReq.user.userId);
           return {
             ...team.toJSON(),
             role: member?.role || 'member',
           };
-        })
+        }),
       );
 
       res.status(200).json({
@@ -137,10 +136,7 @@ export class TeamController {
       }
 
       // Check if user is a member
-      const isMember = await this.teamService.isMember(
-        id,
-        authenticatedReq.user.userId
-      );
+      const isMember = await this.teamService.isMember(id, authenticatedReq.user.userId);
 
       if (!isMember && authenticatedReq.user.role !== 'admin') {
         res.status(403).json({
@@ -195,7 +191,7 @@ export class TeamController {
       // Check if user is admin/owner or system admin
       const isAdminOrOwner = await this.teamService.isAdminOrOwner(
         id,
-        authenticatedReq.user.userId
+        authenticatedReq.user.userId,
       );
 
       if (!isAdminOrOwner && authenticatedReq.user.role !== 'admin') {
@@ -317,10 +313,7 @@ export class TeamController {
       }
 
       // Check if user is a member
-      const isMember = await this.teamService.isMember(
-        id,
-        authenticatedReq.user.userId
-      );
+      const isMember = await this.teamService.isMember(id, authenticatedReq.user.userId);
 
       if (!isMember && authenticatedReq.user.role !== 'admin') {
         res.status(403).json({
@@ -395,7 +388,7 @@ export class TeamController {
       // Check if user is admin/owner
       const isAdminOrOwner = await this.teamService.isAdminOrOwner(
         id,
-        authenticatedReq.user.userId
+        authenticatedReq.user.userId,
       );
 
       if (!isAdminOrOwner && authenticatedReq.user.role !== 'admin') {
@@ -482,7 +475,7 @@ export class TeamController {
       // - Members can remove themselves
       const isAdminOrOwner = await this.teamService.isAdminOrOwner(
         id,
-        authenticatedReq.user.userId
+        authenticatedReq.user.userId,
       );
 
       const isSelf = authenticatedReq.user.userId === userId;
@@ -582,7 +575,7 @@ export class TeamController {
       // Only admins/owners or system admins can update roles
       const isAdminOrOwner = await this.teamService.isAdminOrOwner(
         id,
-        authenticatedReq.user.userId
+        authenticatedReq.user.userId,
       );
 
       if (!isAdminOrOwner && authenticatedReq.user.role !== 'admin') {
@@ -603,11 +596,7 @@ export class TeamController {
       }
 
       // Update role
-      const updatedMember = await this.teamService.updateMemberRole(
-        id,
-        userId,
-        role
-      );
+      const updatedMember = await this.teamService.updateMemberRole(id, userId, role);
 
       res.status(200).json({
         message: 'Team member role updated successfully',

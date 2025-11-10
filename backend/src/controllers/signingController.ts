@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call */
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { Document } from '@/models/Document';
@@ -18,7 +19,7 @@ export class SigningController {
     pool: Pool,
     emailService: EmailService,
     pdfService: PdfService,
-    storageService: StorageService
+    storageService: StorageService,
   ) {
     this.pool = pool;
     this.emailService = emailService;
@@ -41,15 +42,14 @@ export class SigningController {
         return;
       }
 
-      const documentId = req.params.id as string;
+      const documentId = req.params.id;
       const message = req.body?.message;
       console.log('Processing send for document:', documentId, 'by user:', userId);
 
       // Get document
-      const docResult = await this.pool.query(
-        'SELECT * FROM documents WHERE id = $1',
-        [documentId]
-      );
+      const docResult = await this.pool.query('SELECT * FROM documents WHERE id = $1', [
+        documentId,
+      ]);
 
       if (docResult.rows.length === 0) {
         res.status(404).json({ success: false, error: 'Document not found' });
@@ -78,10 +78,9 @@ export class SigningController {
       console.log('Document can be sent');
 
       // Validate all fields are assigned to signers
-      const fieldsResult = await this.pool.query(
-        'SELECT * FROM fields WHERE document_id = $1',
-        [documentId]
-      );
+      const fieldsResult = await this.pool.query('SELECT * FROM fields WHERE document_id = $1', [
+        documentId,
+      ]);
       console.log('Fields found:', fieldsResult.rows.length);
 
       if (fieldsResult.rows.length === 0) {
@@ -94,7 +93,7 @@ export class SigningController {
       }
 
       const unassignedFields = fieldsResult.rows.filter(
-        (f) => !f.signer_email || f.signer_email.trim() === ''
+        (f) => !f.signer_email || f.signer_email.trim() === '',
       );
       console.log('Unassigned fields:', unassignedFields.length);
 
@@ -108,10 +107,9 @@ export class SigningController {
       }
 
       // Get all signers
-      const signersResult = await this.pool.query(
-        'SELECT * FROM signers WHERE document_id = $1',
-        [documentId]
-      );
+      const signersResult = await this.pool.query('SELECT * FROM signers WHERE document_id = $1', [
+        documentId,
+      ]);
       console.log('Signers found:', signersResult.rows.length);
 
       if (signersResult.rows.length === 0) {
@@ -127,14 +125,11 @@ export class SigningController {
       // Update document status to pending
       await this.pool.query(
         'UPDATE documents SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-        ['pending', documentId]
+        ['pending', documentId],
       );
 
       // Get user info for sender name
-      const userResult = await this.pool.query(
-        'SELECT email FROM users WHERE id = $1',
-        [userId]
-      );
+      const userResult = await this.pool.query('SELECT email FROM users WHERE id = $1', [userId]);
       const senderName = userResult.rows[0]?.email || 'Someone';
 
       // Send signing requests to all signers (or first signer if sequential)
@@ -189,13 +184,12 @@ export class SigningController {
    */
   getDocumentBySigningToken = async (req: Request, res: Response): Promise<void> => {
     try {
-      const token = req.params.token as string;
+      const token = req.params.token;
 
       // Find signer by access token
-      const signerResult = await this.pool.query(
-        'SELECT * FROM signers WHERE access_token = $1',
-        [token]
-      );
+      const signerResult = await this.pool.query('SELECT * FROM signers WHERE access_token = $1', [
+        token,
+      ]);
 
       if (signerResult.rows.length === 0) {
         res.status(404).json({ success: false, error: 'Invalid signing link' });
@@ -214,10 +208,9 @@ export class SigningController {
       }
 
       // Get document
-      const docResult = await this.pool.query(
-        'SELECT * FROM documents WHERE id = $1',
-        [signer.document_id]
-      );
+      const docResult = await this.pool.query('SELECT * FROM documents WHERE id = $1', [
+        signer.document_id,
+      ]);
 
       if (docResult.rows.length === 0) {
         res.status(404).json({ success: false, error: 'Document not found' });
@@ -239,7 +232,7 @@ export class SigningController {
       if (document.workflow_type === 'sequential') {
         const allSigners = await this.pool.query(
           'SELECT * FROM signers WHERE document_id = $1 ORDER BY signing_order',
-          [signer.document_id]
+          [signer.document_id],
         );
 
         const signersList = allSigners.rows.map((row) => new Signer(this.mapRowToSignerData(row)));
@@ -257,7 +250,7 @@ export class SigningController {
       // Get fields assigned to this signer
       const fieldsResult = await this.pool.query(
         'SELECT * FROM fields WHERE document_id = $1 AND signer_email = $2',
-        [signer.document_id, signer.email]
+        [signer.document_id, signer.email],
       );
 
       const fields = fieldsResult.rows.map((row) => new Field(this.mapRowToFieldData(row)));
@@ -265,7 +258,7 @@ export class SigningController {
       // Get existing signatures for this signer
       const signaturesResult = await this.pool.query(
         'SELECT * FROM signatures WHERE signer_id = $1',
-        [signer.id]
+        [signer.id],
       );
 
       res.status(200).json({
@@ -286,7 +279,7 @@ export class SigningController {
    */
   submitSignature = async (req: Request, res: Response): Promise<void> => {
     try {
-      const token = req.params.token as string;
+      const token = req.params.token;
       const { signatures } = req.body; // Array of { field_id, signature_type, signature_data, text_value?, font_family? }
 
       if (!signatures || !Array.isArray(signatures) || signatures.length === 0) {
@@ -298,10 +291,9 @@ export class SigningController {
       }
 
       // Find signer by access token
-      const signerResult = await this.pool.query(
-        'SELECT * FROM signers WHERE access_token = $1',
-        [token]
-      );
+      const signerResult = await this.pool.query('SELECT * FROM signers WHERE access_token = $1', [
+        token,
+      ]);
 
       if (signerResult.rows.length === 0) {
         res.status(404).json({ success: false, error: 'Invalid signing link' });
@@ -358,20 +350,20 @@ export class SigningController {
               sigData.font_family || null,
               req.ip || null,
               req.get('user-agent') || null,
-            ]
+            ],
           );
         }
 
         // Update signer status to signed
         await client.query(
           `UPDATE signers SET status = 'signed', signed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
-          [signer.id]
+          [signer.id],
         );
 
         // Check if all signers have signed (document completion)
         const allSignersResult = await client.query(
           'SELECT * FROM signers WHERE document_id = $1',
-          [signer.document_id]
+          [signer.document_id],
         );
 
         const allSigned = allSignersResult.rows.every((s) => s.status === 'signed');
@@ -381,10 +373,9 @@ export class SigningController {
           console.log('All signers have signed, applying signatures to PDF');
 
           // Get document for processing
-          const docResult = await client.query(
-            'SELECT * FROM documents WHERE id = $1',
-            [signer.document_id]
-          );
+          const docResult = await client.query('SELECT * FROM documents WHERE id = $1', [
+            signer.document_id,
+          ]);
           const document = new Document(this.mapRowToDocumentData(docResult.rows[0]));
 
           // Get all signatures for this document
@@ -393,7 +384,7 @@ export class SigningController {
              FROM signatures s
              JOIN fields f ON s.field_id = f.id
              WHERE f.document_id = $1`,
-            [signer.document_id]
+            [signer.document_id],
           );
 
           console.log('Found signatures to apply:', allSignaturesResult.rows.length);
@@ -411,7 +402,7 @@ export class SigningController {
                 y: row.y,
                 width: row.width,
                 height: row.height,
-                signature_data_length: row.signature_data?.length
+                signature_data_length: row.signature_data?.length,
               });
 
               // Database stores pages as 0-indexed (same as pdf-lib), no conversion needed
@@ -430,10 +421,9 @@ export class SigningController {
 
             console.log('Applying signatures to PDF...');
             // Apply all signatures to the PDF
-            const signedPdfBuffer = await this._pdfService.addMultipleFields(
-              originalPdfBuffer,
-              { signatures: signatureFields }
-            );
+            const signedPdfBuffer = await this._pdfService.addMultipleFields(originalPdfBuffer, {
+              signatures: signatureFields,
+            });
 
             console.log('Signed PDF created, size:', signedPdfBuffer.length);
 
@@ -454,14 +444,13 @@ export class SigningController {
           // Update document status to completed
           await client.query(
             'UPDATE documents SET status = $1, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-            ['completed', signer.document_id]
+            ['completed', signer.document_id],
           );
 
           // Send completion notification to document owner
-          const ownerResult = await client.query(
-            'SELECT email FROM users WHERE id = $1',
-            [document.user_id]
-          );
+          const ownerResult = await client.query('SELECT email FROM users WHERE id = $1', [
+            document.user_id,
+          ]);
 
           if (ownerResult.rows.length > 0) {
             const owner = ownerResult.rows[0];
@@ -475,27 +464,25 @@ export class SigningController {
           }
         } else {
           // Check if next signer should be notified (sequential workflow)
-          const docResult = await client.query(
-            'SELECT * FROM documents WHERE id = $1',
-            [signer.document_id]
-          );
+          const docResult = await client.query('SELECT * FROM documents WHERE id = $1', [
+            signer.document_id,
+          ]);
           const document = new Document(this.mapRowToDocumentData(docResult.rows[0]));
 
           if (document.workflow_type === 'sequential' && signer.signing_order !== null) {
             // Find next signer
             const nextSignerResult = await client.query(
               'SELECT * FROM signers WHERE document_id = $1 AND signing_order = $2',
-              [signer.document_id, signer.signing_order + 1]
+              [signer.document_id, signer.signing_order + 1],
             );
 
             if (nextSignerResult.rows.length > 0) {
               const nextSigner = new Signer(this.mapRowToSignerData(nextSignerResult.rows[0]));
 
               // Get sender info
-              const userResult = await client.query(
-                'SELECT email FROM users WHERE id = $1',
-                [document.user_id]
-              );
+              const userResult = await client.query('SELECT email FROM users WHERE id = $1', [
+                document.user_id,
+              ]);
               const senderName = userResult.rows[0]?.email || 'Someone';
 
               await this.emailService.sendSigningRequest({
@@ -536,14 +523,13 @@ export class SigningController {
    */
   downloadDocumentByToken = async (req: Request, res: Response): Promise<void> => {
     try {
-      const token = req.params.token as string;
+      const token = req.params.token;
       console.log('Download request for token:', token);
 
       // Find signer by access token
-      const signerResult = await this.pool.query(
-        'SELECT * FROM signers WHERE access_token = $1',
-        [token]
-      );
+      const signerResult = await this.pool.query('SELECT * FROM signers WHERE access_token = $1', [
+        token,
+      ]);
 
       if (signerResult.rows.length === 0) {
         console.log('No signer found for token');
@@ -555,10 +541,9 @@ export class SigningController {
       console.log('Signer found:', signer.id, 'Document ID:', signer.document_id);
 
       // Get document
-      const docResult = await this.pool.query(
-        'SELECT * FROM documents WHERE id = $1',
-        [signer.document_id]
-      );
+      const docResult = await this.pool.query('SELECT * FROM documents WHERE id = $1', [
+        signer.document_id,
+      ]);
 
       if (docResult.rows.length === 0) {
         console.log('No document found for ID:', signer.document_id);
@@ -583,10 +568,7 @@ export class SigningController {
 
       // Set headers for file download (inline for PDF viewing in browser)
       res.setHeader('Content-Type', document.mime_type);
-      res.setHeader(
-        'Content-Disposition',
-        `inline; filename="${document.original_filename}"`
-      );
+      res.setHeader('Content-Disposition', `inline; filename="${document.original_filename}"`);
       res.setHeader('Content-Length', fileBuffer.length.toString());
 
       // Send file buffer
@@ -611,13 +593,12 @@ export class SigningController {
         return;
       }
 
-      const documentId = req.params.id as string;
+      const documentId = req.params.id;
 
       // Get document
-      const docResult = await this.pool.query(
-        'SELECT * FROM documents WHERE id = $1',
-        [documentId]
-      );
+      const docResult = await this.pool.query('SELECT * FROM documents WHERE id = $1', [
+        documentId,
+      ]);
 
       if (docResult.rows.length === 0) {
         res.status(404).json({ success: false, error: 'Document not found' });
@@ -635,7 +616,7 @@ export class SigningController {
       // Get signers
       const signersResult = await this.pool.query(
         'SELECT * FROM signers WHERE document_id = $1 ORDER BY signing_order NULLS LAST, email',
-        [documentId]
+        [documentId],
       );
 
       const signers = signersResult.rows.map((row) => {

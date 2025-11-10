@@ -23,10 +23,13 @@ export const createSigningRouter = (pool: Pool): Router => {
     host: process.env.EMAIL_SMTP_HOST || 'smtp.example.com',
     port: parseInt(process.env.EMAIL_SMTP_PORT || '587'),
     secure: process.env.EMAIL_SMTP_SECURE === 'true',
-    auth: emailUser && emailPass ? {
-      user: emailUser,
-      pass: emailPass,
-    } : undefined,
+    auth:
+      emailUser && emailPass
+        ? {
+            user: emailUser,
+            pass: emailPass,
+          }
+        : undefined,
     from: process.env.EMAIL_FROM || 'noreply@ezsign.com',
   };
 
@@ -59,10 +62,13 @@ export const createDocumentSigningRouter = (pool: Pool): Router => {
     host: process.env.EMAIL_SMTP_HOST || 'smtp.example.com',
     port: parseInt(process.env.EMAIL_SMTP_PORT || '587'),
     secure: process.env.EMAIL_SMTP_SECURE === 'true',
-    auth: emailUser && emailPass ? {
-      user: emailUser,
-      pass: emailPass,
-    } : undefined,
+    auth:
+      emailUser && emailPass
+        ? {
+            user: emailUser,
+            pass: emailPass,
+          }
+        : undefined,
     from: process.env.EMAIL_FROM || 'noreply@ezsign.com',
   };
 

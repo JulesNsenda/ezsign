@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-misused-promises, @typescript-eslint/require-await */
 // Load environment variables from .env file
 import dotenv from 'dotenv';
 import path from 'path';

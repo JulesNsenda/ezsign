@@ -16,10 +16,13 @@ export const createAuthRouter = (pool: Pool): Router => {
     host: process.env.EMAIL_SMTP_HOST || 'localhost',
     port: parseInt(process.env.EMAIL_SMTP_PORT || '1025'),
     secure: process.env.EMAIL_SMTP_SECURE === 'true',
-    auth: emailUser && emailPass ? {
-      user: emailUser,
-      pass: emailPass,
-    } : undefined,
+    auth:
+      emailUser && emailPass
+        ? {
+            user: emailUser,
+            pass: emailPass,
+          }
+        : undefined,
     from: process.env.EMAIL_FROM_ADDRESS || 'noreply@ezsign.local',
   };
 
@@ -57,7 +60,7 @@ export const createAuthRouter = (pool: Pool): Router => {
     '/change-password',
     authenticate,
     passwordChangeLimiter,
-    authController.changePassword
+    authController.changePassword,
   );
 
   return router;

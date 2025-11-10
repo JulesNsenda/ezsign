@@ -86,7 +86,7 @@ describe('Authentication Integration Tests', () => {
             email: userData.email,
             role: 'creator',
           }),
-        })
+        }),
       );
     });
   });
@@ -133,7 +133,7 @@ describe('Authentication Integration Tests', () => {
             id: 'user-123',
             email: credentials.email,
           }),
-        })
+        }),
       );
     });
   });
@@ -177,7 +177,7 @@ describe('Authentication Integration Tests', () => {
         expect.objectContaining({
           message: 'Token refreshed successfully',
           accessToken: expect.any(String),
-        })
+        }),
       );
 
       // Verify the new access token is valid
@@ -296,7 +296,7 @@ describe('Authentication Integration Tests', () => {
       expect(mockResponse.json).toHaveBeenCalledWith(
         expect.objectContaining({
           message: 'If the email exists, a password reset link has been sent',
-        })
+        }),
       );
 
       // Step 2: Reset password with token
@@ -436,7 +436,7 @@ describe('Authentication Integration Tests', () => {
           message: 'Password changed successfully',
           accessToken: expect.any(String),
           refreshToken: expect.any(String),
-        })
+        }),
       );
 
       // Verify new tokens are valid

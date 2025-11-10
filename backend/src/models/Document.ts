@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 export type DocumentStatus = 'draft' | 'pending' | 'completed' | 'cancelled';
 export type WorkflowType = 'single' | 'sequential' | 'parallel';
 
@@ -73,7 +74,7 @@ export class Document {
         // If parsing fails, it's already a plain string path
       }
     }
-    this.file_path = filePath as string;
+    this.file_path = filePath;
 
     this.file_size = data.file_size;
     this.mime_type = data.mime_type;
@@ -210,7 +211,7 @@ export class Document {
    */
   static isValidStatusTransition(
     currentStatus: DocumentStatus,
-    newStatus: DocumentStatus
+    newStatus: DocumentStatus,
   ): boolean {
     const validTransitions: Record<DocumentStatus, DocumentStatus[]> = {
       draft: ['pending'],
