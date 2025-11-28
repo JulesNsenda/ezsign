@@ -85,3 +85,7 @@ PUSH_INSTRUCTIONS.md
 process-task-list.md
 generate-tasks.md
 create-prd.md
+
+# Documentation and reference files
+docs/
+docs/**
