@@ -7,7 +7,7 @@ import type { Field } from '@/types';
  */
 
 export interface CreateFieldData {
-  type: 'signature' | 'initials' | 'date' | 'text' | 'checkbox';
+  type: 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio';
   page: number;
   x: number;
   y: number;
@@ -19,7 +19,7 @@ export interface CreateFieldData {
 }
 
 export interface UpdateFieldData {
-  type?: 'signature' | 'initials' | 'date' | 'text' | 'checkbox';
+  type?: 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio';
   page?: number;
   x?: number;
   y?: number;

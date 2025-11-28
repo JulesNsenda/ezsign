@@ -1,6 +1,7 @@
 import React from 'react';
-import type { Field } from '@/types';
+import type { Field, RadioOption } from '@/types';
 import Button from './Button';
+import RadioOptionsEditor from './RadioOptionsEditor';
 
 export interface FieldPropertiesProps {
   field: Field | null;
@@ -133,6 +134,91 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
             </div>
           </label>
         </div>
+
+        {/* Radio Field Options */}
+        {field.type === 'radio' && (
+          <>
+            <div className="border-t border-base-300 pt-4">
+              <RadioOptionsEditor
+                options={(field.properties?.options as RadioOption[]) || [
+                  { label: 'Option 1', value: 'option1' },
+                  { label: 'Option 2', value: 'option2' },
+                ]}
+                onChange={(options) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      options,
+                    },
+                  })
+                }
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
+                Layout
+              </label>
+              <select
+                value={(field.properties?.orientation as string) || 'vertical'}
+                onChange={(e) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      orientation: e.target.value as 'horizontal' | 'vertical',
+                    },
+                  })
+                }
+                className="input-docuseal text-sm"
+              >
+                <option value="vertical">Vertical</option>
+                <option value="horizontal">Horizontal</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
+                Font Size
+              </label>
+              <input
+                type="number"
+                value={(field.properties?.fontSize as number) || 12}
+                onChange={(e) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      fontSize: Number(e.target.value),
+                    },
+                  })
+                }
+                min={8}
+                max={24}
+                className="input-docuseal text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
+                Option Spacing (px)
+              </label>
+              <input
+                type="number"
+                value={(field.properties?.optionSpacing as number) || 20}
+                onChange={(e) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      optionSpacing: Number(e.target.value),
+                    },
+                  })
+                }
+                min={10}
+                max={50}
+                className="input-docuseal text-sm"
+              />
+            </div>
+          </>
+        )}
 
         {/* Assign to Signer */}
         <div>

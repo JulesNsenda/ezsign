@@ -34,6 +34,7 @@ const FIELD_COLORS: Record<FieldType, string> = {
   date: '#ffc107',
   text: '#17a2b8',
   checkbox: '#6c757d',
+  radio: '#9333ea',
 };
 
 const FIELD_LABELS: Record<FieldType, string> = {
@@ -42,6 +43,7 @@ const FIELD_LABELS: Record<FieldType, string> = {
   date: 'Date',
   text: 'Text',
   checkbox: 'Checkbox',
+  radio: 'Radio',
 };
 
 // Minimum field sizes in pixels

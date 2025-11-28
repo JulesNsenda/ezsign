@@ -85,6 +85,41 @@ export interface CheckboxField {
   };
 }
 
+export interface RadioOption {
+  /** Label displayed next to the radio button */
+  label: string;
+  /** Value of this option */
+  value: string;
+}
+
+export interface RadioField {
+  /** Page number (0-indexed) */
+  page: number;
+  /** X coordinate (from left) in points */
+  x: number;
+  /** Y coordinate (from bottom) in points */
+  y: number;
+  /** Width in points */
+  width: number;
+  /** Height in points */
+  height: number;
+  /** Available options for the radio group */
+  options: RadioOption[];
+  /** Currently selected value (if any) */
+  selectedValue?: string;
+  /** Radio group styling options */
+  settings?: {
+    /** Layout direction: 'vertical' or 'horizontal' (default: 'vertical') */
+    orientation?: 'horizontal' | 'vertical';
+    /** Font size in points (default: 12) */
+    fontSize?: number;
+    /** Text color as hex string (default: #000000) */
+    textColor?: string;
+    /** Spacing between options in points (default: 20) */
+    optionSpacing?: number;
+  };
+}
+
 /**
  * PDF processing service using pdf-lib
  * Provides methods for reading, modifying, and generating PDFs
@@ -376,6 +411,84 @@ export class PdfService {
   }
 
   /**
+   * Add radio button group to PDF
+   * Renders radio buttons with labels in vertical or horizontal layout
+   */
+  async addRadioGroup(pdfBuffer: Buffer, field: RadioField): Promise<Buffer> {
+    const pdfDoc = await this.loadPdf(pdfBuffer);
+    const pages = pdfDoc.getPages();
+
+    if (field.page >= pages.length) {
+      throw new Error(`Page ${field.page} does not exist in PDF`);
+    }
+
+    const page = pages[field.page];
+    if (!page) {
+      throw new Error(`Page ${field.page} could not be retrieved`);
+    }
+
+    // Import font for labels
+    const { StandardFonts } = await import('pdf-lib');
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    // Get settings with defaults
+    const fontSize = field.settings?.fontSize || 12;
+    const textColorHex = field.settings?.textColor || '#000000';
+    const textColor = this.hexToRgb(textColorHex);
+    const spacing = field.settings?.optionSpacing || 20;
+    const isVertical = field.settings?.orientation !== 'horizontal';
+    const circleRadius = 6;
+    const circleOuterBorderWidth = 1;
+
+    // Starting position - for vertical, start from top of field area
+    // PDF y-axis goes up, so we start at the top (y + height) and work down
+    let currentX = field.x;
+    let currentY = field.y + field.height - fontSize;
+
+    for (const option of field.options) {
+      const isSelected = option.value === field.selectedValue;
+
+      // Draw outer circle (unfilled)
+      page.drawCircle({
+        x: currentX + circleRadius,
+        y: currentY - circleRadius + fontSize / 2,
+        size: circleRadius,
+        borderColor: rgb(0, 0, 0),
+        borderWidth: circleOuterBorderWidth,
+      });
+
+      // Draw inner filled circle if selected
+      if (isSelected) {
+        page.drawCircle({
+          x: currentX + circleRadius,
+          y: currentY - circleRadius + fontSize / 2,
+          size: circleRadius - 3,
+          color: rgb(0, 0, 0),
+        });
+      }
+
+      // Draw label text
+      page.drawText(option.label, {
+        x: currentX + circleRadius * 2 + 5,
+        y: currentY,
+        size: fontSize,
+        font,
+        color: rgb(textColor.r, textColor.g, textColor.b),
+      });
+
+      // Move to next position
+      if (isVertical) {
+        currentY -= spacing;
+      } else {
+        const textWidth = font.widthOfTextAtSize(option.label, fontSize);
+        currentX += circleRadius * 2 + 10 + textWidth + spacing;
+      }
+    }
+
+    return Buffer.from(await pdfDoc.save());
+  }
+
+  /**
    * Add multiple fields to PDF in a single operation
    */
   async addMultipleFields(
@@ -385,6 +498,7 @@ export class PdfService {
       textFields?: TextField[];
       dateFields?: DateField[];
       checkboxFields?: CheckboxField[];
+      radioFields?: RadioField[];
     }
   ): Promise<Buffer> {
     let currentPdfBuffer = pdfBuffer;
@@ -414,6 +528,13 @@ export class PdfService {
     if (fields.checkboxFields) {
       for (const checkboxField of fields.checkboxFields) {
         currentPdfBuffer = await this.addCheckbox(currentPdfBuffer, checkboxField);
+      }
+    }
+
+    // Add radio fields
+    if (fields.radioFields) {
+      for (const radioField of fields.radioFields) {
+        currentPdfBuffer = await this.addRadioGroup(currentPdfBuffer, radioField);
       }
     }
 

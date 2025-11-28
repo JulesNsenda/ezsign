@@ -80,4 +80,4 @@ export const documentStatusSchema = z.enum(['draft', 'pending', 'completed', 'ca
 export const workflowTypeSchema = z.enum(['single', 'sequential', 'parallel']);
 
 // Field type validation
-export const fieldTypeSchema = z.enum(['signature', 'initials', 'date', 'text', 'checkbox']);
+export const fieldTypeSchema = z.enum(['signature', 'initials', 'date', 'text', 'checkbox', 'radio']);

@@ -38,8 +38,22 @@ export interface ApiResponse<T = any> {
 
 export type DocumentStatus = 'draft' | 'pending' | 'completed' | 'cancelled';
 export type WorkflowType = 'single' | 'sequential' | 'parallel';
-export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox';
+export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio';
 export type SignatureType = 'drawn' | 'typed' | 'uploaded';
+
+export interface RadioOption {
+  label: string;
+  value: string;
+}
+
+export interface RadioFieldProperties {
+  options: RadioOption[];
+  selectedValue?: string;
+  orientation: 'horizontal' | 'vertical';
+  fontSize?: number;
+  textColor?: string;
+  optionSpacing?: number;
+}
 
 export interface Document {
   id: string;

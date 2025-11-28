@@ -1,4 +1,9 @@
-export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox';
+export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio';
+
+export interface RadioOption {
+  label: string;
+  value: string;
+}
 
 export interface FieldProperties {
   // Text field properties
@@ -17,6 +22,12 @@ export interface FieldProperties {
 
   // Signature/Initials properties
   signatureColor?: string;
+
+  // Radio field properties
+  options?: RadioOption[];
+  selectedValue?: string;
+  orientation?: 'horizontal' | 'vertical';
+  optionSpacing?: number;
 
   // General properties
   backgroundColor?: string;
@@ -130,6 +141,13 @@ export class Field {
   }
 
   /**
+   * Check if field is a radio button group
+   */
+  isRadio(): boolean {
+    return this.type === 'radio';
+  }
+
+  /**
    * Check if field requires a signature (signature or initials)
    */
   requiresSignature(): boolean {
@@ -238,6 +256,41 @@ export class Field {
       errors.push('borderWidth must be 0 or greater');
     }
 
+    // Validate radio field properties
+    if (this.isRadio()) {
+      if (!props.options || props.options.length < 2) {
+        errors.push('Radio field must have at least 2 options');
+      }
+      if (props.options && props.options.length > 10) {
+        errors.push('Radio field cannot have more than 10 options');
+      }
+      if (props.options) {
+        const values = props.options.map((o) => o.value);
+        if (new Set(values).size !== values.length) {
+          errors.push('Radio options must have unique values');
+        }
+        // Check each option has non-empty label and value
+        for (const option of props.options) {
+          if (!option.label || option.label.trim() === '') {
+            errors.push('Radio option labels cannot be empty');
+            break;
+          }
+          if (!option.value || option.value.trim() === '') {
+            errors.push('Radio option values cannot be empty');
+            break;
+          }
+        }
+        // Validate selectedValue if provided
+        if (props.selectedValue && !values.includes(props.selectedValue)) {
+          errors.push('Selected value must match one of the radio options');
+        }
+      }
+      // Validate optionSpacing
+      if (props.optionSpacing !== undefined && (props.optionSpacing < 10 || props.optionSpacing > 50)) {
+        errors.push('Option spacing must be between 10 and 50');
+      }
+    }
+
     return {
       valid: errors.length === 0,
       errors,
@@ -294,6 +347,18 @@ export class Field {
           borderColor: '#000000',
           borderWidth: 1,
         };
+      case 'radio':
+        return {
+          options: [
+            { label: 'Option 1', value: 'option1' },
+            { label: 'Option 2', value: 'option2' },
+          ],
+          selectedValue: undefined,
+          orientation: 'vertical',
+          fontSize: 12,
+          textColor: '#000000',
+          optionSpacing: 20,
+        };
       default:
         return {};
     }
@@ -303,7 +368,7 @@ export class Field {
    * Validate field type
    */
   static isValidFieldType(type: string): type is FieldType {
-    return ['signature', 'initials', 'date', 'text', 'checkbox'].includes(type);
+    return ['signature', 'initials', 'date', 'text', 'checkbox', 'radio'].includes(type);
   }
 
   /**
@@ -321,6 +386,8 @@ export class Field {
         return { width: 100, height: 25 };
       case 'checkbox':
         return { width: 15, height: 15 };
+      case 'radio':
+        return { width: 100, height: 50 }; // Minimum for 2 vertical options
       default:
         return { width: 50, height: 25 };
     }
@@ -344,6 +411,7 @@ export class Field {
       date: 'Date',
       text: 'Text Input',
       checkbox: 'Checkbox',
+      radio: 'Radio Button Group',
     };
     return typeDescriptions[this.type] || 'Unknown Field';
   }
