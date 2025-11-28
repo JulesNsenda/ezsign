@@ -233,7 +233,6 @@ export const PrepareDocument: React.FC = () => {
       await deleteFieldMutation.mutateAsync({ documentId: id, fieldId });
       refetchFields();
       setSelectedFieldId(null);
-      setShowFieldProperties(false);
       toast.success('Field deleted');
     } catch (error: any) {
       toast.error(error.response?.data?.error?.message || 'Failed to delete field');

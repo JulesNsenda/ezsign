@@ -88,7 +88,7 @@ export class AuthController {
         try {
           await this.emailService.sendEmailVerification({
             recipientEmail: user.email,
-            recipientName: user.email.split('@')[0], // Use email prefix as name
+            recipientName: user.email.split('@')[0] || user.email, // Use email prefix as name
             verificationToken: token,
           });
         } catch (emailError) {

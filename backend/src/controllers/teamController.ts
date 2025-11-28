@@ -26,14 +26,22 @@ export class TeamController {
         return;
       }
 
-      const teams = await this.teamService.findByUserId(
-        authenticatedReq.user.userId
-      );
+      const userId = authenticatedReq.user.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
+
+      const teams = await this.teamService.findByUserId(userId);
 
       // Get role for each team
       const teamsWithRoles = await Promise.all(
         teams.map(async (team) => {
-          const member = await this.teamService.getMember(team.id, authenticatedReq.user!.userId);
+          const member = await this.teamService.getMember(team.id, userId);
           return {
             ...team.toJSON(),
             role: member?.role || 'member',
@@ -69,6 +77,16 @@ export class TeamController {
         return;
       }
 
+      const userId = authenticatedReq.user.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
+
       const { name } = req.body;
 
       // Validate input
@@ -92,7 +110,7 @@ export class TeamController {
       // Create team
       const team = await this.teamService.createTeam({
         name,
-        owner_id: authenticatedReq.user.userId,
+        owner_id: userId,
       });
 
       res.status(201).json({
@@ -124,7 +142,25 @@ export class TeamController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Team ID is required',
+        });
+        return;
+      }
+
+      const userId = authenticatedReq.user.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
 
       const team = await this.teamService.findById(id);
 
@@ -139,7 +175,7 @@ export class TeamController {
       // Check if user is a member
       const isMember = await this.teamService.isMember(
         id,
-        authenticatedReq.user.userId
+        userId
       );
 
       if (!isMember && authenticatedReq.user.role !== 'admin') {
@@ -178,8 +214,26 @@ export class TeamController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
       const { name } = req.body;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Team ID is required',
+        });
+        return;
+      }
+
+      const userId = authenticatedReq.user.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
 
       // Find existing team
       const existingTeam = await this.teamService.findById(id);
@@ -195,7 +249,7 @@ export class TeamController {
       // Check if user is admin/owner or system admin
       const isAdminOrOwner = await this.teamService.isAdminOrOwner(
         id,
-        authenticatedReq.user.userId
+        userId
       );
 
       if (!isAdminOrOwner && authenticatedReq.user.role !== 'admin') {
@@ -247,7 +301,25 @@ export class TeamController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Team ID is required',
+        });
+        return;
+      }
+
+      const userId = authenticatedReq.user.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
 
       // Find existing team
       const existingTeam = await this.teamService.findById(id);
@@ -262,7 +334,7 @@ export class TeamController {
 
       // Only owner or system admin can delete a team
       if (
-        existingTeam.owner_id !== authenticatedReq.user.userId &&
+        existingTeam.owner_id !== userId &&
         authenticatedReq.user.role !== 'admin'
       ) {
         res.status(403).json({
@@ -303,7 +375,25 @@ export class TeamController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Team ID is required',
+        });
+        return;
+      }
+
+      const userId = authenticatedReq.user.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
 
       // Check if team exists
       const team = await this.teamService.findById(id);
@@ -319,7 +409,7 @@ export class TeamController {
       // Check if user is a member
       const isMember = await this.teamService.isMember(
         id,
-        authenticatedReq.user.userId
+        userId
       );
 
       if (!isMember && authenticatedReq.user.role !== 'admin') {
@@ -360,8 +450,26 @@ export class TeamController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
       const { userId, role } = req.body;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Team ID is required',
+        });
+        return;
+      }
+
+      const currentUserId = authenticatedReq.user.userId;
+
+      if (!currentUserId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
 
       // Validate input
       if (!userId) {
@@ -395,7 +503,7 @@ export class TeamController {
       // Check if user is admin/owner
       const isAdminOrOwner = await this.teamService.isAdminOrOwner(
         id,
-        authenticatedReq.user.userId
+        currentUserId
       );
 
       if (!isAdminOrOwner && authenticatedReq.user.role !== 'admin') {
@@ -452,7 +560,34 @@ export class TeamController {
         return;
       }
 
-      const { id, userId } = req.params;
+      const id = req.params.id;
+      const userId = req.params.userId;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Team ID is required',
+        });
+        return;
+      }
+
+      if (!userId) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'User ID is required',
+        });
+        return;
+      }
+
+      const currentUserId = authenticatedReq.user.userId;
+
+      if (!currentUserId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
 
       // Check if team exists
       const team = await this.teamService.findById(id);
@@ -482,10 +617,10 @@ export class TeamController {
       // - Members can remove themselves
       const isAdminOrOwner = await this.teamService.isAdminOrOwner(
         id,
-        authenticatedReq.user.userId
+        currentUserId
       );
 
-      const isSelf = authenticatedReq.user.userId === userId;
+      const isSelf = currentUserId === userId;
       const isSystemAdmin = authenticatedReq.user.role === 'admin';
 
       if (!isSystemAdmin && !isAdminOrOwner && !isSelf) {
@@ -536,8 +671,35 @@ export class TeamController {
         return;
       }
 
-      const { id, userId } = req.params;
+      const id = req.params.id;
+      const userId = req.params.userId;
       const { role } = req.body;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Team ID is required',
+        });
+        return;
+      }
+
+      if (!userId) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'User ID is required',
+        });
+        return;
+      }
+
+      const currentUserId = authenticatedReq.user.userId;
+
+      if (!currentUserId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
 
       // Validate input
       if (!role) {
@@ -582,7 +744,7 @@ export class TeamController {
       // Only admins/owners or system admins can update roles
       const isAdminOrOwner = await this.teamService.isAdminOrOwner(
         id,
-        authenticatedReq.user.userId
+        currentUserId
       );
 
       if (!isAdminOrOwner && authenticatedReq.user.role !== 'admin') {

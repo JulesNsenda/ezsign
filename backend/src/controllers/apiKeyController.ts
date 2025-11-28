@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { ApiKeyService } from '@/services/apiKeyService';
-import { ApiKey } from '@/models/ApiKey';
 import { AuthenticatedRequest } from '@/middleware/auth';
 
 export class ApiKeyController {
@@ -133,7 +132,15 @@ export class ApiKeyController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'API key ID is required',
+        });
+        return;
+      }
 
       const apiKey = await this.apiKeyService.findById(id);
 
@@ -182,8 +189,16 @@ export class ApiKeyController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
       const { name, expiresIn } = req.body;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'API key ID is required',
+        });
+        return;
+      }
 
       // Find existing API key
       const existingKey = await this.apiKeyService.findById(id);
@@ -259,7 +274,15 @@ export class ApiKeyController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'API key ID is required',
+        });
+        return;
+      }
 
       // Find existing API key
       const existingKey = await this.apiKeyService.findById(id);

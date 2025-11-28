@@ -80,7 +80,7 @@ export class WebhookWorker {
       console.log(`⏳ Webhook delivery job ${job.id} started for event ${job.data.eventId}`);
     });
 
-    this.worker.on('progress', (job: Job<WebhookJobData>, progress: number | object) => {
+    this.worker.on('progress', (job: Job<WebhookJobData>, progress) => {
       console.log(`⏳ Webhook delivery job ${job.id} progress: ${progress}%`);
     });
   }

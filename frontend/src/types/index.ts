@@ -52,9 +52,19 @@ export interface Document {
   workflow_type: WorkflowType;
   page_count: number;
   file_size: number;
+  file_size_formatted?: string;
   mime_type: string;
   created_at: string;
   updated_at: string;
+  // Thumbnail fields
+  has_thumbnail?: boolean;
+  thumbnail_generated_at?: string;
+  // Optimization fields
+  is_optimized?: boolean;
+  original_file_size?: number;
+  optimized_at?: string;
+  optimization_savings?: number;
+  optimization_percentage?: number;
 }
 
 export interface Field {

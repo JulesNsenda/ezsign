@@ -176,7 +176,7 @@ export const TemplateEditor: React.FC = () => {
             <div>
               <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', alignItems: 'center' }}>
                 <Button
-                  size="small"
+                  size="sm"
                   onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
                   disabled={zoom <= 0.5}
                 >
@@ -186,14 +186,14 @@ export const TemplateEditor: React.FC = () => {
                   {Math.round(zoom * 100)}%
                 </span>
                 <Button
-                  size="small"
+                  size="sm"
                   onClick={() => setZoom(Math.min(2, zoom + 0.1))}
                   disabled={zoom >= 2}
                 >
                   +
                 </Button>
                 <Button
-                  size="small"
+                  size="sm"
                   onClick={() => setZoom(1)}
                   variant="secondary"
                 >
@@ -246,7 +246,7 @@ export const TemplateEditor: React.FC = () => {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>Template Info</h3>
                 {!isEditingInfo && (
-                  <Button size="small" onClick={() => setIsEditingInfo(true)}>
+                  <Button size="sm" onClick={() => setIsEditingInfo(true)}>
                     Edit
                   </Button>
                 )}
@@ -291,7 +291,7 @@ export const TemplateEditor: React.FC = () => {
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <Button
-                      size="small"
+                      size="sm"
                       variant="primary"
                       onClick={handleUpdateTemplateInfo}
                       loading={updateTemplateMutation.isPending}
@@ -299,7 +299,7 @@ export const TemplateEditor: React.FC = () => {
                       Save
                     </Button>
                     <Button
-                      size="small"
+                      size="sm"
                       variant="secondary"
                       onClick={() => {
                         setTemplateName(template.name);

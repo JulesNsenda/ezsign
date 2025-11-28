@@ -30,7 +30,7 @@ export class WebhookController {
         return;
       }
 
-      const { url, events, description, secret } = req.body;
+      const { url, events, secret } = req.body;
 
       // Validate required fields
       if (!url || !events || !Array.isArray(events) || events.length === 0) {
@@ -204,6 +204,15 @@ export class WebhookController {
 
       const { id } = req.params;
 
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: 'Bad Request',
+          message: 'Webhook ID is required',
+        });
+        return;
+      }
+
       const webhook = await this.webhookService.getWebhookById(id);
 
       if (!webhook) {
@@ -265,6 +274,15 @@ export class WebhookController {
 
       const { id } = req.params;
       const { url, events, active } = req.body;
+
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: 'Bad Request',
+          message: 'Webhook ID is required',
+        });
+        return;
+      }
 
       // Verify webhook exists and user owns it
       const existingWebhook = await this.webhookService.getWebhookById(id);
@@ -403,6 +421,15 @@ export class WebhookController {
 
       const { id } = req.params;
 
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: 'Bad Request',
+          message: 'Webhook ID is required',
+        });
+        return;
+      }
+
       // Verify webhook exists and user owns it
       const webhook = await this.webhookService.getWebhookById(id);
       if (!webhook) {
@@ -455,11 +482,11 @@ export class WebhookController {
     const match = hostname.match(ipv4Regex);
 
     if (match) {
-      const [, a, b, c, d] = match.map(Number);
+      const [, a, b, _c, _d] = match.map(Number);
 
       // Private IP ranges
       if (a === 10) return true; // 10.0.0.0/8
-      if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+      if (a === 172 && b !== undefined && b >= 16 && b <= 31) return true; // 172.16.0.0/12
       if (a === 192 && b === 168) return true; // 192.168.0.0/16
       if (a === 169 && b === 254) return true; // 169.254.0.0/16 (link-local)
     }

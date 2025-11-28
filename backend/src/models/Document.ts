@@ -16,6 +16,13 @@ export interface DocumentData {
   completed_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  // Thumbnail fields
+  thumbnail_path: string | null;
+  thumbnail_generated_at: Date | null;
+  // Optimization fields
+  is_optimized: boolean;
+  original_file_size: number | null;
+  optimized_at: Date | null;
 }
 
 export interface CreateDocumentData {
@@ -51,6 +58,13 @@ export class Document {
   completed_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  // Thumbnail fields
+  thumbnail_path: string | null;
+  thumbnail_generated_at: Date | null;
+  // Optimization fields
+  is_optimized: boolean;
+  original_file_size: number | null;
+  optimized_at: Date | null;
 
   constructor(data: DocumentData) {
     this.id = data.id;
@@ -83,6 +97,13 @@ export class Document {
     this.completed_at = data.completed_at;
     this.created_at = data.created_at;
     this.updated_at = data.updated_at;
+    // Thumbnail fields
+    this.thumbnail_path = data.thumbnail_path;
+    this.thumbnail_generated_at = data.thumbnail_generated_at;
+    // Optimization fields
+    this.is_optimized = data.is_optimized ?? false;
+    this.original_file_size = data.original_file_size;
+    this.optimized_at = data.optimized_at;
   }
 
   /**
@@ -237,6 +258,33 @@ export class Document {
   }
 
   /**
+   * Check if thumbnail exists
+   */
+  hasThumbnail(): boolean {
+    return !!this.thumbnail_path;
+  }
+
+  /**
+   * Get optimization savings in bytes
+   */
+  getOptimizationSavings(): number {
+    if (!this.is_optimized || !this.original_file_size) {
+      return 0;
+    }
+    return this.original_file_size - this.file_size;
+  }
+
+  /**
+   * Get optimization savings percentage
+   */
+  getOptimizationPercentage(): number {
+    if (!this.is_optimized || !this.original_file_size || this.original_file_size === 0) {
+      return 0;
+    }
+    return Math.round(((this.original_file_size - this.file_size) / this.original_file_size) * 100);
+  }
+
+  /**
    * Convert to JSON
    */
   toJSON(): DocumentData {
@@ -255,14 +303,24 @@ export class Document {
       completed_at: this.completed_at,
       created_at: this.created_at,
       updated_at: this.updated_at,
+      thumbnail_path: this.thumbnail_path,
+      thumbnail_generated_at: this.thumbnail_generated_at,
+      is_optimized: this.is_optimized,
+      original_file_size: this.original_file_size,
+      optimized_at: this.optimized_at,
     };
   }
 
   /**
    * Convert to public JSON (exclude internal paths)
    */
-  toPublicJSON(): Omit<DocumentData, 'file_path'> & { file_size_formatted: string } {
-    return {
+  toPublicJSON(): Omit<DocumentData, 'file_path' | 'thumbnail_path'> & {
+    file_size_formatted: string;
+    has_thumbnail: boolean;
+    optimization_savings?: number;
+    optimization_percentage?: number;
+  } {
+    const result: any = {
       id: this.id,
       user_id: this.user_id,
       team_id: this.team_id,
@@ -277,6 +335,18 @@ export class Document {
       completed_at: this.completed_at,
       created_at: this.created_at,
       updated_at: this.updated_at,
+      thumbnail_generated_at: this.thumbnail_generated_at,
+      has_thumbnail: this.hasThumbnail(),
+      is_optimized: this.is_optimized,
+      original_file_size: this.original_file_size,
+      optimized_at: this.optimized_at,
     };
+
+    if (this.is_optimized) {
+      result.optimization_savings = this.getOptimizationSavings();
+      result.optimization_percentage = this.getOptimizationPercentage();
+    }
+
+    return result;
   }
 }

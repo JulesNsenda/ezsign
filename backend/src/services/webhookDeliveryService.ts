@@ -49,7 +49,7 @@ export class WebhookDeliveryService {
    * Deliver webhook to endpoint
    */
   async deliverWebhook(
-    webhookId: string,
+    _webhookId: string,
     url: string,
     secret: string,
     eventType: string,
@@ -210,7 +210,7 @@ export class WebhookDeliveryService {
       return null;
     }
 
-    const delayMs = delays[attempts] || delays[delays.length - 1];
+    const delayMs = delays[attempts] ?? delays[delays.length - 1] ?? 30 * 60 * 1000;
     return new Date(Date.now() + delayMs);
   }
 

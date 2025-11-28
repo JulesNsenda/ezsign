@@ -4,6 +4,7 @@ import multer from 'multer';
 import { DocumentService } from '@/services/documentService';
 import { LocalStorageAdapter } from '@/adapters/LocalStorageAdapter';
 import { createStorageService } from '@/services/storageService';
+import { pdfQueueService } from '@/services/pdfQueueService';
 import path from 'path';
 
 // Configure multer for memory storage (we'll process the file before storing)
@@ -24,12 +25,13 @@ const upload = multer({
 
 export class DocumentController {
   private documentService: DocumentService;
+  private storagePath: string;
   public uploadMiddleware: multer.Multer;
 
   constructor(pool: Pool) {
     // Initialize storage adapter
-    const storagePath = process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
-    const storageAdapter = new LocalStorageAdapter(storagePath);
+    this.storagePath = process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
+    const storageAdapter = new LocalStorageAdapter(this.storagePath);
     const storageService = createStorageService(storageAdapter);
 
     this.documentService = new DocumentService(pool, storageService);
@@ -76,6 +78,20 @@ export class DocumentController {
         title: title.trim(),
         fileBuffer: req.file.buffer,
         originalFilename: req.file.originalname,
+      });
+
+      // Queue thumbnail generation (async, don't await)
+      const filePath = path.join(this.storagePath, document.file_path);
+      pdfQueueService.addThumbnailJob({
+        documentId: document.id,
+        filePath,
+        maxWidth: 200,
+        maxHeight: 300,
+      }).catch((err) => {
+        console.error('Failed to queue thumbnail generation:', {
+          documentId: document.id,
+          error: err.message,
+        });
       });
 
       res.status(201).json({

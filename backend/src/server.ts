@@ -14,9 +14,11 @@ import { createApiKeysRouter } from '@/routes/apiKeys';
 import { createTemplateRouter } from '@/routes/templateRoutes';
 import { createSigningRouter, createDocumentSigningRouter } from '@/routes/signingRoutes';
 import { createWebhookRouter } from '@/routes/webhooks';
+import { createPdfRouter } from '@/routes/pdfRoutes';
 import { errorHandler } from '@/middleware/errorHandler';
 import { apiLimiter } from '@/middleware/rateLimiter';
 import { createWebhookWorker } from '@/workers/webhookWorker';
+import { createPdfWorker } from '@/workers/pdfWorker';
 
 // Environment variables
 const PORT = process.env.PORT || 3001;
@@ -38,7 +40,7 @@ const dbConfig = {
 const pool = new Pool(dbConfig);
 
 // Test database connection
-pool.connect((err, client, release) => {
+pool.connect((err, _client, release) => {
   if (err) {
     console.error('Error connecting to the database:', err.stack);
     process.exit(1);
@@ -51,6 +53,10 @@ pool.connect((err, client, release) => {
 // Initialize webhook worker for background delivery processing
 const webhookWorker = createWebhookWorker(pool);
 console.log('✓ Webhook worker initialized');
+
+// Initialize PDF worker for background PDF processing
+const pdfWorker = createPdfWorker(pool);
+console.log('✓ PDF worker initialized');
 
 // Initialize Express app
 const app = express();
@@ -73,7 +79,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(apiLimiter);
 
 // CORS middleware
-app.use((req: Request, res: Response, next: NextFunction) => {
+app.use((req: Request, res: Response, next: NextFunction): void => {
   const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [
     'http://localhost:3000',
     'http://localhost:3002',
@@ -90,14 +96,15 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
 
   if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
+    res.sendStatus(200);
+    return;
   }
 
   next();
 });
 
 // Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
+app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -114,10 +121,11 @@ app.use('/api/teams', createTeamsRouter(pool));
 app.use('/api/api-keys', createApiKeysRouter(pool));
 app.use('/api/templates', createTemplateRouter(pool));
 app.use('/api/webhooks', createWebhookRouter(pool));
+app.use('/api/pdf', createPdfRouter(pool)); // PDF processing endpoints
 app.use('/api/signing', createSigningRouter(pool)); // Public signing links
 
 // API documentation placeholder
-app.get('/api/docs', (req: Request, res: Response) => {
+app.get('/api/docs', (_req: Request, res: Response) => {
   res.status(200).json({
     message: 'API Documentation',
     version: '1.0.0',
@@ -128,6 +136,7 @@ app.get('/api/docs', (req: Request, res: Response) => {
       apiKeys: '/api/api-keys',
       templates: '/api/templates',
       webhooks: '/api/webhooks',
+      pdf: '/api/pdf',
       signing: '/api/signing',
     },
   });
@@ -158,6 +167,7 @@ process.on('SIGTERM', async () => {
   server.close(async () => {
     console.log('HTTP server closed');
     await webhookWorker.close();
+    await pdfWorker.close();
     pool.end(() => {
       console.log('Database pool closed');
       process.exit(0);
@@ -170,6 +180,7 @@ process.on('SIGINT', async () => {
   server.close(async () => {
     console.log('HTTP server closed');
     await webhookWorker.close();
+    await pdfWorker.close();
     pool.end(() => {
       console.log('Database pool closed');
       process.exit(0);

@@ -1,4 +1,5 @@
 import { Job } from 'bullmq';
+import { Pool } from 'pg';
 import { createWorker, QueueName } from '@/config/queue';
 import { PdfJobData, PdfJobType } from '@/services/pdfQueueService';
 import { pdfService } from '@/services/pdfService';
@@ -11,8 +12,11 @@ import * as path from 'path';
  */
 export class PdfWorker {
   private worker;
+  private pool: Pool | null;
 
-  constructor() {
+  constructor(pool?: Pool) {
+    this.pool = pool || null;
+
     this.worker = createWorker<PdfJobData>(
       QueueName.PDF_PROCESSING,
       this.processJob.bind(this),
@@ -26,6 +30,13 @@ export class PdfWorker {
     );
 
     this.setupEventListeners();
+  }
+
+  /**
+   * Set database pool for database updates
+   */
+  setPool(pool: Pool): void {
+    this.pool = pool;
   }
 
   /**
@@ -65,7 +76,7 @@ export class PdfWorker {
    */
   private async generateThumbnail(
     job: Job<PdfJobData>
-  ): Promise<{ thumbnailPath: string }> {
+  ): Promise<{ thumbnailPath: string; relativePath: string }> {
     const data = job.data as Extract<PdfJobData, { type: PdfJobType.GENERATE_THUMBNAIL }>;
 
     await job.updateProgress(10);
@@ -81,19 +92,39 @@ export class PdfWorker {
     });
     await job.updateProgress(70);
 
-    // Save thumbnail
-    const thumbnailDir = path.join(path.dirname(data.filePath), 'thumbnails');
+    // Save thumbnail in a structured directory
+    // Get storage base path from environment or use default
+    const storagePath = process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
+    const thumbnailDir = path.join(storagePath, 'thumbnails');
     await fs.mkdir(thumbnailDir, { recursive: true });
 
-    const thumbnailPath = path.join(
-      thumbnailDir,
-      `${path.basename(data.filePath, '.pdf')}_thumbnail.png`
-    );
+    // Use document ID for consistent naming
+    const thumbnailFilename = `${data.documentId}.png`;
+    const thumbnailPath = path.join(thumbnailDir, thumbnailFilename);
+    const relativePath = `thumbnails/${thumbnailFilename}`;
+
     await fs.writeFile(thumbnailPath, thumbnail);
+    await job.updateProgress(90);
+
+    // Update database with thumbnail path
+    if (this.pool) {
+      try {
+        await this.pool.query(
+          `UPDATE documents
+           SET thumbnail_path = $1, thumbnail_generated_at = NOW()
+           WHERE id = $2`,
+          [relativePath, data.documentId]
+        );
+      } catch (dbError) {
+        console.error('Failed to update document with thumbnail path:', dbError);
+        // Don't throw - the thumbnail was still generated successfully
+      }
+    }
+
     await job.updateProgress(100);
 
     console.log(`Generated thumbnail for document ${data.documentId}`);
-    return { thumbnailPath };
+    return { thumbnailPath, relativePath };
   }
 
   /**
@@ -101,7 +132,7 @@ export class PdfWorker {
    */
   private async optimizePdf(
     job: Job<PdfJobData>
-  ): Promise<{ optimizedPath: string; sizeSaved: number }> {
+  ): Promise<{ optimizedPath: string; sizeSaved: number; originalSize: number; optimizedSize: number }> {
     const data = job.data as Extract<PdfJobData, { type: PdfJobType.OPTIMIZE_PDF }>;
 
     await job.updateProgress(10);
@@ -116,15 +147,33 @@ export class PdfWorker {
     const optimizedSize = optimizedBuffer.length;
     await job.updateProgress(70);
 
-    // Save optimized version
-    const optimizedPath = data.filePath.replace('.pdf', '_optimized.pdf');
-    await fs.writeFile(optimizedPath, optimizedBuffer);
+    // Replace original file with optimized version
+    await fs.writeFile(data.filePath, optimizedBuffer);
+    await job.updateProgress(85);
+
+    // Update database with optimization info
+    if (this.pool) {
+      try {
+        await this.pool.query(
+          `UPDATE documents
+           SET is_optimized = true,
+               original_file_size = $1,
+               file_size = $2,
+               optimized_at = NOW()
+           WHERE id = $3`,
+          [originalSize, optimizedSize, data.documentId]
+        );
+      } catch (dbError) {
+        console.error('Failed to update document with optimization info:', dbError);
+      }
+    }
+
     await job.updateProgress(100);
 
     const sizeSaved = originalSize - optimizedSize;
-    console.log(`Optimized document ${data.documentId}, saved ${sizeSaved} bytes`);
+    console.log(`Optimized document ${data.documentId}, saved ${sizeSaved} bytes (${Math.round((sizeSaved / originalSize) * 100)}%)`);
 
-    return { optimizedPath, sizeSaved };
+    return { optimizedPath: data.filePath, sizeSaved, originalSize, optimizedSize };
   }
 
   /**
@@ -238,18 +287,9 @@ export class PdfWorker {
   }
 }
 
-// Create and export worker instance
-export const pdfWorker = new PdfWorker();
-
-// Handle graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, closing PDF worker...');
-  await pdfWorker.close();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  console.log('SIGINT received, closing PDF worker...');
-  await pdfWorker.close();
-  process.exit(0);
-});
+/**
+ * Factory function to create PDF worker with database pool
+ */
+export function createPdfWorker(pool: Pool): PdfWorker {
+  return new PdfWorker(pool);
+}
