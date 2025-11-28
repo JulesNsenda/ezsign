@@ -1,7 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { ApiKeyService } from '@/services/apiKeyService';
+import { UserService } from '@/services/userService';
 import { UserRole } from '@/models/User';
+import logger from '@/services/loggerService';
 
 // Extend Express Request type to include API key authentication data
 declare global {
@@ -34,6 +36,7 @@ export interface ApiKeyAuthenticatedRequest extends Request {
  */
 export const createApiKeyAuth = (pool: Pool) => {
   const apiKeyService = new ApiKeyService(pool);
+  const userService = new UserService(pool);
 
   /**
    * Middleware to authenticate API keys
@@ -66,6 +69,23 @@ export const createApiKeyAuth = (pool: Pool) => {
         return;
       }
 
+      // Fetch actual user data from database
+      const user = await userService.findById(apiKey.user_id);
+
+      if (!user) {
+        // User was deleted but API key still exists
+        logger.warn('API key used for deleted user', {
+          apiKeyId: apiKey.id,
+          userId: apiKey.user_id,
+          correlationId: req.correlationId,
+        });
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User account no longer exists',
+        });
+        return;
+      }
+
       // Attach API key data to request
       req.apiKey = {
         id: apiKey.id,
@@ -73,17 +93,27 @@ export const createApiKeyAuth = (pool: Pool) => {
         name: apiKey.name,
       };
 
-      // Also fetch and attach user data for authorization checks
-      // In a real implementation, you'd fetch this from the database
-      // For now, we just set the userId
+      // Attach actual user data for authorization checks
       req.user = {
-        userId: apiKey.user_id,
-        email: '', // Would be fetched from database
-        role: 'creator' as UserRole, // Would be fetched from database
+        userId: user.id,
+        email: user.email,
+        role: user.role,
       };
+
+      logger.debug('API key authenticated', {
+        apiKeyId: apiKey.id,
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        correlationId: req.correlationId,
+      });
 
       next();
     } catch (error) {
+      logger.error('API key authentication error', {
+        error: (error as Error).message,
+        correlationId: req.correlationId,
+      });
       res.status(401).json({
         error: 'Unauthorized',
         message: 'Invalid API key',
@@ -98,6 +128,7 @@ export const createApiKeyAuth = (pool: Pool) => {
  */
 export const createDualAuth = (pool: Pool) => {
   const apiKeyService = new ApiKeyService(pool);
+  const userService = new UserService(pool);
 
   return async (
     req: Request,
@@ -135,20 +166,50 @@ export const createDualAuth = (pool: Pool) => {
         return;
       }
 
+      // Fetch actual user data from database
+      const user = await userService.findById(apiKey.user_id);
+
+      if (!user) {
+        // User was deleted but API key still exists
+        logger.warn('API key used for deleted user (dual auth)', {
+          apiKeyId: apiKey.id,
+          userId: apiKey.user_id,
+          correlationId: req.correlationId,
+        });
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User account no longer exists',
+        });
+        return;
+      }
+
       req.apiKey = {
         id: apiKey.id,
         userId: apiKey.user_id,
         name: apiKey.name,
       };
 
+      // Attach actual user data for authorization checks
       req.user = {
-        userId: apiKey.user_id,
-        email: '',
-        role: 'creator' as UserRole,
+        userId: user.id,
+        email: user.email,
+        role: user.role,
       };
+
+      logger.debug('API key authenticated (dual auth)', {
+        apiKeyId: apiKey.id,
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        correlationId: req.correlationId,
+      });
 
       next();
     } catch (error) {
+      logger.error('Dual auth error', {
+        error: (error as Error).message,
+        correlationId: req.correlationId,
+      });
       res.status(401).json({
         error: 'Unauthorized',
         message: 'Invalid authentication credentials',
