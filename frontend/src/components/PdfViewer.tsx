@@ -16,6 +16,8 @@ export interface PdfViewerProps {
   currentPage?: number;
   onPageChange?: (page: number) => void;
   width?: number;
+  /** Hide the built-in navigation controls */
+  hideNavigation?: boolean;
   /** @deprecated Use a sibling FieldsLayer component instead for better performance */
   children?: (pageNumber: number) => React.ReactNode;
 }
@@ -27,6 +29,7 @@ const PdfViewerComponent: React.FC<PdfViewerProps> = ({
   currentPage: controlledPage,
   onPageChange,
   width = 800,
+  hideNavigation = false,
   children,
 }) => {
   const [numPages, setNumPages] = useState<number>(0);
@@ -65,8 +68,8 @@ const PdfViewerComponent: React.FC<PdfViewerProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      {/* Page Navigation */}
-      {numPages > 1 && (
+      {/* Page Navigation - only show if not hidden and multiple pages */}
+      {!hideNavigation && numPages > 1 && (
         <div
           style={{
             display: 'flex',
@@ -101,7 +104,7 @@ const PdfViewerComponent: React.FC<PdfViewerProps> = ({
       )}
 
       {/* PDF Document */}
-      <div style={{ position: 'relative', backgroundColor: '#e9ecef', padding: '1rem' }}>
+      <div style={{ position: 'relative', backgroundColor: hideNavigation ? 'transparent' : '#e9ecef', padding: hideNavigation ? 0 : '1rem' }}>
         {isLoading && (
           <div
             style={{
@@ -160,8 +163,8 @@ const PdfViewerComponent: React.FC<PdfViewerProps> = ({
         )}
       </div>
 
-      {/* Page Info */}
-      {numPages > 0 && (
+      {/* Page Info - only show if not hidden */}
+      {!hideNavigation && numPages > 0 && (
         <div style={{ marginTop: '1rem', fontSize: '0.875rem', color: '#666' }}>
           Total pages: {numPages}
         </div>

@@ -564,6 +564,7 @@ export const PrepareDocument: React.FC = () => {
                           onPageChange={setCurrentPage}
                           onLoadSuccess={setNumPages}
                           width={pdfWidth}
+                          hideNavigation
                         />
                         {/* Fields Layer - sibling to PDF, handles all field interactions */}
                         <FieldsLayer
