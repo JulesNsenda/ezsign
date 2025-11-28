@@ -474,13 +474,36 @@ export class PdfService {
     pageNumber: number,
     options?: { width?: number; height?: number; scale?: number }
   ): Promise<Buffer> {
-    const pdfjsLib = await import('pdfjs-dist');
-    const { createCanvas } = await import('canvas');
+    // Use legacy build for Node.js compatibility
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const canvasModule = await import('canvas');
+    const { createCanvas } = canvasModule;
 
-    // Load PDF with pdfjs-dist
+    // Provide Node.js polyfills for browser APIs that pdfjs-dist expects
+    // DOMMatrix is required for PDF rendering transformations
+    const nodeCanvasFactory = {
+      create: (width: number, height: number) => {
+        const canvas = createCanvas(width, height);
+        const context = canvas.getContext('2d');
+        return { canvas, context };
+      },
+      reset: (canvasAndContext: { canvas: ReturnType<typeof createCanvas>; context: any }, width: number, height: number) => {
+        canvasAndContext.canvas.width = width;
+        canvasAndContext.canvas.height = height;
+      },
+      destroy: (canvasAndContext: { canvas: ReturnType<typeof createCanvas>; context: any }) => {
+        canvasAndContext.canvas.width = 0;
+        canvasAndContext.canvas.height = 0;
+      },
+    };
+
+    // Load PDF with pdfjs-dist using Node.js-compatible options
     const loadingTask = pdfjsLib.getDocument({
       data: new Uint8Array(pdfBuffer),
       useSystemFonts: true,
+      isOffscreenCanvasSupported: false,
+      // Disable worker for Node.js environment
+      disableFontFace: true,
     });
     const pdf = await loadingTask.promise;
 
@@ -493,14 +516,14 @@ export class PdfService {
     const canvasWidth = options?.width || viewport.width;
     const canvasHeight = options?.height || viewport.height;
 
-    // Create canvas
-    const canvas = createCanvas(canvasWidth, canvasHeight);
-    const context = canvas.getContext('2d');
+    // Create canvas using factory
+    const { canvas, context } = nodeCanvasFactory.create(Math.ceil(canvasWidth), Math.ceil(canvasHeight));
 
     // Render PDF page to canvas
     const renderContext = {
       canvasContext: context as any,
       viewport: viewport,
+      canvasFactory: nodeCanvasFactory,
     };
     await page.render(renderContext as any).promise;
 
