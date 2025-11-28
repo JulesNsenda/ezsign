@@ -266,6 +266,130 @@ describe('PdfService', () => {
     });
   });
 
+  describe('addCheckbox', () => {
+    it('should render unchecked checkbox', async () => {
+      const result = await pdfService.addCheckbox(samplePdfBuffer, {
+        page: 0,
+        x: 100,
+        y: 700,
+        width: 20,
+        height: 20,
+        checked: false,
+      });
+
+      expect(result).toBeInstanceOf(Buffer);
+      expect(result.length).toBeGreaterThan(0);
+
+      // Verify the PDF is still valid
+      const pdfDoc = await pdfService.loadPdf(result);
+      expect(pdfDoc.getPageCount()).toBe(1);
+    });
+
+    it('should render checked checkbox with X mark', async () => {
+      const result = await pdfService.addCheckbox(samplePdfBuffer, {
+        page: 0,
+        x: 100,
+        y: 700,
+        width: 20,
+        height: 20,
+        checked: true,
+      });
+
+      expect(result).toBeInstanceOf(Buffer);
+      expect(result.length).toBeGreaterThan(0);
+
+      // Verify the PDF is still valid
+      const pdfDoc = await pdfService.loadPdf(result);
+      expect(pdfDoc.getPageCount()).toBe(1);
+    });
+
+    it('should render checked checkbox with checkmark style', async () => {
+      const result = await pdfService.addCheckbox(samplePdfBuffer, {
+        page: 0,
+        x: 100,
+        y: 700,
+        width: 20,
+        height: 20,
+        checked: true,
+        options: {
+          style: 'checkmark',
+        },
+      });
+
+      expect(result).toBeInstanceOf(Buffer);
+      expect(result.length).toBeGreaterThan(0);
+
+      // Verify the PDF is still valid
+      const pdfDoc = await pdfService.loadPdf(result);
+      expect(pdfDoc.getPageCount()).toBe(1);
+    });
+
+    it('should render checkbox with custom colors', async () => {
+      const result = await pdfService.addCheckbox(samplePdfBuffer, {
+        page: 0,
+        x: 100,
+        y: 700,
+        width: 20,
+        height: 20,
+        checked: true,
+        options: {
+          borderColor: '#0000FF',
+          checkColor: '#FF0000',
+          backgroundColor: '#FFFF00',
+          borderWidth: 2,
+        },
+      });
+
+      expect(result).toBeInstanceOf(Buffer);
+      expect(result.length).toBeGreaterThan(0);
+
+      // Verify the PDF is still valid
+      const pdfDoc = await pdfService.loadPdf(result);
+      expect(pdfDoc.getPageCount()).toBe(1);
+    });
+
+    it('should throw error for invalid page number', async () => {
+      await expect(
+        pdfService.addCheckbox(samplePdfBuffer, {
+          page: 10,
+          x: 100,
+          y: 700,
+          width: 20,
+          height: 20,
+          checked: true,
+        })
+      ).rejects.toThrow('Page 10 does not exist');
+    });
+
+    it('should handle small checkbox sizes', async () => {
+      const result = await pdfService.addCheckbox(samplePdfBuffer, {
+        page: 0,
+        x: 100,
+        y: 700,
+        width: 15,
+        height: 15,
+        checked: true,
+      });
+
+      expect(result).toBeInstanceOf(Buffer);
+      expect(result.length).toBeGreaterThan(0);
+    });
+
+    it('should handle large checkbox sizes', async () => {
+      const result = await pdfService.addCheckbox(samplePdfBuffer, {
+        page: 0,
+        x: 100,
+        y: 600,
+        width: 50,
+        height: 50,
+        checked: true,
+      });
+
+      expect(result).toBeInstanceOf(Buffer);
+      expect(result.length).toBeGreaterThan(0);
+    });
+  });
+
   describe('addMultipleFields', () => {
     it('should add multiple fields in one operation', async () => {
       const result = await pdfService.addMultipleFields(samplePdfBuffer, {
@@ -290,6 +414,75 @@ describe('PdfService', () => {
             y: 600,
             text: '',
             format: 'iso',
+          },
+        ],
+      });
+
+      expect(result).toBeInstanceOf(Buffer);
+      expect(result.length).toBeGreaterThan(0);
+
+      // Verify the PDF is still valid
+      const pdfDoc = await pdfService.loadPdf(result);
+      expect(pdfDoc.getPageCount()).toBe(1);
+    });
+
+    it('should add checkbox fields via addMultipleFields', async () => {
+      const result = await pdfService.addMultipleFields(samplePdfBuffer, {
+        checkboxFields: [
+          {
+            page: 0,
+            x: 100,
+            y: 700,
+            width: 20,
+            height: 20,
+            checked: true,
+          },
+          {
+            page: 0,
+            x: 130,
+            y: 700,
+            width: 20,
+            height: 20,
+            checked: false,
+          },
+        ],
+      });
+
+      expect(result).toBeInstanceOf(Buffer);
+      expect(result.length).toBeGreaterThan(0);
+
+      // Verify the PDF is still valid
+      const pdfDoc = await pdfService.loadPdf(result);
+      expect(pdfDoc.getPageCount()).toBe(1);
+    });
+
+    it('should add all field types together', async () => {
+      const result = await pdfService.addMultipleFields(samplePdfBuffer, {
+        textFields: [
+          {
+            page: 0,
+            x: 100,
+            y: 750,
+            text: 'Name: John Doe',
+          },
+        ],
+        dateFields: [
+          {
+            page: 0,
+            x: 100,
+            y: 700,
+            text: '',
+            format: 'iso',
+          },
+        ],
+        checkboxFields: [
+          {
+            page: 0,
+            x: 100,
+            y: 650,
+            width: 20,
+            height: 20,
+            checked: true,
           },
         ],
       });

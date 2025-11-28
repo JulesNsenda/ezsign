@@ -57,6 +57,34 @@ export interface DateField extends TextField {
   format?: 'iso' | 'locale' | 'short';
 }
 
+export interface CheckboxField {
+  /** Page number (0-indexed) */
+  page: number;
+  /** X coordinate (from left) in points */
+  x: number;
+  /** Y coordinate (from bottom) in points */
+  y: number;
+  /** Width in points */
+  width: number;
+  /** Height in points */
+  height: number;
+  /** Whether checkbox is checked */
+  checked: boolean;
+  /** Checkbox styling options */
+  options?: {
+    /** Border color as hex string (default: #000000) */
+    borderColor?: string;
+    /** Check mark color as hex string (default: #000000) */
+    checkColor?: string;
+    /** Background color as hex string (default: #FFFFFF) */
+    backgroundColor?: string;
+    /** Border width in points (default: 1) */
+    borderWidth?: number;
+    /** Style of check mark: 'x' for X mark, 'checkmark' for ✓ (default: 'x') */
+    style?: 'x' | 'checkmark';
+  };
+}
+
 /**
  * PDF processing service using pdf-lib
  * Provides methods for reading, modifying, and generating PDFs
@@ -244,6 +272,110 @@ export class PdfService {
   }
 
   /**
+   * Convert hex color string to RGB values (0-1 range)
+   */
+  private hexToRgb(hex: string): { r: number; g: number; b: number } {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (!result || !result[1] || !result[2] || !result[3]) {
+      return { r: 0, g: 0, b: 0 }; // Default to black
+    }
+    return {
+      r: parseInt(result[1], 16) / 255,
+      g: parseInt(result[2], 16) / 255,
+      b: parseInt(result[3], 16) / 255,
+    };
+  }
+
+  /**
+   * Add checkbox to PDF
+   * Renders a checkbox with optional check mark (X or ✓)
+   */
+  async addCheckbox(pdfBuffer: Buffer, field: CheckboxField): Promise<Buffer> {
+    const pdfDoc = await this.loadPdf(pdfBuffer);
+    const pages = pdfDoc.getPages();
+
+    if (field.page >= pages.length) {
+      throw new Error(`Page ${field.page} does not exist in PDF`);
+    }
+
+    const page = pages[field.page];
+    if (!page) {
+      throw new Error(`Page ${field.page} could not be retrieved`);
+    }
+
+    const borderColorHex = field.options?.borderColor ?? '#000000';
+    const checkColorHex = field.options?.checkColor ?? '#000000';
+    const backgroundColorHex = field.options?.backgroundColor ?? '#FFFFFF';
+    const borderColor = this.hexToRgb(borderColorHex);
+    const checkColor = this.hexToRgb(checkColorHex);
+    const backgroundColor = this.hexToRgb(backgroundColorHex);
+    const borderWidth = field.options?.borderWidth || 1;
+    const style = field.options?.style || 'x';
+
+    // Draw background rectangle
+    page.drawRectangle({
+      x: field.x,
+      y: field.y,
+      width: field.width,
+      height: field.height,
+      color: rgb(backgroundColor.r, backgroundColor.g, backgroundColor.b),
+      borderColor: rgb(borderColor.r, borderColor.g, borderColor.b),
+      borderWidth,
+    });
+
+    // Draw check mark if checked
+    if (field.checked) {
+      const padding = Math.min(field.width, field.height) * 0.2;
+      const lineWidth = Math.max(1, Math.min(field.width, field.height) * 0.1);
+
+      if (style === 'checkmark') {
+        // Draw a checkmark (✓)
+        const startX = field.x + padding;
+        const midX = field.x + field.width * 0.35;
+        const endX = field.x + field.width - padding;
+        const startY = field.y + field.height * 0.5;
+        const midY = field.y + padding;
+        const endY = field.y + field.height - padding;
+
+        // Short stroke (down-left part of checkmark)
+        page.drawLine({
+          start: { x: startX, y: startY },
+          end: { x: midX, y: midY },
+          thickness: lineWidth,
+          color: rgb(checkColor.r, checkColor.g, checkColor.b),
+        });
+
+        // Long stroke (up-right part of checkmark)
+        page.drawLine({
+          start: { x: midX, y: midY },
+          end: { x: endX, y: endY },
+          thickness: lineWidth,
+          color: rgb(checkColor.r, checkColor.g, checkColor.b),
+        });
+      } else {
+        // Draw X mark (default)
+        // First diagonal line (top-left to bottom-right)
+        page.drawLine({
+          start: { x: field.x + padding, y: field.y + field.height - padding },
+          end: { x: field.x + field.width - padding, y: field.y + padding },
+          thickness: lineWidth,
+          color: rgb(checkColor.r, checkColor.g, checkColor.b),
+        });
+
+        // Second diagonal line (top-right to bottom-left)
+        page.drawLine({
+          start: { x: field.x + field.width - padding, y: field.y + field.height - padding },
+          end: { x: field.x + padding, y: field.y + padding },
+          thickness: lineWidth,
+          color: rgb(checkColor.r, checkColor.g, checkColor.b),
+        });
+      }
+    }
+
+    return Buffer.from(await pdfDoc.save());
+  }
+
+  /**
    * Add multiple fields to PDF in a single operation
    */
   async addMultipleFields(
@@ -252,6 +384,7 @@ export class PdfService {
       signatures?: SignatureField[];
       textFields?: TextField[];
       dateFields?: DateField[];
+      checkboxFields?: CheckboxField[];
     }
   ): Promise<Buffer> {
     let currentPdfBuffer = pdfBuffer;
@@ -274,6 +407,13 @@ export class PdfService {
     if (fields.dateFields) {
       for (const dateField of fields.dateFields) {
         currentPdfBuffer = await this.addDateField(currentPdfBuffer, dateField);
+      }
+    }
+
+    // Add checkbox fields
+    if (fields.checkboxFields) {
+      for (const checkboxField of fields.checkboxFields) {
+        currentPdfBuffer = await this.addCheckbox(currentPdfBuffer, checkboxField);
       }
     }
 
