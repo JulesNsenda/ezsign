@@ -5,6 +5,7 @@ import SignaturePad from '@/components/SignaturePad';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import { useSigningSession, useSubmitSignatures } from '@/hooks/useSignature';
+import { useToast } from '@/hooks/useToast';
 import signatureService, { type SignatureData } from '@/services/signatureService';
 import type { SignatureType } from '@/types';
 
@@ -14,6 +15,7 @@ import type { SignatureType } from '@/types';
 
 export const Sign: React.FC = () => {
   const { token } = useParams<{ token: string }>();
+  const { error: showError } = useToast();
 
   const [currentPage, setCurrentPage] = useState(0);
   const [currentFieldIndex, setCurrentFieldIndex] = useState<number>(0);
@@ -210,8 +212,8 @@ export const Sign: React.FC = () => {
     try {
       await submitSignaturesMutation.mutateAsync({ token, signatures: collectedSignatures });
       setIsCompleted(true);
-    } catch (error: any) {
-      alert(error.response?.data?.error?.message || 'Failed to submit signatures');
+    } catch (err: any) {
+      showError(err.response?.data?.error?.message || 'Failed to submit signatures');
     }
   };
 
