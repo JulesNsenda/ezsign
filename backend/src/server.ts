@@ -15,11 +15,14 @@ import { createTemplateRouter } from '@/routes/templateRoutes';
 import { createSigningRouter, createDocumentSigningRouter } from '@/routes/signingRoutes';
 import { createWebhookRouter } from '@/routes/webhooks';
 import { createPdfRouter } from '@/routes/pdfRoutes';
+import { createHealthRoutes } from '@/routes/health';
+import { HealthService } from '@/services/healthService';
 import { errorHandler } from '@/middleware/errorHandler';
 import { apiLimiter } from '@/middleware/rateLimiter';
 import { correlationIdMiddleware } from '@/middleware/correlationId';
 import { createWebhookWorker } from '@/workers/webhookWorker';
 import { createPdfWorker } from '@/workers/pdfWorker';
+import { getRedisConnection } from '@/config/queue';
 import logger from '@/services/loggerService';
 
 // Environment variables
@@ -59,6 +62,14 @@ logger.info('Webhook worker initialized');
 // Initialize PDF worker for background PDF processing
 const pdfWorker = createPdfWorker(pool);
 logger.info('PDF worker initialized');
+
+// Initialize Redis connection for health checks
+const healthRedis = getRedisConnection();
+logger.info('Redis connection for health checks initialized');
+
+// Initialize health service
+const healthService = new HealthService(pool, healthRedis);
+logger.info('Health service initialized');
 
 // Initialize Express app
 const app = express();
@@ -111,15 +122,8 @@ app.use((req: Request, res: Response, next: NextFunction): void => {
   next();
 });
 
-// Health check endpoint
-app.get('/health', (_req: Request, res: Response) => {
-  res.status(200).json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    environment: NODE_ENV,
-    uptime: process.uptime(),
-  });
-});
+// Health check routes (before rate limiting to ensure they always respond)
+app.use('/health', createHealthRoutes(healthService));
 
 // API routes
 app.use('/api/auth', createAuthRouter(pool));
@@ -184,6 +188,9 @@ const gracefulShutdown = async (signal: string) => {
 
       await pdfWorker.close();
       logger.info('PDF worker closed');
+
+      await healthRedis.quit();
+      logger.info('Health Redis connection closed');
 
       pool.end(() => {
         logger.info('Database pool closed');
