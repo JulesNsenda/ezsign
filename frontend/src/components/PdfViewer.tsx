@@ -16,6 +16,7 @@ export interface PdfViewerProps {
   currentPage?: number;
   onPageChange?: (page: number) => void;
   width?: number;
+  /** @deprecated Use a sibling FieldsLayer component instead for better performance */
   children?: (pageNumber: number) => React.ReactNode;
 }
 
