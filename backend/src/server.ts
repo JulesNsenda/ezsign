@@ -22,6 +22,7 @@ import { apiLimiter } from '@/middleware/rateLimiter';
 import { correlationIdMiddleware } from '@/middleware/correlationId';
 import { createWebhookWorker } from '@/workers/webhookWorker';
 import { createPdfWorker } from '@/workers/pdfWorker';
+import { createCleanupWorker, createCleanupQueue, scheduleCleanupJobs } from '@/workers/cleanupWorker';
 import { getRedisConnection } from '@/config/queue';
 import logger from '@/services/loggerService';
 
@@ -62,6 +63,16 @@ logger.info('Webhook worker initialized');
 // Initialize PDF worker for background PDF processing
 const pdfWorker = createPdfWorker(pool);
 logger.info('PDF worker initialized');
+
+// Initialize cleanup worker for file cleanup
+const cleanupWorker = createCleanupWorker(pool);
+const cleanupQueue = createCleanupQueue();
+logger.info('Cleanup worker initialized');
+
+// Schedule cleanup jobs (async, don't await - let server start)
+scheduleCleanupJobs(cleanupQueue).catch((error) => {
+  logger.error('Failed to schedule cleanup jobs', { error: (error as Error).message });
+});
 
 // Initialize Redis connection for health checks
 const healthRedis = getRedisConnection();
@@ -188,6 +199,10 @@ const gracefulShutdown = async (signal: string) => {
 
       await pdfWorker.close();
       logger.info('PDF worker closed');
+
+      await cleanupWorker.close();
+      await cleanupQueue.close();
+      logger.info('Cleanup worker and queue closed');
 
       await healthRedis.quit();
       logger.info('Health Redis connection closed');

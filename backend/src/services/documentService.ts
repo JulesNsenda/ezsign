@@ -1,6 +1,7 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { Document, DocumentData, DocumentStatus } from '@/models/Document';
 import { StorageService } from '@/services/storageService';
+import { CleanupService } from '@/services/cleanupService';
 import { pdfService } from '@/services/pdfService';
 import { WebhookService } from '@/services/webhookService';
 import { WebhookPayloadService } from '@/services/webhookPayloadService';
@@ -40,12 +41,14 @@ export interface PaginatedDocuments {
 export class DocumentService {
   private pool: Pool;
   private storageService: StorageService;
+  private cleanupService: CleanupService;
   private webhookService: WebhookService;
   private webhookPayloadService: WebhookPayloadService;
 
   constructor(pool: Pool, storageService: StorageService) {
     this.pool = pool;
     this.storageService = storageService;
+    this.cleanupService = new CleanupService(pool);
     this.webhookService = new WebhookService(pool);
     this.webhookPayloadService = new WebhookPayloadService(pool);
   }
@@ -243,33 +246,68 @@ export class DocumentService {
   }
 
   /**
-   * Delete a document
+   * Delete a document and all associated files
    */
   async deleteDocument(id: string, userId: string): Promise<boolean> {
-    // First, get the document to retrieve the file path
-    const document = await this.findById(id, userId);
-
-    if (!document) {
-      return false;
-    }
-
-    // Delete the file from storage
-    try {
-      await this.storageService.deleteFile(document.file_path);
-    } catch (error) {
-      logger.warn('Failed to delete file from storage', { error: (error as Error).message, filePath: document?.file_path });
-      // Continue with database deletion even if file deletion fails
-    }
-
-    // Delete from database
+    // First, verify the document exists and user has access
     const query = `
-      DELETE FROM documents
+      SELECT id, file_path, user_id
+      FROM documents
       WHERE id = $1 AND user_id = $2
     `;
 
-    const result = await this.pool.query(query, [id, userId]);
+    const docResult = await this.pool.query(query, [id, userId]);
 
-    return result.rowCount !== null && result.rowCount > 0;
+    if (docResult.rows.length === 0) {
+      return false;
+    }
+
+    const doc = docResult.rows[0];
+    const client: PoolClient = await this.pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // Delete from database (cascades to fields, signers, signatures via FK constraints)
+      const deleteQuery = `
+        DELETE FROM documents
+        WHERE id = $1 AND user_id = $2
+      `;
+
+      const result = await client.query(deleteQuery, [id, userId]);
+
+      if (result.rowCount === null || result.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return false;
+      }
+
+      await client.query('COMMIT');
+
+      // Delete files after successful DB deletion
+      // This is done outside the transaction since file operations can't be rolled back
+      try {
+        await this.cleanupService.deleteDocumentFiles(id, doc.file_path);
+      } catch (error) {
+        // Log but don't fail - the DB record is already deleted
+        // Orphaned files will be cleaned up by the cleanup worker
+        logger.warn('Failed to delete document files', {
+          documentId: id,
+          filePath: doc.file_path,
+          error: (error as Error).message,
+        });
+      }
+
+      return true;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error('Failed to delete document', {
+        documentId: id,
+        error: (error as Error).message,
+      });
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /**
