@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import logger from '@/services/loggerService';
 
 export interface ApiError extends Error {
   statusCode?: number;
@@ -11,7 +12,7 @@ export interface ApiError extends Error {
  */
 export const errorHandler = (
   err: ApiError,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ): void => {
@@ -21,7 +22,24 @@ export const errorHandler = (
 
   // Log error for debugging
   if (statusCode >= 500) {
-    console.error('Server Error:', err);
+    logger.error('Server error', {
+      error: err.message,
+      stack: err.stack,
+      code,
+      statusCode,
+      path: req.path,
+      method: req.method,
+      correlationId: req.correlationId,
+    });
+  } else {
+    logger.warn('Client error', {
+      error: err.message,
+      code,
+      statusCode,
+      path: req.path,
+      method: req.method,
+      correlationId: req.correlationId,
+    });
   }
 
   res.status(statusCode).json({

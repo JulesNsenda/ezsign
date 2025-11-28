@@ -17,8 +17,10 @@ import { createWebhookRouter } from '@/routes/webhooks';
 import { createPdfRouter } from '@/routes/pdfRoutes';
 import { errorHandler } from '@/middleware/errorHandler';
 import { apiLimiter } from '@/middleware/rateLimiter';
+import { correlationIdMiddleware } from '@/middleware/correlationId';
 import { createWebhookWorker } from '@/workers/webhookWorker';
 import { createPdfWorker } from '@/workers/pdfWorker';
+import logger from '@/services/loggerService';
 
 // Environment variables
 const PORT = process.env.PORT || 3001;
@@ -42,21 +44,21 @@ const pool = new Pool(dbConfig);
 // Test database connection
 pool.connect((err, _client, release) => {
   if (err) {
-    console.error('Error connecting to the database:', err.stack);
+    logger.error('Error connecting to the database', { error: err.message, stack: err.stack });
     process.exit(1);
   } else {
-    console.log('✓ Database connected successfully');
+    logger.info('Database connected successfully');
     release();
   }
 });
 
 // Initialize webhook worker for background delivery processing
 const webhookWorker = createWebhookWorker(pool);
-console.log('✓ Webhook worker initialized');
+logger.info('Webhook worker initialized');
 
 // Initialize PDF worker for background PDF processing
 const pdfWorker = createPdfWorker(pool);
-console.log('✓ PDF worker initialized');
+logger.info('PDF worker initialized');
 
 // Initialize Express app
 const app = express();
@@ -64,12 +66,18 @@ const app = express();
 // Security middleware
 app.use(helmet());
 
-// Request logging
-if (NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-} else {
-  app.use(morgan('combined'));
-}
+// Add correlation ID to all requests (must be early in middleware chain)
+app.use(correlationIdMiddleware);
+
+// Request logging using morgan with winston integration
+const morganFormat = NODE_ENV === 'development' ? 'dev' : 'combined';
+const morganStream = {
+  write: (message: string) => {
+    // Remove trailing newline and log at http level
+    logger.http(message.trim());
+  },
+};
+app.use(morgan(morganFormat, { stream: morganStream }));
 
 // Body parsing middleware
 app.use(express.json({ limit: '50mb' }));
@@ -155,37 +163,41 @@ app.use(errorHandler);
 
 // Start server
 const server = app.listen(PORT, () => {
-  console.log(`✓ Server running on port ${PORT}`);
-  console.log(`✓ Environment: ${NODE_ENV}`);
-  console.log(`✓ Health check: http://localhost:${PORT}/health`);
-  console.log(`✓ API docs: http://localhost:${PORT}/api/docs`);
-});
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM signal received: closing HTTP server');
-  server.close(async () => {
-    console.log('HTTP server closed');
-    await webhookWorker.close();
-    await pdfWorker.close();
-    pool.end(() => {
-      console.log('Database pool closed');
-      process.exit(0);
-    });
+  logger.info('Server started', {
+    port: PORT,
+    environment: NODE_ENV,
+    healthCheck: `http://localhost:${PORT}/health`,
+    apiDocs: `http://localhost:${PORT}/api/docs`,
   });
 });
 
-process.on('SIGINT', async () => {
-  console.log('SIGINT signal received: closing HTTP server');
+// Graceful shutdown handler
+const gracefulShutdown = async (signal: string) => {
+  logger.info(`${signal} received: initiating graceful shutdown`);
+
   server.close(async () => {
-    console.log('HTTP server closed');
-    await webhookWorker.close();
-    await pdfWorker.close();
-    pool.end(() => {
-      console.log('Database pool closed');
-      process.exit(0);
-    });
+    logger.info('HTTP server closed');
+
+    try {
+      await webhookWorker.close();
+      logger.info('Webhook worker closed');
+
+      await pdfWorker.close();
+      logger.info('PDF worker closed');
+
+      pool.end(() => {
+        logger.info('Database pool closed');
+        logger.info('Graceful shutdown complete');
+        process.exit(0);
+      });
+    } catch (error) {
+      logger.error('Error during shutdown', { error: (error as Error).message });
+      process.exit(1);
+    }
   });
-});
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 export default app;

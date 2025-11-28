@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { WebhookService } from '@/services/webhookService';
 import { Webhook } from '@/models/Webhook';
 import { AuthenticatedRequest } from '@/middleware/auth';
+import logger from '@/services/loggerService';
 
 export class WebhookController {
   private webhookService: WebhookService;
@@ -132,7 +133,7 @@ export class WebhookController {
         data: webhook.toPublicJSON(),
       });
     } catch (error) {
-      console.error('Create webhook error:', error);
+      logger.error('Create webhook error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({
         success: false,
@@ -175,7 +176,7 @@ export class WebhookController {
         data: webhooks.map((w) => w.toPublicJSON()),
       });
     } catch (error) {
-      console.error('Get webhooks error:', error);
+      logger.error('Get webhooks error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({
         success: false,
@@ -245,7 +246,7 @@ export class WebhookController {
         },
       });
     } catch (error) {
-      console.error('Get webhook error:', error);
+      logger.error('Get webhook error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({
         success: false,
@@ -392,7 +393,7 @@ export class WebhookController {
         data: updatedWebhook.toPublicJSON(),
       });
     } catch (error) {
-      console.error('Update webhook error:', error);
+      logger.error('Update webhook error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({
         success: false,
@@ -458,7 +459,7 @@ export class WebhookController {
         message: 'Webhook deleted successfully',
       });
     } catch (error) {
-      console.error('Delete webhook error:', error);
+      logger.error('Delete webhook error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({
         success: false,

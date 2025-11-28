@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { TeamService } from '@/services/teamService';
 import { AuthenticatedRequest } from '@/middleware/auth';
+import logger from '@/services/loggerService';
 
 export class TeamController {
   private teamService: TeamService;
@@ -53,7 +54,7 @@ export class TeamController {
         teams: teamsWithRoles,
       });
     } catch (error) {
-      console.error('Get teams error:', error);
+      logger.error('Get teams error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to retrieve teams',
@@ -118,7 +119,7 @@ export class TeamController {
         team: team.toJSON(),
       });
     } catch (error) {
-      console.error('Create team error:', error);
+      logger.error('Create team error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to create team',
@@ -190,7 +191,7 @@ export class TeamController {
         team: team.toJSON(),
       });
     } catch (error) {
-      console.error('Get team error:', error);
+      logger.error('Get team error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to retrieve team',
@@ -277,7 +278,7 @@ export class TeamController {
         team: updatedTeam?.toJSON(),
       });
     } catch (error) {
-      console.error('Update team error:', error);
+      logger.error('Update team error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to update team',
@@ -351,7 +352,7 @@ export class TeamController {
         message: 'Team deleted successfully',
       });
     } catch (error) {
-      console.error('Delete team error:', error);
+      logger.error('Delete team error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to delete team',
@@ -426,7 +427,7 @@ export class TeamController {
         members: members.map((member) => member.toJSON()),
       });
     } catch (error) {
-      console.error('Get team members error:', error);
+      logger.error('Get team members error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to retrieve team members',
@@ -536,7 +537,7 @@ export class TeamController {
         member: member.toJSON(),
       });
     } catch (error) {
-      console.error('Add team member error:', error);
+      logger.error('Add team member error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to add team member',
@@ -647,7 +648,7 @@ export class TeamController {
         message: 'Team member removed successfully',
       });
     } catch (error) {
-      console.error('Remove team member error:', error);
+      logger.error('Remove team member error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to remove team member',
@@ -776,7 +777,7 @@ export class TeamController {
         member: updatedMember?.toJSON(),
       });
     } catch (error) {
-      console.error('Update team member role error:', error);
+      logger.error('Update team member role error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to update team member role',

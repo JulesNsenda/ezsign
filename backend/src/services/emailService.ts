@@ -1,4 +1,5 @@
 import nodemailer, { Transporter } from 'nodemailer';
+import logger from '@/services/loggerService';
 
 export interface EmailConfig {
   host: string;
@@ -491,7 +492,7 @@ If you have any concerns, please contact support.
       await this.transporter.verify();
       return true;
     } catch (error) {
-      console.error('Email service verification failed:', error);
+      logger.error('Email service verification failed', { error: (error as Error).message });
       return false;
     }
   }

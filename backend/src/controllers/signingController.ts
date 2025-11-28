@@ -7,6 +7,7 @@ import { Field } from '@/models/Field';
 import { EmailService } from '@/services/emailService';
 import { PdfService } from '@/services/pdfService';
 import { StorageService } from '@/services/storageService';
+import logger from '@/services/loggerService';
 
 export class SigningController {
   private pool: Pool;
@@ -31,19 +32,18 @@ export class SigningController {
    * POST /api/documents/:id/send
    */
   sendForSignature = async (req: Request, res: Response): Promise<void> => {
-    console.log('sendForSignature called for document:', req.params.id);
-    console.log('Request body:', req.body);
+    logger.debug('sendForSignature called', { documentId: req.params.id, correlationId: req.correlationId });
     try {
       const userId = (req as any).user?.userId; // Fixed: should be userId not id
       if (!userId) {
-        console.log('No userId found, returning 401');
+        logger.debug('No userId found, returning 401', { correlationId: req.correlationId });
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return;
       }
 
       const documentId = req.params.id as string;
       const message = req.body?.message;
-      console.log('Processing send for document:', documentId, 'by user:', userId);
+      logger.debug('Processing send for document', { documentId, userId, correlationId: req.correlationId });
 
       // Get document
       const docResult = await this.pool.query(
@@ -57,35 +57,35 @@ export class SigningController {
       }
 
       const document = new Document(this.mapRowToDocumentData(docResult.rows[0]));
-      console.log('Document loaded, status:', document.status);
+      logger.debug('Document loaded', { documentId, status: document.status, correlationId: req.correlationId });
 
       // Check if user owns the document
       if (document.user_id !== userId) {
-        console.log('Access denied - user does not own document');
+        logger.debug('Access denied - user does not own document', { documentId, userId, correlationId: req.correlationId });
         res.status(403).json({ success: false, error: 'Access denied' });
         return;
       }
 
       // Check if document can be sent
       if (!document.canSend()) {
-        console.log('Document cannot be sent, status:', document.status);
+        logger.debug('Document cannot be sent', { documentId, status: document.status, correlationId: req.correlationId });
         res.status(400).json({
           success: false,
           error: `Document cannot be sent in ${document.status} status`,
         });
         return;
       }
-      console.log('Document can be sent');
+      logger.debug('Document can be sent', { documentId, correlationId: req.correlationId });
 
       // Validate all fields are assigned to signers
       const fieldsResult = await this.pool.query(
         'SELECT * FROM fields WHERE document_id = $1',
         [documentId]
       );
-      console.log('Fields found:', fieldsResult.rows.length);
+      logger.debug('Fields found', { documentId, count: fieldsResult.rows.length, correlationId: req.correlationId });
 
       if (fieldsResult.rows.length === 0) {
-        console.log('No fields found');
+        logger.debug('No fields found', { documentId, correlationId: req.correlationId });
         res.status(400).json({
           success: false,
           error: 'Document must have at least one field',
@@ -96,10 +96,10 @@ export class SigningController {
       const unassignedFields = fieldsResult.rows.filter(
         (f) => !f.signer_email || f.signer_email.trim() === ''
       );
-      console.log('Unassigned fields:', unassignedFields.length);
+      logger.debug('Unassigned fields check', { documentId, unassignedCount: unassignedFields.length, correlationId: req.correlationId });
 
       if (unassignedFields.length > 0) {
-        console.log('Some fields are unassigned');
+        logger.debug('Some fields are unassigned', { documentId, correlationId: req.correlationId });
         res.status(400).json({
           success: false,
           error: 'All fields must be assigned to signers',
@@ -112,17 +112,17 @@ export class SigningController {
         'SELECT * FROM signers WHERE document_id = $1',
         [documentId]
       );
-      console.log('Signers found:', signersResult.rows.length);
+      logger.debug('Signers found', { documentId, count: signersResult.rows.length, correlationId: req.correlationId });
 
       if (signersResult.rows.length === 0) {
-        console.log('No signers found');
+        logger.debug('No signers found', { documentId, correlationId: req.correlationId });
         res.status(400).json({
           success: false,
           error: 'Document must have at least one signer',
         });
         return;
       }
-      console.log('All validations passed, proceeding to send');
+      logger.debug('All validations passed, proceeding to send', { documentId, correlationId: req.correlationId });
 
       // Update document status to pending
       await this.pool.query(
@@ -177,7 +177,12 @@ export class SigningController {
         },
       });
     } catch (error) {
-      console.error('Error sending document for signature:', error);
+      logger.error('Error sending document for signature', {
+        error: (error as Error).message,
+        stack: (error as Error).stack,
+        documentId: req.params.id,
+        correlationId: req.correlationId,
+      });
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(400).json({ success: false, error: message });
     }
@@ -378,7 +383,7 @@ export class SigningController {
 
         if (allSigned) {
           // All signers have signed - complete the document
-          console.log('All signers have signed, applying signatures to PDF');
+          logger.info('All signers have signed, applying signatures to PDF', { documentId: signer.document_id });
 
           // Get document for processing
           const docResult = await client.query(
@@ -396,7 +401,7 @@ export class SigningController {
             [signer.document_id]
           );
 
-          console.log('Found signatures to apply:', allSignaturesResult.rows.length);
+          logger.debug('Found signatures to apply', { documentId: signer.document_id, count: allSignaturesResult.rows.length });
 
           // Apply signatures to PDF
           try {
@@ -405,7 +410,7 @@ export class SigningController {
 
             // Prepare signature fields for PDF service
             const signatureFields = allSignaturesResult.rows.map((row) => {
-              console.log('Signature row:', {
+              logger.debug('Processing signature row', {
                 page: row.page,
                 x: row.x,
                 y: row.y,
@@ -416,7 +421,7 @@ export class SigningController {
 
               // Database stores pages as 0-indexed (same as pdf-lib), no conversion needed
               const pageNumber = parseInt(row.page);
-              console.log('Page number:', pageNumber);
+              logger.debug('Page number', { pageNumber });
 
               return {
                 page: pageNumber,
@@ -428,14 +433,14 @@ export class SigningController {
               };
             });
 
-            console.log('Applying signatures to PDF...');
+            logger.debug('Applying signatures to PDF...', { documentId: signer.document_id });
             // Apply all signatures to the PDF
             const signedPdfBuffer = await this._pdfService.addMultipleFields(
               originalPdfBuffer,
               { signatures: signatureFields }
             );
 
-            console.log('Signed PDF created, size:', signedPdfBuffer.length);
+            logger.debug('Signed PDF created', { documentId: signer.document_id, size: signedPdfBuffer.length });
 
             // Save the signed PDF (replace the original file)
             const storagePath = process.env.FILE_STORAGE_PATH || './storage';
@@ -444,9 +449,9 @@ export class SigningController {
             const fullPath = path.join(storagePath, document.file_path);
             await fs.writeFile(fullPath, signedPdfBuffer);
 
-            console.log('Signed PDF saved to:', fullPath);
+            logger.info('Signed PDF saved', { documentId: signer.document_id, path: fullPath });
           } catch (error) {
-            console.error('Error applying signatures to PDF:', error);
+            logger.error('Error applying signatures to PDF', { error: (error as Error).message, stack: (error as Error).stack, documentId: signer.document_id });
             // Continue with document completion even if PDF signing fails
             // This ensures the workflow completes
           }
@@ -537,7 +542,7 @@ export class SigningController {
   downloadDocumentByToken = async (req: Request, res: Response): Promise<void> => {
     try {
       const token = req.params.token as string;
-      console.log('Download request for token:', token);
+      logger.debug('Download request for token', { tokenPrefix: token.substring(0, 8), correlationId: req.correlationId });
 
       // Find signer by access token
       const signerResult = await this.pool.query(
@@ -546,13 +551,13 @@ export class SigningController {
       );
 
       if (signerResult.rows.length === 0) {
-        console.log('No signer found for token');
+        logger.debug('No signer found for token', { correlationId: req.correlationId });
         res.status(404).json({ success: false, error: 'Invalid signing link' });
         return;
       }
 
       const signer = new Signer(this.mapRowToSignerData(signerResult.rows[0]));
-      console.log('Signer found:', signer.id, 'Document ID:', signer.document_id);
+      logger.debug('Signer found', { signerId: signer.id, documentId: signer.document_id, correlationId: req.correlationId });
 
       // Get document
       const docResult = await this.pool.query(
@@ -561,25 +566,25 @@ export class SigningController {
       );
 
       if (docResult.rows.length === 0) {
-        console.log('No document found for ID:', signer.document_id);
+        logger.debug('No document found', { documentId: signer.document_id, correlationId: req.correlationId });
         res.status(404).json({ success: false, error: 'Document not found' });
         return;
       }
 
       const document = new Document(this.mapRowToDocumentData(docResult.rows[0]));
-      console.log('Document found:', document.id, 'File path:', document.file_path);
+      logger.debug('Document found', { documentId: document.id, filePath: document.file_path, correlationId: req.correlationId });
 
       // Check if file exists
       const fileExists = await this._storageService.fileExists(document.file_path);
       if (!fileExists) {
-        console.log('File not found on storage:', document.file_path);
+        logger.warn('File not found on storage', { documentId: document.id, filePath: document.file_path, correlationId: req.correlationId });
         res.status(404).json({ error: 'Document file not found' });
         return;
       }
 
       // Download file buffer
       const fileBuffer = await this._storageService.downloadFile(document.file_path);
-      console.log('File downloaded, size:', fileBuffer.length);
+      logger.debug('File downloaded', { documentId: document.id, size: fileBuffer.length, correlationId: req.correlationId });
 
       // Set headers for file download (inline for PDF viewing in browser)
       res.setHeader('Content-Type', document.mime_type);
@@ -591,9 +596,9 @@ export class SigningController {
 
       // Send file buffer
       res.send(fileBuffer);
-      console.log('File sent successfully');
+      logger.debug('File sent successfully', { documentId: document.id, correlationId: req.correlationId });
     } catch (error) {
-      console.error('Download error:', error);
+      logger.error('Download error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(400).json({ success: false, error: message });
     }

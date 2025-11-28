@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { tokenService } from '@/services/tokenService';
 import { UserRole } from '@/models/User';
+import logger from '@/services/loggerService';
 
 // Extend Express Request type to include user data
 declare global {
@@ -34,7 +35,7 @@ export const authenticate = async (
 ): Promise<void> => {
   try {
     const authHeader = req.headers.authorization;
-    console.log('Auth header:', authHeader); // Debug log
+    logger.debug('Authentication attempt', { path: req.path, hasAuthHeader: !!authHeader, correlationId: req.correlationId });
     let token = tokenService.extractTokenFromHeader(authHeader);
 
     // If no token in header, try query parameter (for PDF loading etc.)
@@ -43,7 +44,7 @@ export const authenticate = async (
     }
 
     if (!token) {
-      console.log('No token found for:', req.path); // Debug log
+      logger.debug('No token found', { path: req.path, correlationId: req.correlationId });
       res.status(401).json({
         error: 'Unauthorized',
         message: 'No authentication token provided',
@@ -61,10 +62,10 @@ export const authenticate = async (
       role: decoded.role,
     };
 
-    console.log('User authenticated:', req.user.email, req.user.role); // Debug log
+    logger.debug('User authenticated', { email: req.user.email, role: req.user.role, correlationId: req.correlationId });
     next();
   } catch (error) {
-    console.log('Token verification failed:', error); // Debug log
+    logger.debug('Token verification failed', { error: (error as Error).message, correlationId: req.correlationId });
     if (error instanceof Error) {
       res.status(401).json({
         error: 'Unauthorized',

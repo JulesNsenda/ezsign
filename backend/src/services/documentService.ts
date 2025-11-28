@@ -4,6 +4,7 @@ import { StorageService } from '@/services/storageService';
 import { pdfService } from '@/services/pdfService';
 import { WebhookService } from '@/services/webhookService';
 import { WebhookPayloadService } from '@/services/webhookPayloadService';
+import logger from '@/services/loggerService';
 
 export interface CreateDocumentData {
   userId: string;
@@ -102,7 +103,7 @@ export class DocumentService {
       const payload = await this.webhookPayloadService.buildDocumentPayload(document);
       await this.webhookService.trigger(data.userId, 'document.created', payload);
     } catch (error) {
-      console.error('Failed to trigger document.created webhook:', error);
+      logger.warn('Failed to trigger document.created webhook', { error: (error as Error).message, documentId: document.id });
       // Don't fail document creation if webhook fails
     }
 
@@ -256,7 +257,7 @@ export class DocumentService {
     try {
       await this.storageService.deleteFile(document.file_path);
     } catch (error) {
-      console.error('Failed to delete file from storage:', error);
+      logger.warn('Failed to delete file from storage', { error: (error as Error).message, filePath: document?.file_path });
       // Continue with database deletion even if file deletion fails
     }
 
@@ -284,7 +285,7 @@ export class DocumentService {
     try {
       return await this.storageService.downloadFile(document.file_path);
     } catch (error) {
-      console.error('Failed to download document file:', error);
+      logger.error('Failed to download document file', { error: (error as Error).message, documentId: id });
       return null;
     }
   }
@@ -330,7 +331,7 @@ export class DocumentService {
     try {
       return await pdfService.generateThumbnail(fileBuffer, options);
     } catch (error) {
-      console.error('Thumbnail generation error:', error);
+      logger.error('Thumbnail generation error', { error: (error as Error).message, documentId: id });
       return null;
     }
   }

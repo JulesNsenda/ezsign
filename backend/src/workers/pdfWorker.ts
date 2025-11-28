@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { createWorker, QueueName } from '@/config/queue';
 import { PdfJobData, PdfJobType } from '@/services/pdfQueueService';
 import { pdfService } from '@/services/pdfService';
+import logger from '@/services/loggerService';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -43,7 +44,7 @@ export class PdfWorker {
    * Process PDF job based on type
    */
   private async processJob(job: Job<PdfJobData>): Promise<any> {
-    console.log(`Processing PDF job ${job.id} of type ${job.data.type}`);
+    logger.debug('Processing PDF job', { jobId: job.id, type: job.data.type });
 
     try {
       switch (job.data.type) {
@@ -66,7 +67,7 @@ export class PdfWorker {
           throw new Error(`Unknown job type: ${(job.data as any).type}`);
       }
     } catch (error) {
-      console.error(`PDF job ${job.id} failed:`, error);
+      logger.error('PDF job failed', { jobId: job.id, error: (error as Error).message });
       throw error;
     }
   }
@@ -116,14 +117,14 @@ export class PdfWorker {
           [relativePath, data.documentId]
         );
       } catch (dbError) {
-        console.error('Failed to update document with thumbnail path:', dbError);
+        logger.warn('Failed to update document with thumbnail path', { error: (dbError as Error).message, documentId: data.documentId });
         // Don't throw - the thumbnail was still generated successfully
       }
     }
 
     await job.updateProgress(100);
 
-    console.log(`Generated thumbnail for document ${data.documentId}`);
+    logger.debug('Generated thumbnail for document', { documentId: data.documentId });
     return { thumbnailPath, relativePath };
   }
 
@@ -164,14 +165,14 @@ export class PdfWorker {
           [originalSize, optimizedSize, data.documentId]
         );
       } catch (dbError) {
-        console.error('Failed to update document with optimization info:', dbError);
+        logger.warn('Failed to update document with optimization info', { error: (dbError as Error).message, documentId: data.documentId });
       }
     }
 
     await job.updateProgress(100);
 
     const sizeSaved = originalSize - optimizedSize;
-    console.log(`Optimized document ${data.documentId}, saved ${sizeSaved} bytes (${Math.round((sizeSaved / originalSize) * 100)}%)`);
+    logger.debug('Optimized document', { documentId: data.documentId, sizeSaved, percentSaved: Math.round((sizeSaved / originalSize) * 100) });
 
     return { optimizedPath: data.filePath, sizeSaved, originalSize, optimizedSize };
   }
@@ -199,7 +200,7 @@ export class PdfWorker {
     await fs.writeFile(flattenedPath, flattenedBuffer);
     await job.updateProgress(100);
 
-    console.log(`Flattened document ${data.documentId}`);
+    logger.debug('Flattened document', { documentId: data.documentId });
     return { flattenedPath };
   }
 
@@ -230,7 +231,7 @@ export class PdfWorker {
     await fs.writeFile(watermarkedPath, watermarkedBuffer);
     await job.updateProgress(100);
 
-    console.log(`Added watermark to document ${data.documentId}`);
+    logger.debug('Added watermark to document', { documentId: data.documentId });
     return { watermarkedPath };
   }
 
@@ -258,7 +259,7 @@ export class PdfWorker {
     await fs.writeFile(data.outputPath, mergedBuffer);
     await job.updateProgress(100);
 
-    console.log(`Merged ${data.filePaths.length} PDFs into ${data.outputPath}`);
+    logger.debug('Merged PDFs', { count: data.filePaths.length, outputPath: data.outputPath });
     return { mergedPath: data.outputPath };
   }
 
@@ -267,15 +268,15 @@ export class PdfWorker {
    */
   private setupEventListeners(): void {
     this.worker.on('completed', (job: Job<PdfJobData>) => {
-      console.log(`PDF job ${job.id} completed successfully`);
+      logger.debug('PDF job completed successfully', { jobId: job.id });
     });
 
     this.worker.on('failed', (job: Job<PdfJobData> | undefined, error: Error) => {
-      console.error(`PDF job ${job?.id} failed:`, error.message);
+      logger.error('PDF job failed', { jobId: job?.id, error: error.message });
     });
 
     this.worker.on('error', (error: Error) => {
-      console.error('PDF worker error:', error);
+      logger.error('PDF worker error', { error: error.message, stack: error.stack });
     });
   }
 

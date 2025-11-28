@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { ApiKeyService } from '@/services/apiKeyService';
 import { AuthenticatedRequest } from '@/middleware/auth';
+import logger from '@/services/loggerService';
 
 export class ApiKeyController {
   private apiKeyService: ApiKeyService;
@@ -311,7 +312,7 @@ export class ApiKeyController {
         message: 'API key deleted successfully',
       });
     } catch (error) {
-      console.error('Delete API key error:', error);
+      logger.error('Delete API key error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to delete API key',
