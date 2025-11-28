@@ -40,6 +40,10 @@ export const PrepareDocument: React.FC = () => {
   const [showMobileFieldPalette, setShowMobileFieldPalette] = useState(false);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
+  // Standard PDF page width in points (A4 = 595, Letter = 612)
+  // We use 612 as default since it's common for US documents
+  const PDF_PAGE_WIDTH_POINTS = 612;
+
   const { data: doc } = useDocument(id!);
   const { data: fields = [], refetch: refetchFields } = useFields(id!);
   const { data: signers = [], refetch: refetchSigners } = useSigners(id!);
@@ -168,6 +172,11 @@ export const PrepareDocument: React.FC = () => {
     // Check if dropped over the PDF container
     if (!over || over.id !== 'pdf-drop-zone') return;
 
+    // Calculate scale: rendered width (pdfWidth) / original PDF width in points
+    // pdfWidth is already adjusted for zoom, so we need the base width
+    const baseRenderedWidth = pdfWidth / zoom;
+    const scale = baseRenderedWidth / PDF_PAGE_WIDTH_POINTS;
+
     // Check if this is a new field from palette
     if (fieldData.isNew) {
       // Get the PDF container's bounding rect
@@ -182,9 +191,20 @@ export const PrepareDocument: React.FC = () => {
         (event.activatorEvent as MouseEvent).clientY - rect.top :
         delta.y;
 
-      // Convert to PDF coordinates (accounting for zoom)
-      const x = Math.max(0, (dropX + delta.x) / zoom);
-      const y = Math.max(0, (dropY + delta.y) / zoom);
+      // Convert screen pixels to PDF points
+      // Screen coordinates are relative to rendered PDF, need to scale to original PDF points
+      const screenX = (dropX + delta.x) / zoom;
+      const screenY = (dropY + delta.y) / zoom;
+
+      // Convert from screen pixels to PDF points using the scale factor
+      const pdfX = Math.max(0, screenX / scale);
+      const pdfY = Math.max(0, screenY / scale);
+
+      // Also convert default field dimensions from pixels to points
+      const defaultWidthPx = 200;
+      const defaultHeightPx = 50;
+      const fieldWidthPoints = defaultWidthPx / scale;
+      const fieldHeightPoints = defaultHeightPx / scale;
 
       try {
         // Auto-assign to signer if there's only one
@@ -195,10 +215,10 @@ export const PrepareDocument: React.FC = () => {
           data: {
             type: fieldData.type as FieldType,
             page: currentPage - 1, // Convert from 1-indexed to 0-indexed
-            x,
-            y,
-            width: 200,
-            height: 50,
+            x: pdfX,
+            y: pdfY,
+            width: fieldWidthPoints,
+            height: fieldHeightPoints,
             required: false,
             signer_email: signerEmail,
           },
@@ -211,13 +231,18 @@ export const PrepareDocument: React.FC = () => {
     } else {
       // Update existing field position
       const field = fieldData as Field;
+
+      // Convert screen delta to PDF points
+      const deltaXPoints = (delta.x / zoom) / scale;
+      const deltaYPoints = (delta.y / zoom) / scale;
+
       try {
         await updateFieldMutation.mutateAsync({
           documentId: id,
           fieldId: field.id,
           data: {
-            x: field.x + delta.x / zoom,
-            y: field.y + delta.y / zoom,
+            x: field.x + deltaXPoints,
+            y: field.y + deltaYPoints,
           },
         });
         refetchFields();
@@ -527,11 +552,13 @@ export const PrepareDocument: React.FC = () => {
                         >
                           {currentPageFields.map((field) => {
                             const isSelected = selectedFieldId === field.id;
+                            // Calculate scale: rendered width / PDF points width
+                            const fieldScale = pdfWidth / PDF_PAGE_WIDTH_POINTS;
                             return (
                               <div key={field.id} style={{ pointerEvents: 'auto' }}>
                                 <DraggableField
                                   field={field}
-                                  scale={zoom}
+                                  scale={fieldScale}
                                   isSelected={isSelected}
                                   borderColor={getFieldColor(field)}
                                   onClick={() => setSelectedFieldId(field.id)}

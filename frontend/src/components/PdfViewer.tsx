@@ -176,6 +176,7 @@ export const PdfViewer = React.memo(PdfViewerComponent, (prevProps, nextProps) =
   // Return true if props are the same (skip re-render)
   // We intentionally ignore the 'children' prop because it's always a new function reference
   // but the actual content it renders depends on currentPage which we do check
+  // We also ignore callback props as they should be stable (useState setters or useCallback)
   const areEqual = (
     prevProps.fileUrl === nextProps.fileUrl &&
     prevProps.currentPage === nextProps.currentPage &&
