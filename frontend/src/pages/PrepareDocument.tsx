@@ -260,7 +260,8 @@ export const PrepareDocument: React.FC = () => {
       setSelectedFieldId(null);
       toast.success('Field deleted');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to delete field');
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to delete field';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to delete field');
     }
   }, [id, deleteFieldMutation, refetchFields, toast]);
 
@@ -288,7 +289,8 @@ export const PrepareDocument: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Field update error:', error);
-      toast.error(error.response?.data?.error?.message || error.response?.data?.error || 'Failed to update field');
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to update field';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to update field');
     }
   };
 
@@ -303,7 +305,8 @@ export const PrepareDocument: React.FC = () => {
       });
       refetchFields();
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to update field position');
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to update field position';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to update field position');
     }
   }, [id, updateFieldMutation, refetchFields, toast]);
 
@@ -318,7 +321,8 @@ export const PrepareDocument: React.FC = () => {
       });
       refetchFields();
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to resize field');
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to resize field';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to resize field');
     }
   }, [id, updateFieldMutation, refetchFields, toast]);
 
@@ -343,7 +347,8 @@ export const PrepareDocument: React.FC = () => {
       setNewSignerName('');
       toast.success('Signer added');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to add signer');
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to add signer';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to add signer');
     }
   };
 
@@ -354,7 +359,8 @@ export const PrepareDocument: React.FC = () => {
       refetchSigners();
       toast.success('Signer removed');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to remove signer');
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to remove signer';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to remove signer');
     }
   };
 
@@ -379,7 +385,8 @@ export const PrepareDocument: React.FC = () => {
       setTemplateName('');
       setTemplateDescription('');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to create template');
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to create template';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to create template');
     }
   };
 
@@ -394,12 +401,21 @@ export const PrepareDocument: React.FC = () => {
       return;
     }
 
+    // Check if all fields are assigned to signers
+    const unassignedFields = fields.filter(f => !f.signer_email);
+    if (unassignedFields.length > 0) {
+      toast.error(`${unassignedFields.length} field(s) are not assigned to a signer. Please assign all fields before sending.`);
+      return;
+    }
+
     try {
       await sendDocumentMutation.mutateAsync(id);
       toast.success('Document sent to signers');
       navigate('/documents');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to send document');
+      // Backend returns error as a string, not an object with message property
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to send document';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to send document');
     }
   };
 
