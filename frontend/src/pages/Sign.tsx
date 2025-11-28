@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import PdfViewer from '@/components/PdfViewer';
 import SignaturePad from '@/components/SignaturePad';
@@ -15,7 +15,7 @@ import type { SignatureType } from '@/types';
 
 export const Sign: React.FC = () => {
   const { token } = useParams<{ token: string }>();
-  const { error: showError } = useToast();
+  const { error: showError, warning: showWarning } = useToast();
 
   const [currentPage, setCurrentPage] = useState(0);
   const [currentFieldIndex, setCurrentFieldIndex] = useState<number>(0);
@@ -149,6 +149,38 @@ export const Sign: React.FC = () => {
   const totalSigned = signatures.length + collectedSignatures.length;
   const progress = fields.length > 0 ? ((totalSigned / fields.length) * 100).toFixed(0) : '0';
 
+  // Track required field completion for validation
+  const signerFields = useMemo(() => {
+    return fields.filter(
+      (field) => !field.signer_email || field.signer_email === session.signer.email
+    );
+  }, [fields, session.signer.email]);
+
+  const requiredFields = useMemo(() => {
+    return signerFields.filter((field) => field.required);
+  }, [signerFields]);
+
+  const completedRequiredFields = useMemo(() => {
+    return requiredFields.filter(
+      (field) =>
+        signatures.some((sig) => sig.field_id === field.id) ||
+        collectedSignatures.some((sig) => sig.field_id === field.id)
+    );
+  }, [requiredFields, signatures, collectedSignatures]);
+
+  const incompleteRequiredFields = useMemo(() => {
+    return requiredFields.filter(
+      (field) =>
+        !signatures.some((sig) => sig.field_id === field.id) &&
+        !collectedSignatures.some((sig) => sig.field_id === field.id)
+    );
+  }, [requiredFields, signatures, collectedSignatures]);
+
+  const allRequiredComplete = incompleteRequiredFields.length === 0;
+  const requiredProgress = requiredFields.length > 0
+    ? Math.round((completedRequiredFields.length / requiredFields.length) * 100)
+    : 100;
+
   const handleNavigateToField = (index: number) => {
     if (index >= 0 && index < unsignedFields.length) {
       setCurrentFieldIndex(index);
@@ -206,8 +238,35 @@ export const Sign: React.FC = () => {
     }
   };
 
+  // Helper to navigate to a specific field by ID
+  const navigateToFieldById = (fieldId: string) => {
+    const fieldIndex = unsignedFields.findIndex((f) => f.id === fieldId);
+    if (fieldIndex >= 0) {
+      setCurrentFieldIndex(fieldIndex);
+      const field = unsignedFields[fieldIndex];
+      if (field) {
+        setCurrentPage(field.page);
+      }
+    }
+  };
+
   const handleSubmitAllSignatures = async () => {
-    if (!token || collectedSignatures.length === 0) return;
+    if (!token) return;
+
+    // Block submission if required fields are incomplete
+    if (!allRequiredComplete) {
+      const remainingCount = incompleteRequiredFields.length;
+      showWarning(
+        `Please complete all required fields. ${remainingCount} required field${remainingCount > 1 ? 's' : ''} remaining.`
+      );
+      // Navigate to first incomplete required field
+      if (incompleteRequiredFields.length > 0) {
+        navigateToFieldById(incompleteRequiredFields[0].id);
+      }
+      return;
+    }
+
+    if (collectedSignatures.length === 0) return;
 
     try {
       await submitSignaturesMutation.mutateAsync({ token, signatures: collectedSignatures });
@@ -479,7 +538,9 @@ export const Sign: React.FC = () => {
                           className={`w-full text-left p-3 rounded-lg border transition-all duration-200 ${
                             index === currentFieldIndex
                               ? 'bg-accent/10 border-accent shadow-sm'
-                              : 'bg-base-100 border-base-300 hover:bg-base-200 hover:border-base-content/20'
+                              : field.required
+                                ? 'bg-base-100 border-error/30 hover:bg-base-200 hover:border-error/50'
+                                : 'bg-base-100 border-base-300 hover:bg-base-200 hover:border-base-content/20'
                           }`}
                         >
                           <div className="flex items-center gap-2 mb-1">
@@ -488,12 +549,18 @@ export const Sign: React.FC = () => {
                             }`}>
                               {index + 1}
                             </span>
-                            <span className="text-sm font-medium text-neutral truncate">
+                            <span className="text-sm font-medium text-neutral truncate flex items-center gap-1">
                               {field.type.charAt(0).toUpperCase() + field.type.slice(1)}
+                              {field.required && (
+                                <span className="text-error text-xs font-bold">*</span>
+                              )}
                             </span>
                           </div>
                           <div className="text-xs text-base-content/50 pl-7">
                             Page {field.page + 1}
+                            {field.required && (
+                              <span className="ml-2 text-error/70">Required</span>
+                            )}
                           </div>
                         </button>
                       ))}
@@ -520,6 +587,36 @@ export const Sign: React.FC = () => {
                     <div className="text-xs text-base-content/50 mt-2 text-center">
                       {totalSigned} of {fields.length} fields signed
                     </div>
+
+                    {/* Required fields progress */}
+                    {requiredFields.length > 0 && (
+                      <div className="mt-4 pt-3 border-t border-base-300">
+                        <div className="flex justify-between items-center text-sm mb-2">
+                          <span className="text-base-content/60 font-medium flex items-center gap-1">
+                            Required
+                            <span className="text-error">*</span>
+                          </span>
+                          <span className={`font-bold ${allRequiredComplete ? 'text-success' : 'text-error'}`}>
+                            {completedRequiredFields.length} of {requiredFields.length}
+                          </span>
+                        </div>
+                        <div className="h-2 bg-base-300 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-500 rounded-full ${
+                              allRequiredComplete
+                                ? 'bg-gradient-to-r from-success to-success/80'
+                                : 'bg-gradient-to-r from-error to-error/80'
+                            }`}
+                            style={{ width: `${requiredProgress}%` }}
+                          />
+                        </div>
+                        {!allRequiredComplete && (
+                          <div className="text-xs text-error/70 mt-2 text-center">
+                            {incompleteRequiredFields.length} required field{incompleteRequiredFields.length > 1 ? 's' : ''} remaining
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </>
               )}
