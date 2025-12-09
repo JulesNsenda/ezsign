@@ -215,8 +215,28 @@ export const PrepareDocument: React.FC = () => {
           return { width: 150, height: 30 }; // min: 100x25
         case 'checkbox':
           return { width: 20, height: 20 }; // min: 15x15
+        case 'radio':
+          return { width: 150, height: 80 }; // space for options
         default:
           return { width: 150, height: 50 };
+      }
+    };
+
+    // Get default properties for field types that need them
+    const getDefaultProperties = (type: FieldType): Record<string, unknown> | undefined => {
+      switch (type) {
+        case 'radio':
+          return {
+            options: [
+              { label: 'Option 1', value: 'option1' },
+              { label: 'Option 2', value: 'option2' },
+            ],
+            orientation: 'vertical',
+            fontSize: 12,
+            optionSpacing: 20,
+          };
+        default:
+          return undefined;
       }
     };
 
@@ -231,6 +251,7 @@ export const PrepareDocument: React.FC = () => {
     try {
       // Auto-assign to signer if there's only one
       const signerEmail = signers.length === 1 ? signers[0].email : undefined;
+      const properties = getDefaultProperties(fieldData.type as FieldType);
 
       await createFieldMutation.mutateAsync({
         documentId: id,
@@ -243,6 +264,7 @@ export const PrepareDocument: React.FC = () => {
           height: fieldHeightPoints,
           required: false,
           signer_email: signerEmail,
+          ...(properties && { properties }),
         },
       });
       refetchFields();

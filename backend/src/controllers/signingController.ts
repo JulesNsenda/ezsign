@@ -408,6 +408,13 @@ export class SigningController {
             // Load original PDF
             const originalPdfBuffer = await this._storageService.downloadFile(document.file_path);
 
+            // Get page dimensions for coordinate transformation
+            const pdfInfo = await this._pdfService.getPdfInfo(originalPdfBuffer);
+            const pageHeights: Map<number, number> = new Map();
+            for (const pageInfo of pdfInfo.pages) {
+              pageHeights.set(pageInfo.pageNumber, pageInfo.height);
+            }
+
             // Separate fields by type
             const signatureFields: any[] = [];
             const textFields: any[] = [];
@@ -417,13 +424,31 @@ export class SigningController {
 
             for (const row of allSignaturesResult.rows) {
               const pageNumber = parseInt(row.page);
+              const fieldHeight = parseFloat(row.height);
+              const frontendY = parseFloat(row.y);
+
+              // Get page height (default to 792 points for Letter size)
+              const pageHeight = pageHeights.get(pageNumber) || 792;
+
+              // Transform Y coordinate: frontend uses top-left origin, PDF uses bottom-left
+              // Formula: pdfY = pageHeight - frontendY - fieldHeight
+              const pdfY = pageHeight - frontendY - fieldHeight;
+
               const baseField = {
                 page: pageNumber,
                 x: parseFloat(row.x),
-                y: parseFloat(row.y),
+                y: pdfY,
                 width: parseFloat(row.width),
-                height: parseFloat(row.height),
+                height: fieldHeight,
               };
+
+              logger.debug('Coordinate transformation', {
+                fieldId: row.field_id,
+                frontendY,
+                pdfY,
+                pageHeight,
+                fieldHeight
+              });
 
               switch (row.type) {
                 case 'radio': {
