@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import authService from '@/services/authService';
+import Button from '@/components/Button';
 
 /**
  * Reset password page
@@ -67,152 +68,149 @@ export const ResetPassword: React.FC = () => {
 
   if (!token) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#f5f5f5',
-      }}>
-        <div style={{
-          backgroundColor: 'white',
-          padding: '2rem',
-          borderRadius: '8px',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-          width: '100%',
-          maxWidth: '400px',
-          textAlign: 'center',
-        }}>
-          <h2 style={{ marginBottom: '1rem', color: '#c33' }}>Invalid Reset Link</h2>
-          <p style={{ marginBottom: '1.5rem' }}>
-            This password reset link is invalid or has expired.
-          </p>
-          <Link
-            to="/forgot-password"
-            style={{
-              display: 'inline-block',
-              padding: '0.75rem 1.5rem',
-              backgroundColor: '#007bff',
-              color: 'white',
-              textDecoration: 'none',
-              borderRadius: '4px',
-              fontWeight: '500',
-            }}
-          >
-            Request New Link
-          </Link>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-200 via-base-200 to-base-300 px-4 py-12">
+        <div className="w-full max-w-md animate-fade-in">
+          <div className="bg-base-100 rounded-2xl shadow-xl border border-base-300/50 p-8 text-center">
+            <div className="w-16 h-16 rounded-full bg-error/10 flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-semibold text-neutral mb-2">Invalid Reset Link</h2>
+            <p className="text-base-content/60 mb-6">
+              This password reset link is invalid or has expired.
+            </p>
+            <Link to="/forgot-password">
+              <Button variant="primary" fullWidth>
+                Request New Link
+              </Button>
+            </Link>
+          </div>
+
+          <div className="text-center text-sm text-base-content/50 mt-8">
+            <div className="mb-2">
+              <Link to="/privacy" className="hover:text-neutral transition-colors">Privacy Policy</Link>
+              <span className="mx-2">|</span>
+              <Link to="/terms" className="hover:text-neutral transition-colors">Terms of Service</Link>
+              <span className="mx-2">|</span>
+              <Link to="/contact" className="hover:text-neutral transition-colors">Contact</Link>
+            </div>
+            <p>© 2025 EzSign. All rights reserved.</p>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: '#f5f5f5',
-    }}>
-      <div style={{
-        backgroundColor: 'white',
-        padding: '2rem',
-        borderRadius: '8px',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-        width: '100%',
-        maxWidth: '400px',
-      }}>
-        <h1 style={{ marginBottom: '0.5rem', textAlign: 'center' }}>Reset Password</h1>
-        <p style={{ marginBottom: '1.5rem', textAlign: 'center', color: '#666', fontSize: '0.875rem' }}>
-          Enter your new password below
-        </p>
-
-        {error && (
-          <div style={{
-            padding: '0.75rem',
-            marginBottom: '1rem',
-            backgroundColor: '#fee',
-            border: '1px solid #fcc',
-            borderRadius: '4px',
-            color: '#c33',
-          }}>
-            {error}
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-200 via-base-200 to-base-300 px-4 py-12">
+      <div className="w-full max-w-md animate-fade-in">
+        {/* Logo/Title */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-neutral to-neutral/80 text-base-100 mb-4 shadow-lg">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
           </div>
-        )}
+          <h1 className="text-4xl font-bold text-neutral mb-2">EzSign</h1>
+          <p className="text-base-content/60">Sign documents with ease</p>
+        </div>
 
-        <form onSubmit={handleSubmit(onSubmit)}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-              New Password
-            </label>
-            <input
-              {...register('password')}
-              type="password"
-              placeholder="••••••••"
-              style={{
-                width: '100%',
-                padding: '0.5rem',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-                fontSize: '1rem',
-              }}
-            />
-            {errors.password && (
-              <div style={{ color: '#c33', fontSize: '0.875rem', marginTop: '0.25rem' }}>
-                {errors.password.message}
-              </div>
-            )}
-            <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
-              Must be at least 8 characters with letters and numbers
+        <div className="bg-base-100 rounded-2xl shadow-xl border border-base-300/50 p-8">
+          <h2 className="text-2xl font-semibold text-neutral mb-2 text-center">Reset Password</h2>
+          <p className="text-base-content/60 text-center mb-6">
+            Enter your new password below
+          </p>
+
+          {error && (
+            <div className="flex items-start gap-3 mb-6 bg-error/10 border border-error/20 rounded-xl p-4 animate-slide-down">
+              <svg className="w-5 h-5 text-error flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-error text-sm font-medium">{error}</span>
             </div>
-          </div>
+          )}
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-              Confirm Password
-            </label>
-            <input
-              {...register('confirmPassword')}
-              type="password"
-              placeholder="••••••••"
-              style={{
-                width: '100%',
-                padding: '0.5rem',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-                fontSize: '1rem',
-              }}
-            />
-            {errors.confirmPassword && (
-              <div style={{ color: '#c33', fontSize: '0.875rem', marginTop: '0.25rem' }}>
-                {errors.confirmPassword.message}
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+            <div>
+              <label className="block text-sm font-semibold text-neutral mb-2">
+                New Password
+              </label>
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-base-content/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <input
+                  {...register('password')}
+                  type="password"
+                  placeholder="••••••••"
+                  className="input-docuseal pl-10"
+                />
               </div>
-            )}
+              {errors.password && (
+                <div className="text-error text-sm mt-2 flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01" />
+                  </svg>
+                  {errors.password.message}
+                </div>
+              )}
+              <div className="text-xs text-base-content/50 mt-1">
+                Must be at least 8 characters with letters and numbers
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-neutral mb-2">
+                Confirm Password
+              </label>
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-base-content/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <input
+                  {...register('confirmPassword')}
+                  type="password"
+                  placeholder="••••••••"
+                  className="input-docuseal pl-10"
+                />
+              </div>
+              {errors.confirmPassword && (
+                <div className="text-error text-sm mt-2 flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01" />
+                  </svg>
+                  {errors.confirmPassword.message}
+                </div>
+              )}
+            </div>
+
+            <Button
+              type="submit"
+              loading={isSubmitting}
+              fullWidth
+              size="lg"
+            >
+              Reset Password
+            </Button>
+          </form>
+
+          <div className="mt-6 pt-6 border-t border-base-300/50 text-center text-sm">
+            <Link to="/login" className="text-neutral font-semibold hover:text-neutral/80 transition-colors hover:underline underline-offset-4">
+              Back to Login
+            </Link>
           </div>
+        </div>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              backgroundColor: isSubmitting ? '#999' : '#28a745',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              fontSize: '1rem',
-              cursor: isSubmitting ? 'not-allowed' : 'pointer',
-              fontWeight: '500',
-            }}
-          >
-            {isSubmitting ? 'Resetting...' : 'Reset Password'}
-          </button>
-        </form>
-
-        <div style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.875rem' }}>
-          <Link to="/login" style={{ color: '#007bff', textDecoration: 'none', fontWeight: '500' }}>
-            Back to Login
-          </Link>
+        <div className="text-center text-sm text-base-content/50 mt-8">
+          <div className="mb-2">
+            <Link to="/privacy" className="hover:text-neutral transition-colors">Privacy Policy</Link>
+            <span className="mx-2">|</span>
+            <Link to="/terms" className="hover:text-neutral transition-colors">Terms of Service</Link>
+            <span className="mx-2">|</span>
+            <Link to="/contact" className="hover:text-neutral transition-colors">Contact</Link>
+          </div>
+          <p>© 2025 EzSign. All rights reserved.</p>
         </div>
       </div>
     </div>

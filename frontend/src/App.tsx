@@ -14,6 +14,9 @@ import PrepareDocument from './pages/PrepareDocument';
 import Sign from './pages/Sign';
 import Templates from './pages/Templates';
 import Settings from './pages/Settings';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfService from './pages/TermsOfService';
+import Contact from './pages/Contact';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -40,6 +43,9 @@ function App() {
                 <Route path="/forgot-password" element={<ForgotPassword />} />
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/sign/:token" element={<Sign />} />
+                <Route path="/privacy" element={<PrivacyPolicy />} />
+                <Route path="/terms" element={<TermsOfService />} />
+                <Route path="/contact" element={<Contact />} />
 
                 {/* Protected routes */}
                 <Route

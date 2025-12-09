@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 
 /**
  * Professional footer component
@@ -18,24 +19,24 @@ export const Footer: React.FC = () => {
 
           {/* Right side - Links */}
           <div className="flex items-center gap-6">
-            <a
-              href="#"
+            <Link
+              to="/privacy"
               className="text-sm text-base-content/60 hover:text-neutral transition-colors"
             >
               Privacy Policy
-            </a>
-            <a
-              href="#"
+            </Link>
+            <Link
+              to="/terms"
               className="text-sm text-base-content/60 hover:text-neutral transition-colors"
             >
               Terms of Service
-            </a>
-            <a
-              href="#"
+            </Link>
+            <Link
+              to="/contact"
               className="text-sm text-base-content/60 hover:text-neutral transition-colors"
             >
               Contact
-            </a>
+            </Link>
           </div>
         </div>
       </div>
