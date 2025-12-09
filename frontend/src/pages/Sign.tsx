@@ -3,6 +3,9 @@ import { useParams } from 'react-router-dom';
 import PdfViewer from '@/components/PdfViewer';
 import SignaturePad from '@/components/SignaturePad';
 import RadioFieldInput from '@/components/RadioFieldInput';
+import TextFieldInput from '@/components/TextFieldInput';
+import DateFieldInput from '@/components/DateFieldInput';
+import CheckboxFieldInput from '@/components/CheckboxFieldInput';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import { useSigningSession, useSubmitSignatures } from '@/hooks/useSignature';
@@ -260,6 +263,60 @@ export const Sign: React.FC = () => {
     }
   };
 
+  const handleTextInput = (value: string) => {
+    if (!currentField) return;
+
+    const newSignature: SignatureData = {
+      field_id: currentField.id,
+      signature_type: 'typed' as SignatureType,
+      signature_data: `text:${value}`,
+      text_value: value,
+    };
+
+    setCollectedSignatures([...collectedSignatures, newSignature]);
+    setIsSignatureModalOpen(false);
+
+    if (currentFieldIndex < unsignedFields.length - 1) {
+      setTimeout(() => handleNextField(), 300);
+    }
+  };
+
+  const handleDateInput = (_value: string, formattedValue: string) => {
+    if (!currentField) return;
+
+    const newSignature: SignatureData = {
+      field_id: currentField.id,
+      signature_type: 'typed' as SignatureType,
+      signature_data: `date:${formattedValue}`,
+      text_value: formattedValue,
+    };
+
+    setCollectedSignatures([...collectedSignatures, newSignature]);
+    setIsSignatureModalOpen(false);
+
+    if (currentFieldIndex < unsignedFields.length - 1) {
+      setTimeout(() => handleNextField(), 300);
+    }
+  };
+
+  const handleCheckboxInput = (checked: boolean) => {
+    if (!currentField) return;
+
+    const newSignature: SignatureData = {
+      field_id: currentField.id,
+      signature_type: 'typed' as SignatureType,
+      signature_data: `checkbox:${checked ? 'true' : 'false'}`,
+      text_value: checked ? 'checked' : 'unchecked',
+    };
+
+    setCollectedSignatures([...collectedSignatures, newSignature]);
+    setIsSignatureModalOpen(false);
+
+    if (currentFieldIndex < unsignedFields.length - 1) {
+      setTimeout(() => handleNextField(), 300);
+    }
+  };
+
   // Helper to navigate to a specific field by ID
   const navigateToFieldById = (fieldId: string) => {
     const fieldIndex = unsignedFields.findIndex((f) => f.id === fieldId);
@@ -295,6 +352,68 @@ export const Sign: React.FC = () => {
       setIsCompleted(true);
     } catch (err: any) {
       showError(err.response?.data?.error?.message || 'Failed to submit signatures');
+    }
+  };
+
+  // Render the appropriate input component based on field type
+  const renderFieldInput = () => {
+    if (!currentField) return null;
+
+    switch (currentField.type) {
+      case 'signature':
+      case 'initials':
+        return (
+          <SignaturePad
+            onSave={handleSignField}
+            onCancel={() => setIsSignatureModalOpen(false)}
+          />
+        );
+
+      case 'text':
+        return (
+          <TextFieldInput
+            onSave={handleTextInput}
+            onCancel={() => setIsSignatureModalOpen(false)}
+            placeholder="Enter text..."
+            maxLength={currentField.properties?.maxLength as number || 255}
+          />
+        );
+
+      case 'date':
+        return (
+          <DateFieldInput
+            onSave={handleDateInput}
+            onCancel={() => setIsSignatureModalOpen(false)}
+            dateFormat={currentField.properties?.dateFormat as string || 'MM/DD/YYYY'}
+          />
+        );
+
+      case 'checkbox':
+        return (
+          <CheckboxFieldInput
+            onSave={handleCheckboxInput}
+            onCancel={() => setIsSignatureModalOpen(false)}
+            label={currentField.properties?.label as string || 'I confirm this selection'}
+          />
+        );
+
+      case 'radio':
+        return (
+          <RadioFieldInput
+            options={(currentField.properties?.options as RadioOption[]) || []}
+            orientation={currentField.properties?.orientation as 'horizontal' | 'vertical' || 'vertical'}
+            onSave={handleRadioSelection}
+            onCancel={() => setIsSignatureModalOpen(false)}
+            fieldName={`radio-${currentField.id}`}
+          />
+        );
+
+      default:
+        return (
+          <div className="text-center p-4">
+            <p className="text-base-content/60">Unknown field type: {currentField.type}</p>
+          </div>
+        );
     }
   };
 
@@ -398,12 +517,64 @@ export const Sign: React.FC = () => {
                         const field = fields.find((f) => f.id === sig.field_id);
                         if (!field || field.page !== currentPage) return null;
 
-                        const isRadioField = field.type === 'radio';
-                        const radioLabel = isRadioField && field.properties?.options
-                          ? (field.properties.options as RadioOption[]).find(
-                              (opt) => opt.value === sig.text_value
-                            )?.label || sig.text_value
-                          : null;
+                        // Get display content based on field type
+                        const renderFieldContent = () => {
+                          switch (field.type) {
+                            case 'radio': {
+                              const radioLabel = field.properties?.options
+                                ? (field.properties.options as RadioOption[]).find(
+                                    (opt) => opt.value === sig.text_value
+                                  )?.label || sig.text_value
+                                : sig.text_value;
+                              return (
+                                <div className="flex items-center gap-2 px-2">
+                                  <span className="text-blue-600 font-bold">●</span>
+                                  <span className="text-sm font-medium text-blue-800 truncate">
+                                    {radioLabel}
+                                  </span>
+                                </div>
+                              );
+                            }
+                            case 'text':
+                              return (
+                                <div className="px-2 text-center">
+                                  <span className="text-sm font-medium text-blue-800 truncate">
+                                    {sig.text_value}
+                                  </span>
+                                </div>
+                              );
+                            case 'date':
+                              return (
+                                <div className="px-2 text-center">
+                                  <span className="text-sm font-medium text-blue-800">
+                                    {sig.text_value}
+                                  </span>
+                                </div>
+                              );
+                            case 'checkbox':
+                              return (
+                                <div className="flex items-center justify-center">
+                                  {sig.text_value === 'checked' ? (
+                                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  ) : (
+                                    <span className="text-blue-400 text-xs">—</span>
+                                  )}
+                                </div>
+                              );
+                            case 'signature':
+                            case 'initials':
+                            default:
+                              return (
+                                <img
+                                  src={sig.signature_data}
+                                  alt="Signature"
+                                  className="max-w-full max-h-full object-contain"
+                                />
+                              );
+                          }
+                        };
 
                         return (
                           <div
@@ -418,20 +589,7 @@ export const Sign: React.FC = () => {
                               borderColor: 'rgba(59, 130, 246, 1)',
                             }}
                           >
-                            {isRadioField ? (
-                              <div className="flex items-center gap-2 px-2">
-                                <span className="text-blue-600 font-bold">✓</span>
-                                <span className="text-sm font-medium text-blue-800 truncate">
-                                  {radioLabel}
-                                </span>
-                              </div>
-                            ) : (
-                              <img
-                                src={sig.signature_data}
-                                alt="Signature"
-                                className="max-w-full max-h-full object-contain"
-                              />
-                            )}
+                            {renderFieldContent()}
                           </div>
                         );
                       })}
@@ -663,30 +821,37 @@ export const Sign: React.FC = () => {
         </div>
       </div>
 
-      {/* Signature Modal */}
+      {/* Field Input Modal */}
       <Modal
         isOpen={isSignatureModalOpen}
         onClose={() => setIsSignatureModalOpen(false)}
-        title={currentField?.type === 'radio' ? 'Select Option' : `Sign ${currentField?.type || 'Field'}`}
+        title={getModalTitle(currentField?.type)}
         width="500px"
       >
-        {currentField?.type === 'radio' ? (
-          <RadioFieldInput
-            options={(currentField.properties?.options as RadioOption[]) || []}
-            orientation={currentField.properties?.orientation as 'horizontal' | 'vertical' || 'vertical'}
-            onSave={handleRadioSelection}
-            onCancel={() => setIsSignatureModalOpen(false)}
-            fieldName={`radio-${currentField.id}`}
-          />
-        ) : (
-          <SignaturePad
-            onSave={handleSignField}
-            onCancel={() => setIsSignatureModalOpen(false)}
-          />
-        )}
+        {renderFieldInput()}
       </Modal>
     </div>
   );
+};
+
+// Helper function to get modal title based on field type
+const getModalTitle = (fieldType?: string): string => {
+  switch (fieldType) {
+    case 'signature':
+      return 'Add Your Signature';
+    case 'initials':
+      return 'Add Your Initials';
+    case 'date':
+      return 'Select Date';
+    case 'text':
+      return 'Enter Text';
+    case 'checkbox':
+      return 'Confirm Checkbox';
+    case 'radio':
+      return 'Select Option';
+    default:
+      return 'Complete Field';
+  }
 };
 
 export default Sign;

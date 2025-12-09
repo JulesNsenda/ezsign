@@ -410,6 +410,9 @@ export class SigningController {
 
             // Separate fields by type
             const signatureFields: any[] = [];
+            const textFields: any[] = [];
+            const dateFields: any[] = [];
+            const checkboxFields: any[] = [];
             const radioFields: any[] = [];
 
             for (const row of allSignaturesResult.rows) {
@@ -422,39 +425,88 @@ export class SigningController {
                 height: parseFloat(row.height),
               };
 
-              if (row.type === 'radio') {
-                // Radio field - use text_value as selectedValue
-                const properties = row.properties || {};
-                radioFields.push({
-                  ...baseField,
-                  options: properties.options || [],
-                  selectedValue: row.text_value,
-                  orientation: properties.orientation || 'vertical',
-                  fontSize: properties.fontSize || 12,
-                  textColor: properties.textColor || '#000000',
-                  optionSpacing: properties.optionSpacing || 20,
-                });
-                logger.debug('Processing radio field', { fieldId: row.field_id, selectedValue: row.text_value });
-              } else {
-                // Signature/initials field - use imageData
-                signatureFields.push({
-                  ...baseField,
-                  imageData: row.signature_data,
-                });
-                logger.debug('Processing signature row', {
-                  page: row.page,
-                  x: row.x,
-                  y: row.y,
-                  width: row.width,
-                  height: row.height,
-                  signature_data_length: row.signature_data?.length
-                });
+              switch (row.type) {
+                case 'radio': {
+                  // Radio field - use text_value as selectedValue
+                  const properties = row.properties || {};
+                  radioFields.push({
+                    ...baseField,
+                    options: properties.options || [],
+                    selectedValue: row.text_value,
+                    orientation: properties.orientation || 'vertical',
+                    fontSize: properties.fontSize || 12,
+                    textColor: properties.textColor || '#000000',
+                    optionSpacing: properties.optionSpacing || 20,
+                  });
+                  logger.debug('Processing radio field', { fieldId: row.field_id, selectedValue: row.text_value });
+                  break;
+                }
+
+                case 'text': {
+                  // Text field - use text_value
+                  const properties = row.properties || {};
+                  textFields.push({
+                    ...baseField,
+                    text: row.text_value || '',
+                    fontSize: properties.fontSize || 12,
+                    fontColor: properties.fontColor || '#000000',
+                  });
+                  logger.debug('Processing text field', { fieldId: row.field_id, text: row.text_value });
+                  break;
+                }
+
+                case 'date': {
+                  // Date field - use text_value (already formatted)
+                  const properties = row.properties || {};
+                  dateFields.push({
+                    ...baseField,
+                    date: row.text_value || '',
+                    format: properties.dateFormat || 'MM/DD/YYYY',
+                    fontSize: properties.fontSize || 12,
+                    fontColor: properties.fontColor || '#000000',
+                  });
+                  logger.debug('Processing date field', { fieldId: row.field_id, date: row.text_value });
+                  break;
+                }
+
+                case 'checkbox': {
+                  // Checkbox field - use text_value to determine checked state
+                  checkboxFields.push({
+                    ...baseField,
+                    checked: row.text_value === 'checked',
+                    checkColor: '#000000',
+                  });
+                  logger.debug('Processing checkbox field', { fieldId: row.field_id, checked: row.text_value === 'checked' });
+                  break;
+                }
+
+                case 'signature':
+                case 'initials':
+                default: {
+                  // Signature/initials field - use imageData
+                  signatureFields.push({
+                    ...baseField,
+                    imageData: row.signature_data,
+                  });
+                  logger.debug('Processing signature row', {
+                    page: row.page,
+                    x: row.x,
+                    y: row.y,
+                    width: row.width,
+                    height: row.height,
+                    signature_data_length: row.signature_data?.length
+                  });
+                  break;
+                }
               }
             }
 
             logger.debug('Applying fields to PDF...', {
               documentId: signer.document_id,
               signatureCount: signatureFields.length,
+              textCount: textFields.length,
+              dateCount: dateFields.length,
+              checkboxCount: checkboxFields.length,
               radioCount: radioFields.length
             });
 
@@ -463,6 +515,9 @@ export class SigningController {
               originalPdfBuffer,
               {
                 signatures: signatureFields.length > 0 ? signatureFields : undefined,
+                textFields: textFields.length > 0 ? textFields : undefined,
+                dateFields: dateFields.length > 0 ? dateFields : undefined,
+                checkboxFields: checkboxFields.length > 0 ? checkboxFields : undefined,
                 radioFields: radioFields.length > 0 ? radioFields : undefined,
               }
             );
