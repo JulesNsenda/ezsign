@@ -392,9 +392,9 @@ export class SigningController {
           );
           const document = new Document(this.mapRowToDocumentData(docResult.rows[0]));
 
-          // Get all signatures for this document
+          // Get all signatures for this document with field type and properties
           const allSignaturesResult = await client.query(
-            `SELECT s.*, f.page, f.x, f.y, f.width, f.height
+            `SELECT s.*, f.page, f.x, f.y, f.width, f.height, f.type, f.properties
              FROM signatures s
              JOIN fields f ON s.field_id = f.id
              WHERE f.document_id = $1`,
@@ -408,36 +408,63 @@ export class SigningController {
             // Load original PDF
             const originalPdfBuffer = await this._storageService.downloadFile(document.file_path);
 
-            // Prepare signature fields for PDF service
-            const signatureFields = allSignaturesResult.rows.map((row) => {
-              logger.debug('Processing signature row', {
-                page: row.page,
-                x: row.x,
-                y: row.y,
-                width: row.width,
-                height: row.height,
-                signature_data_length: row.signature_data?.length
-              });
+            // Separate fields by type
+            const signatureFields: any[] = [];
+            const radioFields: any[] = [];
 
-              // Database stores pages as 0-indexed (same as pdf-lib), no conversion needed
+            for (const row of allSignaturesResult.rows) {
               const pageNumber = parseInt(row.page);
-              logger.debug('Page number', { pageNumber });
-
-              return {
+              const baseField = {
                 page: pageNumber,
                 x: parseFloat(row.x),
                 y: parseFloat(row.y),
                 width: parseFloat(row.width),
                 height: parseFloat(row.height),
-                imageData: row.signature_data, // Base64 string from database
               };
+
+              if (row.type === 'radio') {
+                // Radio field - use text_value as selectedValue
+                const properties = row.properties || {};
+                radioFields.push({
+                  ...baseField,
+                  options: properties.options || [],
+                  selectedValue: row.text_value,
+                  orientation: properties.orientation || 'vertical',
+                  fontSize: properties.fontSize || 12,
+                  textColor: properties.textColor || '#000000',
+                  optionSpacing: properties.optionSpacing || 20,
+                });
+                logger.debug('Processing radio field', { fieldId: row.field_id, selectedValue: row.text_value });
+              } else {
+                // Signature/initials field - use imageData
+                signatureFields.push({
+                  ...baseField,
+                  imageData: row.signature_data,
+                });
+                logger.debug('Processing signature row', {
+                  page: row.page,
+                  x: row.x,
+                  y: row.y,
+                  width: row.width,
+                  height: row.height,
+                  signature_data_length: row.signature_data?.length
+                });
+              }
+            }
+
+            logger.debug('Applying fields to PDF...', {
+              documentId: signer.document_id,
+              signatureCount: signatureFields.length,
+              radioCount: radioFields.length
             });
 
-            logger.debug('Applying signatures to PDF...', { documentId: signer.document_id });
-            // Apply all signatures to the PDF
+            // Apply all fields to the PDF
             const signedPdfBuffer = await this._pdfService.addMultipleFields(
               originalPdfBuffer,
-              { signatures: signatureFields }
+              {
+                signatures: signatureFields.length > 0 ? signatureFields : undefined,
+                radioFields: radioFields.length > 0 ? radioFields : undefined,
+              }
             );
 
             logger.debug('Signed PDF created', { documentId: signer.document_id, size: signedPdfBuffer.length });

@@ -2,12 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import PdfViewer from '@/components/PdfViewer';
 import SignaturePad from '@/components/SignaturePad';
+import RadioFieldInput from '@/components/RadioFieldInput';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import { useSigningSession, useSubmitSignatures } from '@/hooks/useSignature';
 import { useToast } from '@/hooks/useToast';
 import signatureService, { type SignatureData } from '@/services/signatureService';
-import type { SignatureType } from '@/types';
+import type { SignatureType, RadioOption } from '@/types';
 
 /**
  * Signing page for signers to review and sign documents
@@ -51,6 +52,42 @@ export const Sign: React.FC = () => {
       }
     }
   }, [session, currentFieldIndex, collectedSignatures]);
+
+  // Calculate all memoized values BEFORE any conditional returns (React hooks rules)
+  const fields = session?.fields || [];
+  const signatures = session?.signatures || [];
+
+  const signerFields = useMemo(() => {
+    if (!session) return [];
+    return fields.filter(
+      (field) => !field.signer_email || field.signer_email === session.signer.email
+    );
+  }, [fields, session]);
+
+  const requiredFields = useMemo(() => {
+    return signerFields.filter((field) => field.required);
+  }, [signerFields]);
+
+  const completedRequiredFields = useMemo(() => {
+    return requiredFields.filter(
+      (field) =>
+        signatures.some((sig) => sig.field_id === field.id) ||
+        collectedSignatures.some((sig) => sig.field_id === field.id)
+    );
+  }, [requiredFields, signatures, collectedSignatures]);
+
+  const incompleteRequiredFields = useMemo(() => {
+    return requiredFields.filter(
+      (field) =>
+        !signatures.some((sig) => sig.field_id === field.id) &&
+        !collectedSignatures.some((sig) => sig.field_id === field.id)
+    );
+  }, [requiredFields, signatures, collectedSignatures]);
+
+  const allRequiredComplete = incompleteRequiredFields.length === 0;
+  const requiredProgress = requiredFields.length > 0
+    ? Math.round((completedRequiredFields.length / requiredFields.length) * 100)
+    : 100;
 
   // NOW we can do conditional returns after all hooks are called
   if (isLoading) {
@@ -133,11 +170,7 @@ export const Sign: React.FC = () => {
     );
   }
 
-  // Calculate variables after all conditional returns
-  // Add defensive checks for arrays
-  const fields = session.fields || [];
-  const signatures = session.signatures || [];
-
+  // Calculate derived values (non-hook) after conditional returns
   const unsignedFields = fields.filter(
     (field) =>
       !signatures.some((sig) => sig.field_id === field.id) &&
@@ -148,38 +181,6 @@ export const Sign: React.FC = () => {
   const currentField = unsignedFields[currentFieldIndex];
   const totalSigned = signatures.length + collectedSignatures.length;
   const progress = fields.length > 0 ? ((totalSigned / fields.length) * 100).toFixed(0) : '0';
-
-  // Track required field completion for validation
-  const signerFields = useMemo(() => {
-    return fields.filter(
-      (field) => !field.signer_email || field.signer_email === session.signer.email
-    );
-  }, [fields, session.signer.email]);
-
-  const requiredFields = useMemo(() => {
-    return signerFields.filter((field) => field.required);
-  }, [signerFields]);
-
-  const completedRequiredFields = useMemo(() => {
-    return requiredFields.filter(
-      (field) =>
-        signatures.some((sig) => sig.field_id === field.id) ||
-        collectedSignatures.some((sig) => sig.field_id === field.id)
-    );
-  }, [requiredFields, signatures, collectedSignatures]);
-
-  const incompleteRequiredFields = useMemo(() => {
-    return requiredFields.filter(
-      (field) =>
-        !signatures.some((sig) => sig.field_id === field.id) &&
-        !collectedSignatures.some((sig) => sig.field_id === field.id)
-    );
-  }, [requiredFields, signatures, collectedSignatures]);
-
-  const allRequiredComplete = incompleteRequiredFields.length === 0;
-  const requiredProgress = requiredFields.length > 0
-    ? Math.round((completedRequiredFields.length / requiredFields.length) * 100)
-    : 100;
 
   const handleNavigateToField = (index: number) => {
     if (index >= 0 && index < unsignedFields.length) {
@@ -227,6 +228,27 @@ export const Sign: React.FC = () => {
       signature_data: signatureData,
       ...(textValue && { text_value: textValue }),
       ...(fontFamily && { font_family: fontFamily }),
+    };
+
+    setCollectedSignatures([...collectedSignatures, newSignature]);
+    setIsSignatureModalOpen(false);
+
+    // Auto-advance to next field if there are more
+    if (currentFieldIndex < unsignedFields.length - 1) {
+      setTimeout(() => handleNextField(), 300);
+    }
+  };
+
+  const handleRadioSelection = (selectedValue: string) => {
+    if (!currentField) return;
+
+    // For radio fields, we store the selected value as text_value
+    // and create a placeholder signature_data
+    const newSignature: SignatureData = {
+      field_id: currentField.id,
+      signature_type: 'typed' as SignatureType,
+      signature_data: `radio:${selectedValue}`, // Marker for radio selection
+      text_value: selectedValue,
     };
 
     setCollectedSignatures([...collectedSignatures, newSignature]);
@@ -376,6 +398,13 @@ export const Sign: React.FC = () => {
                         const field = fields.find((f) => f.id === sig.field_id);
                         if (!field || field.page !== currentPage) return null;
 
+                        const isRadioField = field.type === 'radio';
+                        const radioLabel = isRadioField && field.properties?.options
+                          ? (field.properties.options as RadioOption[]).find(
+                              (opt) => opt.value === sig.text_value
+                            )?.label || sig.text_value
+                          : null;
+
                         return (
                           <div
                             key={`collected-${idx}`}
@@ -389,11 +418,20 @@ export const Sign: React.FC = () => {
                               borderColor: 'rgba(59, 130, 246, 1)',
                             }}
                           >
-                            <img
-                              src={sig.signature_data}
-                              alt="Signature"
-                              className="max-w-full max-h-full object-contain"
-                            />
+                            {isRadioField ? (
+                              <div className="flex items-center gap-2 px-2">
+                                <span className="text-blue-600 font-bold">✓</span>
+                                <span className="text-sm font-medium text-blue-800 truncate">
+                                  {radioLabel}
+                                </span>
+                              </div>
+                            ) : (
+                              <img
+                                src={sig.signature_data}
+                                alt="Signature"
+                                className="max-w-full max-h-full object-contain"
+                              />
+                            )}
                           </div>
                         );
                       })}
@@ -629,13 +667,23 @@ export const Sign: React.FC = () => {
       <Modal
         isOpen={isSignatureModalOpen}
         onClose={() => setIsSignatureModalOpen(false)}
-        title={`Sign ${currentField?.type || 'Field'}`}
+        title={currentField?.type === 'radio' ? 'Select Option' : `Sign ${currentField?.type || 'Field'}`}
         width="500px"
       >
-        <SignaturePad
-          onSave={handleSignField}
-          onCancel={() => setIsSignatureModalOpen(false)}
-        />
+        {currentField?.type === 'radio' ? (
+          <RadioFieldInput
+            options={(currentField.properties?.options as RadioOption[]) || []}
+            orientation={currentField.properties?.orientation as 'horizontal' | 'vertical' || 'vertical'}
+            onSave={handleRadioSelection}
+            onCancel={() => setIsSignatureModalOpen(false)}
+            fieldName={`radio-${currentField.id}`}
+          />
+        ) : (
+          <SignaturePad
+            onSave={handleSignField}
+            onCancel={() => setIsSignatureModalOpen(false)}
+          />
+        )}
       </Modal>
     </div>
   );
