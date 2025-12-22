@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Layout from '@/components/Layout';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
+import ConfirmModal from '@/components/ConfirmModal';
 import Card from '@/components/Card';
 import { useAuth } from '@/hooks/useAuth';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -58,6 +59,19 @@ export const Settings: React.FC = () => {
   const [isWebhookModalOpen, setIsWebhookModalOpen] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookEvents, setWebhookEvents] = useState<string[]>([]);
+
+  // Confirm Modal
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   const { data: apiKeys = [] } = useQuery<ApiKey[]>({
     queryKey: ['api-keys'],
@@ -411,9 +425,15 @@ export const Settings: React.FC = () => {
                         variant="danger"
                         size="sm"
                         onClick={() => {
-                          if (confirm('Are you sure you want to delete this API key? This action cannot be undone.')) {
-                            deleteApiKeyMutation.mutate(key.id);
-                          }
+                          setConfirmModal({
+                            isOpen: true,
+                            title: 'Delete API Key',
+                            message: 'Are you sure you want to delete this API key? This action cannot be undone.',
+                            onConfirm: () => {
+                              deleteApiKeyMutation.mutate(key.id);
+                              setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                            },
+                          });
                         }}
                         icon={
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -492,9 +512,15 @@ export const Settings: React.FC = () => {
                           variant="danger"
                           size="sm"
                           onClick={() => {
-                            if (confirm('Are you sure you want to delete this webhook?')) {
-                              deleteWebhookMutation.mutate(webhook.id);
-                            }
+                            setConfirmModal({
+                              isOpen: true,
+                              title: 'Delete Webhook',
+                              message: 'Are you sure you want to delete this webhook?',
+                              onConfirm: () => {
+                                deleteWebhookMutation.mutate(webhook.id);
+                                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                              },
+                            });
                           }}
                           icon={
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -793,6 +819,17 @@ export const Settings: React.FC = () => {
             </div>
           </div>
         </Modal>
+
+        {/* Confirm Modal for destructive actions */}
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          onConfirm={confirmModal.onConfirm}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          confirmText="Delete"
+          variant="danger"
+        />
       </div>
     </Layout>
   );
