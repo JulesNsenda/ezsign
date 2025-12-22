@@ -1,4 +1,4 @@
-export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio';
+export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio' | 'dropdown';
 
 export interface RadioOption {
   label: string;
@@ -28,6 +28,9 @@ export interface FieldProperties {
   selectedValue?: string;
   orientation?: 'horizontal' | 'vertical';
   optionSpacing?: number;
+
+  // Dropdown field properties
+  // Note: uses 'options', 'selectedValue' (shared with radio) and 'placeholder' (shared with text)
 
   // General properties
   backgroundColor?: string;
@@ -145,6 +148,13 @@ export class Field {
    */
   isRadio(): boolean {
     return this.type === 'radio';
+  }
+
+  /**
+   * Check if field is a dropdown select field
+   */
+  isDropdown(): boolean {
+    return this.type === 'dropdown';
   }
 
   /**
@@ -291,6 +301,37 @@ export class Field {
       }
     }
 
+    // Validate dropdown field properties
+    if (this.isDropdown()) {
+      if (!props.options || props.options.length < 1) {
+        errors.push('Dropdown field must have at least 1 option');
+      }
+      if (props.options && props.options.length > 20) {
+        errors.push('Dropdown field cannot have more than 20 options');
+      }
+      if (props.options) {
+        const values = props.options.map((o) => o.value);
+        if (new Set(values).size !== values.length) {
+          errors.push('Dropdown options must have unique values');
+        }
+        // Check each option has non-empty label and value
+        for (const option of props.options) {
+          if (!option.label || option.label.trim() === '') {
+            errors.push('Dropdown option labels cannot be empty');
+            break;
+          }
+          if (!option.value || option.value.trim() === '') {
+            errors.push('Dropdown option values cannot be empty');
+            break;
+          }
+        }
+        // Validate selectedValue if provided
+        if (props.selectedValue && !values.includes(props.selectedValue)) {
+          errors.push('Selected value must match one of the dropdown options');
+        }
+      }
+    }
+
     return {
       valid: errors.length === 0,
       errors,
@@ -359,6 +400,21 @@ export class Field {
           textColor: '#000000',
           optionSpacing: 20,
         };
+      case 'dropdown':
+        return {
+          options: [
+            { label: 'Option 1', value: 'option1' },
+            { label: 'Option 2', value: 'option2' },
+            { label: 'Option 3', value: 'option3' },
+          ],
+          selectedValue: undefined,
+          placeholder: 'Select an option',
+          fontSize: 12,
+          textColor: '#000000',
+          backgroundColor: '#FFFFFF',
+          borderColor: '#000000',
+          borderWidth: 1,
+        };
       default:
         return {};
     }
@@ -368,7 +424,7 @@ export class Field {
    * Validate field type
    */
   static isValidFieldType(type: string): type is FieldType {
-    return ['signature', 'initials', 'date', 'text', 'checkbox', 'radio'].includes(type);
+    return ['signature', 'initials', 'date', 'text', 'checkbox', 'radio', 'dropdown'].includes(type);
   }
 
   /**
@@ -388,6 +444,8 @@ export class Field {
         return { width: 15, height: 15 };
       case 'radio':
         return { width: 100, height: 50 }; // Minimum for 2 vertical options
+      case 'dropdown':
+        return { width: 120, height: 25 };
       default:
         return { width: 50, height: 25 };
     }
@@ -412,6 +470,7 @@ export class Field {
       text: 'Text Input',
       checkbox: 'Checkbox',
       radio: 'Radio Button Group',
+      dropdown: 'Dropdown Select',
     };
     return typeDescriptions[this.type] || 'Unknown Field';
   }

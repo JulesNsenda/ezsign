@@ -38,7 +38,7 @@ export interface ApiResponse<T = any> {
 
 export type DocumentStatus = 'draft' | 'pending' | 'completed' | 'cancelled';
 export type WorkflowType = 'single' | 'sequential' | 'parallel';
-export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio';
+export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio' | 'dropdown';
 export type SignatureType = 'drawn' | 'typed' | 'uploaded';
 
 export interface RadioOption {
@@ -53,6 +53,16 @@ export interface RadioFieldProperties {
   fontSize?: number;
   textColor?: string;
   optionSpacing?: number;
+}
+
+export interface DropdownFieldProperties {
+  options: RadioOption[];
+  selectedValue?: string;
+  placeholder?: string;
+  fontSize?: number;
+  textColor?: string;
+  backgroundColor?: string;
+  borderColor?: string;
 }
 
 export interface Document {

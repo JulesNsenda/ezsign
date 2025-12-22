@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import PdfViewer from '@/components/PdfViewer';
 import SignaturePad from '@/components/SignaturePad';
 import RadioFieldInput from '@/components/RadioFieldInput';
+import DropdownFieldInput from '@/components/DropdownFieldInput';
 import TextFieldInput from '@/components/TextFieldInput';
 import DateFieldInput from '@/components/DateFieldInput';
 import CheckboxFieldInput from '@/components/CheckboxFieldInput';
@@ -263,6 +264,27 @@ export const Sign: React.FC = () => {
     }
   };
 
+  const handleDropdownSelection = (selectedValue: string) => {
+    if (!currentField) return;
+
+    // For dropdown fields, we store the selected value as text_value
+    // and create a placeholder signature_data
+    const newSignature: SignatureData = {
+      field_id: currentField.id,
+      signature_type: 'typed' as SignatureType,
+      signature_data: `dropdown:${selectedValue}`, // Marker for dropdown selection
+      text_value: selectedValue,
+    };
+
+    setCollectedSignatures([...collectedSignatures, newSignature]);
+    setIsSignatureModalOpen(false);
+
+    // Auto-advance to next field if there are more
+    if (currentFieldIndex < unsignedFields.length - 1) {
+      setTimeout(() => handleNextField(), 300);
+    }
+  };
+
   const handleTextInput = (value: string) => {
     if (!currentField) return;
 
@@ -408,6 +430,17 @@ export const Sign: React.FC = () => {
           />
         );
 
+      case 'dropdown':
+        return (
+          <DropdownFieldInput
+            options={(currentField.properties?.options as RadioOption[]) || []}
+            placeholder={currentField.properties?.placeholder as string || 'Select an option'}
+            onSave={handleDropdownSelection}
+            onCancel={() => setIsSignatureModalOpen(false)}
+            fieldName={`dropdown-${currentField.id}`}
+          />
+        );
+
       default:
         return (
           <div className="text-center p-4">
@@ -531,6 +564,21 @@ export const Sign: React.FC = () => {
                                   <span className="text-blue-600 font-bold">●</span>
                                   <span className="text-sm font-medium text-blue-800 truncate">
                                     {radioLabel}
+                                  </span>
+                                </div>
+                              );
+                            }
+                            case 'dropdown': {
+                              const dropdownLabel = field.properties?.options
+                                ? (field.properties.options as RadioOption[]).find(
+                                    (opt) => opt.value === sig.text_value
+                                  )?.label || sig.text_value
+                                : sig.text_value;
+                              return (
+                                <div className="flex items-center gap-2 px-2">
+                                  <span className="text-cyan-600 font-bold">▼</span>
+                                  <span className="text-sm font-medium text-cyan-800 truncate">
+                                    {dropdownLabel}
                                   </span>
                                 </div>
                               );
@@ -849,6 +897,8 @@ const getModalTitle = (fieldType?: string): string => {
       return 'Confirm Checkbox';
     case 'radio':
       return 'Select Option';
+    case 'dropdown':
+      return 'Select from List';
     default:
       return 'Complete Field';
   }

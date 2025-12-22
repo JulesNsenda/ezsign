@@ -23,6 +23,7 @@ const FIELD_COLORS: Record<FieldType, string> = {
   text: '#17a2b8',
   checkbox: '#6c757d',
   radio: '#9333ea',
+  dropdown: '#0891b2',
 };
 
 const FIELD_LABELS: Record<FieldType, string> = {
@@ -32,6 +33,7 @@ const FIELD_LABELS: Record<FieldType, string> = {
   text: 'Text',
   checkbox: 'Checkbox',
   radio: 'Radio',
+  dropdown: 'Dropdown',
 };
 
 export const DraggableField: React.FC<DraggableFieldProps> = ({

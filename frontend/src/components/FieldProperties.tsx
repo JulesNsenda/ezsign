@@ -220,6 +220,71 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
           </>
         )}
 
+        {/* Dropdown Field Options */}
+        {field.type === 'dropdown' && (
+          <>
+            <div className="border-t border-base-300 pt-4">
+              <RadioOptionsEditor
+                options={(field.properties?.options as RadioOption[]) || [
+                  { label: 'Option 1', value: 'option1' },
+                  { label: 'Option 2', value: 'option2' },
+                  { label: 'Option 3', value: 'option3' },
+                ]}
+                onChange={(options) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      options,
+                    },
+                  })
+                }
+                maxOptions={20}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
+                Placeholder Text
+              </label>
+              <input
+                type="text"
+                value={(field.properties?.placeholder as string) || ''}
+                onChange={(e) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      placeholder: e.target.value,
+                    },
+                  })
+                }
+                placeholder="Select an option"
+                className="input-docuseal text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
+                Font Size
+              </label>
+              <input
+                type="number"
+                value={(field.properties?.fontSize as number) || 12}
+                onChange={(e) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      fontSize: Number(e.target.value),
+                    },
+                  })
+                }
+                min={8}
+                max={24}
+                className="input-docuseal text-sm"
+              />
+            </div>
+          </>
+        )}
+
         {/* Assign to Signer */}
         <div>
           <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">

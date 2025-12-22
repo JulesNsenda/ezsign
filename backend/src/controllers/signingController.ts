@@ -421,6 +421,7 @@ export class SigningController {
             const dateFields: any[] = [];
             const checkboxFields: any[] = [];
             const radioFields: any[] = [];
+            const dropdownFields: any[] = [];
 
             for (const row of allSignaturesResult.rows) {
               const pageNumber = parseInt(row.page);
@@ -464,6 +465,25 @@ export class SigningController {
                     optionSpacing: properties.optionSpacing || 20,
                   });
                   logger.debug('Processing radio field', { fieldId: row.field_id, selectedValue: row.text_value });
+                  break;
+                }
+
+                case 'dropdown': {
+                  // Dropdown field - use text_value as selectedValue
+                  const properties = row.properties || {};
+                  dropdownFields.push({
+                    ...baseField,
+                    options: properties.options || [],
+                    selectedValue: row.text_value,
+                    settings: {
+                      placeholder: properties.placeholder || 'Select an option',
+                      fontSize: properties.fontSize || 12,
+                      textColor: properties.textColor || '#000000',
+                      backgroundColor: properties.backgroundColor || '#FFFFFF',
+                      borderColor: properties.borderColor || '#000000',
+                    },
+                  });
+                  logger.debug('Processing dropdown field', { fieldId: row.field_id, selectedValue: row.text_value });
                   break;
                 }
 
@@ -532,7 +552,8 @@ export class SigningController {
               textCount: textFields.length,
               dateCount: dateFields.length,
               checkboxCount: checkboxFields.length,
-              radioCount: radioFields.length
+              radioCount: radioFields.length,
+              dropdownCount: dropdownFields.length,
             });
 
             // Apply all fields to the PDF
@@ -544,6 +565,7 @@ export class SigningController {
                 dateFields: dateFields.length > 0 ? dateFields : undefined,
                 checkboxFields: checkboxFields.length > 0 ? checkboxFields : undefined,
                 radioFields: radioFields.length > 0 ? radioFields : undefined,
+                dropdownFields: dropdownFields.length > 0 ? dropdownFields : undefined,
               }
             );
 

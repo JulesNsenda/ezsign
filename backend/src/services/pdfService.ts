@@ -120,6 +120,36 @@ export interface RadioField {
   };
 }
 
+export interface DropdownField {
+  /** Page number (0-indexed) */
+  page: number;
+  /** X coordinate (from left) in points */
+  x: number;
+  /** Y coordinate (from bottom) in points */
+  y: number;
+  /** Width in points */
+  width: number;
+  /** Height in points */
+  height: number;
+  /** Available options for the dropdown */
+  options: RadioOption[];
+  /** Currently selected value (if any) */
+  selectedValue?: string;
+  /** Dropdown styling options */
+  settings?: {
+    /** Placeholder text when nothing selected (default: 'Select an option') */
+    placeholder?: string;
+    /** Font size in points (default: 12) */
+    fontSize?: number;
+    /** Text color as hex string (default: #000000) */
+    textColor?: string;
+    /** Background color as hex string (default: #FFFFFF) */
+    backgroundColor?: string;
+    /** Border color as hex string (default: #000000) */
+    borderColor?: string;
+  };
+}
+
 /**
  * PDF processing service using pdf-lib
  * Provides methods for reading, modifying, and generating PDFs
@@ -489,6 +519,94 @@ export class PdfService {
   }
 
   /**
+   * Add a dropdown field to PDF
+   * Renders as a rectangle with the selected value text and a dropdown arrow indicator
+   */
+  async addDropdown(pdfBuffer: Buffer, field: DropdownField): Promise<Buffer> {
+    const pdfDoc = await this.loadPdf(pdfBuffer);
+    const pages = pdfDoc.getPages();
+
+    if (field.page >= pages.length) {
+      throw new Error(`Page ${field.page} does not exist in PDF`);
+    }
+
+    const page = pages[field.page];
+    if (!page) {
+      throw new Error(`Page ${field.page} could not be retrieved`);
+    }
+
+    // Import font for text
+    const { StandardFonts } = await import('pdf-lib');
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    // Get settings with defaults
+    const fontSize = field.settings?.fontSize || 12;
+    const textColorHex = field.settings?.textColor || '#000000';
+    const textColor = this.hexToRgb(textColorHex);
+    const backgroundColorHex = field.settings?.backgroundColor || '#FFFFFF';
+    const backgroundColor = this.hexToRgb(backgroundColorHex);
+    const borderColorHex = field.settings?.borderColor || '#000000';
+    const borderColor = this.hexToRgb(borderColorHex);
+    const placeholder = field.settings?.placeholder || 'Select an option';
+
+    // Draw background rectangle
+    page.drawRectangle({
+      x: field.x,
+      y: field.y,
+      width: field.width,
+      height: field.height,
+      color: rgb(backgroundColor.r, backgroundColor.g, backgroundColor.b),
+      borderColor: rgb(borderColor.r, borderColor.g, borderColor.b),
+      borderWidth: 1,
+    });
+
+    // Find selected option label
+    const selectedOption = field.options.find((o) => o.value === field.selectedValue);
+    const displayText = selectedOption?.label || placeholder;
+
+    // Draw text (vertically centered)
+    const textY = field.y + (field.height - fontSize) / 2;
+    const maxTextWidth = field.width - 25; // Leave room for dropdown arrow
+
+    // Truncate text if too long
+    let truncatedText = displayText;
+    while (
+      font.widthOfTextAtSize(truncatedText, fontSize) > maxTextWidth &&
+      truncatedText.length > 3
+    ) {
+      truncatedText = truncatedText.slice(0, -4) + '...';
+    }
+
+    page.drawText(truncatedText, {
+      x: field.x + 5,
+      y: textY,
+      size: fontSize,
+      font,
+      color: selectedOption
+        ? rgb(textColor.r, textColor.g, textColor.b)
+        : rgb(0.5, 0.5, 0.5), // Gray for placeholder
+    });
+
+    // Draw dropdown arrow indicator (a small downward-pointing chevron)
+    const arrowX = field.x + field.width - 15;
+    const arrowY = field.y + field.height / 2;
+    page.drawLine({
+      start: { x: arrowX - 4, y: arrowY + 2 },
+      end: { x: arrowX, y: arrowY - 2 },
+      thickness: 1.5,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+    page.drawLine({
+      start: { x: arrowX, y: arrowY - 2 },
+      end: { x: arrowX + 4, y: arrowY + 2 },
+      thickness: 1.5,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+
+    return Buffer.from(await pdfDoc.save());
+  }
+
+  /**
    * Add multiple fields to PDF in a single operation
    */
   async addMultipleFields(
@@ -499,6 +617,7 @@ export class PdfService {
       dateFields?: DateField[];
       checkboxFields?: CheckboxField[];
       radioFields?: RadioField[];
+      dropdownFields?: DropdownField[];
     }
   ): Promise<Buffer> {
     let currentPdfBuffer = pdfBuffer;
@@ -535,6 +654,13 @@ export class PdfService {
     if (fields.radioFields) {
       for (const radioField of fields.radioFields) {
         currentPdfBuffer = await this.addRadioGroup(currentPdfBuffer, radioField);
+      }
+    }
+
+    // Add dropdown fields
+    if (fields.dropdownFields) {
+      for (const dropdownField of fields.dropdownFields) {
+        currentPdfBuffer = await this.addDropdown(currentPdfBuffer, dropdownField);
       }
     }
 
