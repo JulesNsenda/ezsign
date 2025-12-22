@@ -27,7 +27,7 @@ export const createDocumentRouter = (pool: Pool): Router => {
   const storagePath = process.env.FILE_STORAGE_PATH || './storage';
   const storageAdapter = new LocalStorageAdapter(storagePath);
   const storageService = new StorageService(storageAdapter);
-  const documentService = new DocumentService(pool, storageService, pdfService);
+  const documentService = new DocumentService(pool, storageService);
 
   const emailUser = process.env.EMAIL_SMTP_USER || '';
   const emailPass = process.env.EMAIL_SMTP_PASS || '';

@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { DocumentService } from '@/services/documentService';
 import { LocalStorageAdapter } from '@/adapters/LocalStorageAdapter';
 import { createStorageService } from '@/services/storageService';
+import logger from '@/services/loggerService';
 import path from 'path';
 
 /**
@@ -52,7 +53,13 @@ export const createDocumentAccessMiddleware = (pool: Pool) => {
 
       next();
     } catch (error) {
-      console.error('Document access check error:', error);
+      logger.error('Document access check error', {
+        error: (error as Error).message,
+        stack: (error as Error).stack,
+        documentId: req.params.id,
+        userId: req.user?.userId,
+        correlationId: req.correlationId,
+      });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to verify document access',

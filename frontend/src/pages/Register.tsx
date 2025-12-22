@@ -143,6 +143,17 @@ export const Register: React.FC = () => {
             </Link>
           </div>
         </div>
+
+        <div className="text-center text-sm text-base-content/50 mt-8">
+          <div className="mb-2">
+            <Link to="/privacy" className="hover:text-neutral transition-colors">Privacy Policy</Link>
+            <span className="mx-2">|</span>
+            <Link to="/terms" className="hover:text-neutral transition-colors">Terms of Service</Link>
+            <span className="mx-2">|</span>
+            <Link to="/contact" className="hover:text-neutral transition-colors">Contact</Link>
+          </div>
+          <p>© 2025 EzSign. All rights reserved.</p>
+        </div>
       </div>
     </div>
   );

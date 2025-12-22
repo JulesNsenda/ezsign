@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { FieldService } from '../services/fieldService.js';
 import { SignerService } from '../services/signerService.js';
 import { CreateFieldData, UpdateFieldData } from '../models/Field.js';
+import logger from '@/services/loggerService';
 
 export class FieldController {
   private fieldService: FieldService;
@@ -116,7 +117,7 @@ export class FieldController {
         properties: req.body.properties,
       };
 
-      console.log('Updating field:', fieldId, 'with data:', updateData);
+      logger.debug('Updating field', { fieldId, updateData, correlationId: req.correlationId });
       const field = await this.fieldService.updateField(fieldId, updateData);
 
       res.status(200).json({
@@ -125,7 +126,7 @@ export class FieldController {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Field update error:', message, 'Field ID:', req.params.fieldId, 'Data:', req.body);
+      logger.error('Field update error', { error: message, fieldId: req.params.fieldId, body: req.body, correlationId: req.correlationId });
       res.status(400).json({
         success: false,
         error: message,

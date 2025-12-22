@@ -2,6 +2,7 @@ import { Job } from 'bullmq';
 import { Pool } from 'pg';
 import { createWorker, QueueName } from '@/config/queue';
 import { WebhookDeliveryService } from '@/services/webhookDeliveryService';
+import logger from '@/services/loggerService';
 
 /**
  * Webhook job data structure
@@ -40,7 +41,7 @@ export class WebhookWorker {
    * Process webhook delivery job
    */
   private async processJob(job: Job<WebhookJobData>): Promise<void> {
-    console.log(`Processing webhook delivery job ${job.id} for event ${job.data.eventId}`);
+    logger.debug('Processing webhook delivery job', { jobId: job.id, eventId: job.data.eventId });
 
     try {
       await job.updateProgress(10);
@@ -49,9 +50,9 @@ export class WebhookWorker {
       await this.webhookDeliveryService.processWebhookEvent(job.data.eventId);
 
       await job.updateProgress(100);
-      console.log(`✓ Webhook delivery job ${job.id} completed`);
+      logger.debug('Webhook delivery job completed', { jobId: job.id });
     } catch (error) {
-      console.error(`✗ Webhook delivery job ${job.id} failed:`, error);
+      logger.error('Webhook delivery job failed', { jobId: job.id, error: (error as Error).message });
       throw error;
     }
   }
@@ -61,27 +62,27 @@ export class WebhookWorker {
    */
   private setupEventListeners(): void {
     this.worker.on('completed', (job: Job<WebhookJobData>) => {
-      console.log(`✓ Webhook delivery job ${job.id} completed successfully`);
+      logger.debug('Webhook delivery job completed successfully', { jobId: job.id });
     });
 
     this.worker.on('failed', (job: Job<WebhookJobData> | undefined, error: Error) => {
       if (job) {
-        console.error(`✗ Webhook delivery job ${job.id} failed:`, error.message);
+        logger.error('Webhook delivery job failed', { jobId: job.id, error: error.message });
       } else {
-        console.error('✗ Webhook delivery job failed (job undefined):', error.message);
+        logger.error('Webhook delivery job failed (job undefined)', { error: error.message });
       }
     });
 
     this.worker.on('error', (error: Error) => {
-      console.error('✗ Webhook worker error:', error);
+      logger.error('Webhook worker error', { error: error.message, stack: error.stack });
     });
 
     this.worker.on('active', (job: Job<WebhookJobData>) => {
-      console.log(`⏳ Webhook delivery job ${job.id} started for event ${job.data.eventId}`);
+      logger.debug('Webhook delivery job started', { jobId: job.id, eventId: job.data.eventId });
     });
 
-    this.worker.on('progress', (job: Job<WebhookJobData>, progress: number | object) => {
-      console.log(`⏳ Webhook delivery job ${job.id} progress: ${progress}%`);
+    this.worker.on('progress', (job: Job<WebhookJobData>, progress) => {
+      logger.debug('Webhook delivery job progress', { jobId: job.id, progress });
     });
   }
 
@@ -89,9 +90,9 @@ export class WebhookWorker {
    * Close worker connection
    */
   async close(): Promise<void> {
-    console.log('Closing webhook worker...');
+    logger.info('Closing webhook worker...');
     await this.worker.close();
-    console.log('Webhook worker closed');
+    logger.info('Webhook worker closed');
   }
 }
 

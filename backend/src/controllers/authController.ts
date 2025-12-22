@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { UserService } from '@/services/userService';
 import { EmailService } from '@/services/emailService';
 import { tokenService } from '@/services/tokenService';
+import logger from '@/services/loggerService';
 
 export class AuthController {
   private userService: UserService;
@@ -88,11 +89,11 @@ export class AuthController {
         try {
           await this.emailService.sendEmailVerification({
             recipientEmail: user.email,
-            recipientName: user.email.split('@')[0], // Use email prefix as name
+            recipientName: user.email.split('@')[0] || user.email, // Use email prefix as name
             verificationToken: token,
           });
         } catch (emailError) {
-          console.error('Failed to send verification email:', emailError);
+          logger.warn('Failed to send verification email', { error: (emailError as Error).message, email, correlationId: req.correlationId });
           // Don't fail registration if email fails
         }
       }
@@ -117,7 +118,7 @@ export class AuthController {
         ...verificationInfo,
       });
     } catch (error) {
-      console.error('Registration error:', error);
+      logger.error('Registration error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to register user',
@@ -192,7 +193,7 @@ export class AuthController {
         message: 'Email verified successfully',
       });
     } catch (error) {
-      console.error('Email verification error:', error);
+      logger.error('Email verification error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to verify email',
@@ -252,7 +253,7 @@ export class AuthController {
         ...tokens,
       });
     } catch (error) {
-      console.error('Login error:', error);
+      logger.error('Login error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to login',
@@ -268,7 +269,7 @@ export class AuthController {
    * This endpoint is provided for consistency and can be extended with token blacklisting
    * in the future if needed (using Redis to store invalidated tokens).
    */
-  logout = async (_req: Request, res: Response): Promise<void> => {
+  logout = async (req: Request, res: Response): Promise<void> => {
     try {
       // In a stateless JWT system, logout is handled client-side
       // The client should delete the access and refresh tokens
@@ -283,7 +284,7 @@ export class AuthController {
         message: 'Logout successful',
       });
     } catch (error) {
-      console.error('Logout error:', error);
+      logger.error('Logout error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to logout',
@@ -336,7 +337,7 @@ export class AuthController {
         ...resetInfo,
       });
     } catch (error) {
-      console.error('Forgot password error:', error);
+      logger.error('Forgot password error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to process password reset request',
@@ -411,7 +412,7 @@ export class AuthController {
         message: 'Password reset successfully',
       });
     } catch (error) {
-      console.error('Reset password error:', error);
+      logger.error('Reset password error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to reset password',
@@ -471,7 +472,7 @@ export class AuthController {
         accessToken,
       });
     } catch (error) {
-      console.error('Token refresh error:', error);
+      logger.error('Token refresh error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to refresh token',
@@ -512,7 +513,7 @@ export class AuthController {
         user: user.toJSON(),
       });
     } catch (error) {
-      console.error('Get current user error:', error);
+      logger.error('Get current user error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to get current user',
@@ -613,7 +614,7 @@ export class AuthController {
         ...tokens,
       });
     } catch (error) {
-      console.error('Change password error:', error);
+      logger.error('Change password error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to change password',

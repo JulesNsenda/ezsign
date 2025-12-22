@@ -37,7 +37,12 @@ export class TeamService {
         data.owner_id,
       ]);
 
-      const team = new Team(teamResult.rows[0]);
+      const teamRow = teamResult.rows[0];
+      if (!teamRow) {
+        throw new Error('Failed to create team');
+      }
+
+      const team = new Team(teamRow);
 
       // Add owner as team member
       const memberQuery = `
@@ -70,11 +75,12 @@ export class TeamService {
 
     const result = await this.pool.query<TeamData>(query, [id]);
 
-    if (result.rows.length === 0) {
+    const row = result.rows[0];
+    if (!row) {
       return null;
     }
 
-    return new Team(result.rows[0]);
+    return new Team(row);
   }
 
   /**
@@ -127,11 +133,12 @@ export class TeamService {
 
     const result = await this.pool.query<TeamData>(query, [data.name, id]);
 
-    if (result.rows.length === 0) {
+    const row = result.rows[0];
+    if (!row) {
       return null;
     }
 
-    return new Team(result.rows[0]);
+    return new Team(row);
   }
 
   /**
@@ -169,7 +176,12 @@ export class TeamService {
       role,
     ]);
 
-    return new TeamMember(result.rows[0]);
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error('Failed to add team member');
+    }
+
+    return new TeamMember(row);
   }
 
   /**
@@ -220,11 +232,12 @@ export class TeamService {
       userId,
     ]);
 
-    if (result.rows.length === 0) {
+    const row = result.rows[0];
+    if (!row) {
       return null;
     }
 
-    return new TeamMember(result.rows[0]);
+    return new TeamMember(row);
   }
 
   /**
@@ -248,11 +261,12 @@ export class TeamService {
       userId,
     ]);
 
-    if (result.rows.length === 0) {
+    const row = result.rows[0];
+    if (!row) {
       return null;
     }
 
-    return new TeamMember(result.rows[0]);
+    return new TeamMember(row);
   }
 
   /**
@@ -285,11 +299,12 @@ export class TeamService {
       userId,
     ]);
 
-    if (result.rows.length === 0) {
+    const row = result.rows[0];
+    if (!row) {
       return false;
     }
 
-    const role = result.rows[0].role;
+    const role = row.role;
     return role === 'owner' || role === 'admin';
   }
 }

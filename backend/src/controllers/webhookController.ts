@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { WebhookService } from '@/services/webhookService';
 import { Webhook } from '@/models/Webhook';
 import { AuthenticatedRequest } from '@/middleware/auth';
+import logger from '@/services/loggerService';
 
 export class WebhookController {
   private webhookService: WebhookService;
@@ -30,7 +31,7 @@ export class WebhookController {
         return;
       }
 
-      const { url, events, description, secret } = req.body;
+      const { url, events, secret } = req.body;
 
       // Validate required fields
       if (!url || !events || !Array.isArray(events) || events.length === 0) {
@@ -132,7 +133,7 @@ export class WebhookController {
         data: webhook.toPublicJSON(),
       });
     } catch (error) {
-      console.error('Create webhook error:', error);
+      logger.error('Create webhook error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({
         success: false,
@@ -175,7 +176,7 @@ export class WebhookController {
         data: webhooks.map((w) => w.toPublicJSON()),
       });
     } catch (error) {
-      console.error('Get webhooks error:', error);
+      logger.error('Get webhooks error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({
         success: false,
@@ -203,6 +204,15 @@ export class WebhookController {
       }
 
       const { id } = req.params;
+
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: 'Bad Request',
+          message: 'Webhook ID is required',
+        });
+        return;
+      }
 
       const webhook = await this.webhookService.getWebhookById(id);
 
@@ -236,7 +246,7 @@ export class WebhookController {
         },
       });
     } catch (error) {
-      console.error('Get webhook error:', error);
+      logger.error('Get webhook error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({
         success: false,
@@ -265,6 +275,15 @@ export class WebhookController {
 
       const { id } = req.params;
       const { url, events, active } = req.body;
+
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: 'Bad Request',
+          message: 'Webhook ID is required',
+        });
+        return;
+      }
 
       // Verify webhook exists and user owns it
       const existingWebhook = await this.webhookService.getWebhookById(id);
@@ -374,7 +393,7 @@ export class WebhookController {
         data: updatedWebhook.toPublicJSON(),
       });
     } catch (error) {
-      console.error('Update webhook error:', error);
+      logger.error('Update webhook error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({
         success: false,
@@ -402,6 +421,15 @@ export class WebhookController {
       }
 
       const { id } = req.params;
+
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: 'Bad Request',
+          message: 'Webhook ID is required',
+        });
+        return;
+      }
 
       // Verify webhook exists and user owns it
       const webhook = await this.webhookService.getWebhookById(id);
@@ -431,7 +459,7 @@ export class WebhookController {
         message: 'Webhook deleted successfully',
       });
     } catch (error) {
-      console.error('Delete webhook error:', error);
+      logger.error('Delete webhook error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({
         success: false,
@@ -455,11 +483,11 @@ export class WebhookController {
     const match = hostname.match(ipv4Regex);
 
     if (match) {
-      const [, a, b, c, d] = match.map(Number);
+      const [, a, b, _c, _d] = match.map(Number);
 
       // Private IP ranges
       if (a === 10) return true; // 10.0.0.0/8
-      if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+      if (a === 172 && b !== undefined && b >= 16 && b <= 31) return true; // 172.16.0.0/12
       if (a === 192 && b === 168) return true; // 192.168.0.0/16
       if (a === 169 && b === 254) return true; // 169.254.0.0/16 (link-local)
     }

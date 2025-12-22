@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { ApiKeyService } from '@/services/apiKeyService';
-import { ApiKey } from '@/models/ApiKey';
 import { AuthenticatedRequest } from '@/middleware/auth';
+import logger from '@/services/loggerService';
 
 export class ApiKeyController {
   private apiKeyService: ApiKeyService;
@@ -133,7 +133,15 @@ export class ApiKeyController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'API key ID is required',
+        });
+        return;
+      }
 
       const apiKey = await this.apiKeyService.findById(id);
 
@@ -182,8 +190,16 @@ export class ApiKeyController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
       const { name, expiresIn } = req.body;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'API key ID is required',
+        });
+        return;
+      }
 
       // Find existing API key
       const existingKey = await this.apiKeyService.findById(id);
@@ -259,7 +275,15 @@ export class ApiKeyController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'API key ID is required',
+        });
+        return;
+      }
 
       // Find existing API key
       const existingKey = await this.apiKeyService.findById(id);
@@ -288,7 +312,7 @@ export class ApiKeyController {
         message: 'API key deleted successfully',
       });
     } catch (error) {
-      console.error('Delete API key error:', error);
+      logger.error('Delete API key error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to delete API key',

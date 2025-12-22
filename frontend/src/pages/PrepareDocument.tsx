@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { DndContext, DragOverlay, useDroppable, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import Layout from '@/components/Layout';
 import PdfViewer from '@/components/PdfViewer';
 import FieldPalette from '@/components/FieldPalette';
-import DraggableField from '@/components/DraggableField';
+import FieldsLayer from '@/components/FieldsLayer';
+import DroppablePdfContainer from '@/components/DroppablePdfContainer';
 import FieldProperties from '@/components/FieldProperties';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
@@ -39,6 +40,10 @@ export const PrepareDocument: React.FC = () => {
   const [zoom, setZoom] = useState(1);
   const [showMobileFieldPalette, setShowMobileFieldPalette] = useState(false);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
+
+  // Standard PDF page width in points (A4 = 595, Letter = 612)
+  // We use 612 as default since it's common for US documents
+  const PDF_PAGE_WIDTH_POINTS = 612;
 
   const { data: doc } = useDocument(id!);
   const { data: fields = [], refetch: refetchFields } = useFields(id!);
@@ -86,13 +91,20 @@ export const PrepareDocument: React.FC = () => {
   }, [zoom]);
 
   // Auto-switch to properties tab when field is selected
+  // Using a ref to avoid causing extra re-renders
+  const prevSelectedFieldIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (selectedFieldId) {
+    const wasSelected = prevSelectedFieldIdRef.current !== null;
+    const isNowSelected = selectedFieldId !== null;
+
+    if (!wasSelected && isNowSelected) {
       setActiveTab('properties');
-    } else if (activeTab === 'properties') {
+    } else if (wasSelected && !isNowSelected && activeTab === 'properties') {
       setActiveTab('signers');
     }
-  }, [selectedFieldId]);
+
+    prevSelectedFieldIdRef.current = selectedFieldId;
+  }, [selectedFieldId, activeTab]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -160,85 +172,130 @@ export const PrepareDocument: React.FC = () => {
 
   const handleDragEnd = async (event: DragEndEvent) => {
     setActiveDragItem(null);
-    const { active, delta, over } = event;
+    const { active, over } = event;
     const fieldData = active.data.current;
 
     if (!fieldData || !id) return;
 
+    // Only handle new fields from palette - existing fields use react-rnd
+    if (!fieldData.isNew) return;
+
     // Check if dropped over the PDF container
     if (!over || over.id !== 'pdf-drop-zone') return;
 
-    // Check if this is a new field from palette
-    if (fieldData.isNew) {
-      // Get the PDF container's bounding rect
-      const pdfContainer = pdfContainerRef.current;
-      if (!pdfContainer) return;
+    // Calculate scale: rendered width (pdfWidth) / original PDF width in points
+    const scale = pdfWidth / PDF_PAGE_WIDTH_POINTS;
 
-      const rect = pdfContainer.getBoundingClientRect();
-      const dropX = event.activatorEvent ?
-        (event.activatorEvent as MouseEvent).clientX - rect.left :
-        delta.x;
-      const dropY = event.activatorEvent ?
-        (event.activatorEvent as MouseEvent).clientY - rect.top :
-        delta.y;
+    // Get drop position from the over rect and active position
+    const overRect = over.rect;
+    const activeRect = active.rect.current.translated;
 
-      // Convert to PDF coordinates (accounting for zoom)
-      const x = Math.max(0, (dropX + delta.x) / zoom);
-      const y = Math.max(0, (dropY + delta.y) / zoom);
+    if (!activeRect) return;
 
-      try {
-        // Auto-assign to signer if there's only one
-        const signerEmail = signers.length === 1 ? signers[0].email : undefined;
+    // Calculate position relative to the drop zone
+    // activeRect gives us where the dragged item ended up
+    // overRect gives us where the drop zone is
+    const dropX = activeRect.left - overRect.left;
+    const dropY = activeRect.top - overRect.top;
 
-        await createFieldMutation.mutateAsync({
-          documentId: id,
-          data: {
-            type: fieldData.type as FieldType,
-            page: currentPage - 1, // Convert from 1-indexed to 0-indexed
-            x,
-            y,
-            width: 200,
-            height: 50,
-            required: false,
-            signer_email: signerEmail,
-          },
-        });
-        refetchFields();
-        toast.success('Field added');
-      } catch (error: any) {
-        toast.error(error.response?.data?.error || error.response?.data?.message || 'Failed to add field');
+    // Convert screen pixels to PDF points
+    const pdfX = Math.max(0, dropX / scale);
+    const pdfY = Math.max(0, dropY / scale);
+
+    // Get field dimensions based on type (must meet backend minimum requirements)
+    const getFieldDimensions = (type: FieldType): { width: number; height: number } => {
+      switch (type) {
+        case 'signature':
+          return { width: 200, height: 60 }; // min: 150x50
+        case 'initials':
+          return { width: 80, height: 60 }; // min: 50x50
+        case 'date':
+          return { width: 120, height: 30 }; // min: 100x25
+        case 'text':
+          return { width: 150, height: 30 }; // min: 100x25
+        case 'checkbox':
+          return { width: 20, height: 20 }; // min: 15x15
+        case 'radio':
+          return { width: 150, height: 80 }; // space for options
+        default:
+          return { width: 150, height: 50 };
       }
-    } else {
-      // Update existing field position
-      const field = fieldData as Field;
-      try {
-        await updateFieldMutation.mutateAsync({
-          documentId: id,
-          fieldId: field.id,
-          data: {
-            x: field.x + delta.x / zoom,
-            y: field.y + delta.y / zoom,
-          },
-        });
-        refetchFields();
-      } catch (error: any) {
-        toast.error(error.response?.data?.error?.message || 'Failed to update field');
+    };
+
+    // Get default properties for field types that need them
+    const getDefaultProperties = (type: FieldType): Record<string, unknown> | undefined => {
+      switch (type) {
+        case 'radio':
+          return {
+            options: [
+              { label: 'Option 1', value: 'option1' },
+              { label: 'Option 2', value: 'option2' },
+            ],
+            orientation: 'vertical',
+            fontSize: 12,
+            optionSpacing: 20,
+          };
+        default:
+          return undefined;
       }
+    };
+
+    const { width: fieldWidthPoints, height: fieldHeightPoints } = getFieldDimensions(fieldData.type as FieldType);
+
+    // Clamp to page bounds (A4 height is ~842 points, Letter is 792 points)
+    // Use 792 as a safe default for page height
+    const PDF_PAGE_HEIGHT_POINTS = 792;
+    const clampedY = Math.min(pdfY, PDF_PAGE_HEIGHT_POINTS - fieldHeightPoints);
+    const clampedX = Math.min(pdfX, PDF_PAGE_WIDTH_POINTS - fieldWidthPoints);
+
+    try {
+      // Auto-assign to signer if there's only one
+      const signerEmail = signers.length === 1 ? signers[0].email : undefined;
+      const properties = getDefaultProperties(fieldData.type as FieldType);
+
+      await createFieldMutation.mutateAsync({
+        documentId: id,
+        data: {
+          type: fieldData.type as FieldType,
+          page: currentPage - 1, // Convert from 1-indexed to 0-indexed
+          x: Math.max(0, clampedX),
+          y: Math.max(0, clampedY),
+          width: fieldWidthPoints,
+          height: fieldHeightPoints,
+          required: false,
+          signer_email: signerEmail,
+          ...(properties && { properties }),
+        },
+      });
+      refetchFields();
+      toast.success('Field added');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || error.response?.data?.message || 'Failed to add field');
     }
   };
 
-  const handleDeleteField = async (fieldId: string) => {
+  const handleDeleteField = useCallback(async (fieldId: string) => {
     if (!id) return;
     try {
       await deleteFieldMutation.mutateAsync({ documentId: id, fieldId });
       refetchFields();
       setSelectedFieldId(null);
-      setShowFieldProperties(false);
       toast.success('Field deleted');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to delete field');
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to delete field';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to delete field');
     }
-  };
+  }, [id, deleteFieldMutation, refetchFields, toast]);
+
+  // Stable callback for selecting a field
+  const handleSelectField = useCallback((fieldId: string) => {
+    setSelectedFieldId(fieldId);
+  }, []);
+
+  // Stable callback for clearing selection
+  const handleClearSelection = useCallback(() => {
+    setSelectedFieldId(null);
+  }, []);
 
   const handleUpdateFieldProperty = async (fieldId: string, updates: Partial<Field>) => {
     if (!id) return;
@@ -254,13 +311,42 @@ export const PrepareDocument: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Field update error:', error);
-      toast.error(error.response?.data?.error?.message || error.response?.data?.error || 'Failed to update field');
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to update field';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to update field');
     }
   };
 
-  const handleResizeField = async (fieldId: string, width: number, height: number) => {
-    await handleUpdateFieldProperty(fieldId, { width, height });
-  };
+  // Handler for react-rnd position changes
+  const handleFieldPositionChange = useCallback(async (fieldId: string, x: number, y: number) => {
+    if (!id) return;
+    try {
+      await updateFieldMutation.mutateAsync({
+        documentId: id,
+        fieldId,
+        data: { x, y },
+      });
+      refetchFields();
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to update field position';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to update field position');
+    }
+  }, [id, updateFieldMutation, refetchFields, toast]);
+
+  // Handler for react-rnd size changes
+  const handleFieldSizeChange = useCallback(async (fieldId: string, width: number, height: number) => {
+    if (!id) return;
+    try {
+      await updateFieldMutation.mutateAsync({
+        documentId: id,
+        fieldId,
+        data: { width, height },
+      });
+      refetchFields();
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to resize field';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to resize field');
+    }
+  }, [id, updateFieldMutation, refetchFields, toast]);
 
   const handleAddSigner = async () => {
     if (!id || !newSignerEmail || !newSignerName) {
@@ -283,7 +369,8 @@ export const PrepareDocument: React.FC = () => {
       setNewSignerName('');
       toast.success('Signer added');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to add signer');
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to add signer';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to add signer');
     }
   };
 
@@ -294,7 +381,8 @@ export const PrepareDocument: React.FC = () => {
       refetchSigners();
       toast.success('Signer removed');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to remove signer');
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to remove signer';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to remove signer');
     }
   };
 
@@ -319,7 +407,8 @@ export const PrepareDocument: React.FC = () => {
       setTemplateName('');
       setTemplateDescription('');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to create template');
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to create template';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to create template');
     }
   };
 
@@ -334,12 +423,21 @@ export const PrepareDocument: React.FC = () => {
       return;
     }
 
+    // Check if all fields are assigned to signers
+    const unassignedFields = fields.filter(f => !f.signer_email);
+    if (unassignedFields.length > 0) {
+      toast.error(`${unassignedFields.length} field(s) are not assigned to a signer. Please assign all fields before sending.`);
+      return;
+    }
+
     try {
       await sendDocumentMutation.mutateAsync(id);
       toast.success('Document sent to signers');
       navigate('/documents');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to send document');
+      // Backend returns error as a string, not an object with message property
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to send document';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to send document');
     }
   };
 
@@ -348,6 +446,11 @@ export const PrepareDocument: React.FC = () => {
     fields.filter((f) => f.page === currentPage - 1),
     [fields, currentPage]
   );
+
+  // Callback for DroppablePdfContainer ref - must be before any early returns
+  const handlePdfContainerRef = useCallback((node: HTMLDivElement | null) => {
+    pdfContainerRef.current = node;
+  }, []);
 
   if (!doc) {
     return (
@@ -361,24 +464,6 @@ export const PrepareDocument: React.FC = () => {
       </Layout>
     );
   }
-
-  // Droppable PDF container component
-  const DroppablePdfContainer: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { setNodeRef } = useDroppable({
-      id: 'pdf-drop-zone',
-    });
-
-    return (
-      <div ref={(node) => {
-        setNodeRef(node);
-        if (node) {
-          pdfContainerRef.current = node;
-        }
-      }}>
-        {children}
-      </div>
-    );
-  };
 
   return (
     <Layout>
@@ -506,45 +591,32 @@ export const PrepareDocument: React.FC = () => {
                 {/* PDF Canvas */}
                 <div className="bg-base-100 rounded-xl shadow-sm border border-base-300 p-2 sm:p-3 lg:p-4 overflow-x-auto overflow-y-visible">
                   <div className="flex items-center justify-center w-full min-w-0">
-                    <DroppablePdfContainer>
-                      <PdfViewer
-                        key={id}
-                        fileUrl={pdfUrl}
-                        currentPage={currentPage}
-                        onPageChange={setCurrentPage}
-                        onLoadSuccess={setNumPages}
-                        width={pdfWidth}
-                      >
-                      {() => (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                            pointerEvents: 'none',
-                          }}
-                        >
-                          {currentPageFields.map((field) => {
-                            const isSelected = selectedFieldId === field.id;
-                            return (
-                              <div key={field.id} style={{ pointerEvents: 'auto' }}>
-                                <DraggableField
-                                  field={field}
-                                  scale={zoom}
-                                  isSelected={isSelected}
-                                  borderColor={getFieldColor(field)}
-                                  onClick={() => setSelectedFieldId(field.id)}
-                                  onDelete={() => handleDeleteField(field.id)}
-                                  onResize={(width, height) => handleResizeField(field.id, width, height)}
-                                />
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </PdfViewer>
+                    <DroppablePdfContainer onRefChange={handlePdfContainerRef}>
+                      {/* Container for PDF and Fields overlay */}
+                      <div style={{ position: 'relative' }}>
+                        {/* PDF Layer - completely isolated, won't re-render on selection changes */}
+                        <PdfViewer
+                          key={id}
+                          fileUrl={pdfUrl}
+                          currentPage={currentPage}
+                          onPageChange={setCurrentPage}
+                          onLoadSuccess={setNumPages}
+                          width={pdfWidth}
+                          hideNavigation
+                        />
+                        {/* Fields Layer - sibling to PDF, handles all field interactions */}
+                        <FieldsLayer
+                          fields={currentPageFields}
+                          selectedFieldId={selectedFieldId}
+                          scale={pdfWidth / PDF_PAGE_WIDTH_POINTS}
+                          onSelectField={handleSelectField}
+                          onClearSelection={handleClearSelection}
+                          onDeleteField={handleDeleteField}
+                          onPositionChange={handleFieldPositionChange}
+                          onSizeChange={handleFieldSizeChange}
+                          getFieldColor={getFieldColor}
+                        />
+                      </div>
                     </DroppablePdfContainer>
                   </div>
                 </div>

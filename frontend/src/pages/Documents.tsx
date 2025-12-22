@@ -4,6 +4,7 @@ import Layout from '@/components/Layout';
 import Table, { type TableColumn } from '@/components/Table';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
+import DocumentThumbnail from '@/components/DocumentThumbnail';
 import { useDocuments, useDeleteDocument, useDownloadDocument } from '@/hooks/useDocuments';
 import { useToast } from '@/hooks/useToast';
 import type { Document } from '@/types';
@@ -77,6 +78,19 @@ export const Documents: React.FC = () => {
   );
 
   const columns: TableColumn<Document>[] = [
+    {
+      key: 'thumbnail',
+      label: '',
+      render: (_, row) => (
+        <DocumentThumbnail
+          documentId={row.id}
+          title={row.title}
+          hasThumbnail={row.has_thumbnail}
+          width={48}
+          height={62}
+        />
+      ),
+    },
     {
       key: 'title',
       label: 'Title',
@@ -272,6 +286,18 @@ export const Documents: React.FC = () => {
         >
           {selectedDocument && (
             <div className="flex flex-col gap-4">
+              {/* Thumbnail preview */}
+              <div className="flex justify-center">
+                <DocumentThumbnail
+                  documentId={selectedDocument.id}
+                  title={selectedDocument.title}
+                  hasThumbnail={selectedDocument.has_thumbnail}
+                  width={150}
+                  height={195}
+                  className="shadow-md"
+                />
+              </div>
+
               <div>
                 <div className="text-sm font-semibold text-base-content/60 mb-1">
                   Title

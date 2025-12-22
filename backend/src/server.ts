@@ -14,9 +14,17 @@ import { createApiKeysRouter } from '@/routes/apiKeys';
 import { createTemplateRouter } from '@/routes/templateRoutes';
 import { createSigningRouter, createDocumentSigningRouter } from '@/routes/signingRoutes';
 import { createWebhookRouter } from '@/routes/webhooks';
+import { createPdfRouter } from '@/routes/pdfRoutes';
+import { createHealthRoutes } from '@/routes/health';
+import { HealthService } from '@/services/healthService';
 import { errorHandler } from '@/middleware/errorHandler';
 import { apiLimiter } from '@/middleware/rateLimiter';
+import { correlationIdMiddleware } from '@/middleware/correlationId';
 import { createWebhookWorker } from '@/workers/webhookWorker';
+import { createPdfWorker } from '@/workers/pdfWorker';
+import { createCleanupWorker, createCleanupQueue, scheduleCleanupJobs } from '@/workers/cleanupWorker';
+import { getRedisConnection } from '@/config/queue';
+import logger from '@/services/loggerService';
 
 // Environment variables
 const PORT = process.env.PORT || 3001;
@@ -38,19 +46,41 @@ const dbConfig = {
 const pool = new Pool(dbConfig);
 
 // Test database connection
-pool.connect((err, client, release) => {
+pool.connect((err, _client, release) => {
   if (err) {
-    console.error('Error connecting to the database:', err.stack);
+    logger.error('Error connecting to the database', { error: err.message, stack: err.stack });
     process.exit(1);
   } else {
-    console.log('✓ Database connected successfully');
+    logger.info('Database connected successfully');
     release();
   }
 });
 
 // Initialize webhook worker for background delivery processing
 const webhookWorker = createWebhookWorker(pool);
-console.log('✓ Webhook worker initialized');
+logger.info('Webhook worker initialized');
+
+// Initialize PDF worker for background PDF processing
+const pdfWorker = createPdfWorker(pool);
+logger.info('PDF worker initialized');
+
+// Initialize cleanup worker for file cleanup
+const cleanupWorker = createCleanupWorker(pool);
+const cleanupQueue = createCleanupQueue();
+logger.info('Cleanup worker initialized');
+
+// Schedule cleanup jobs (async, don't await - let server start)
+scheduleCleanupJobs(cleanupQueue).catch((error) => {
+  logger.error('Failed to schedule cleanup jobs', { error: (error as Error).message });
+});
+
+// Initialize Redis connection for health checks
+const healthRedis = getRedisConnection();
+logger.info('Redis connection for health checks initialized');
+
+// Initialize health service
+const healthService = new HealthService(pool, healthRedis);
+logger.info('Health service initialized');
 
 // Initialize Express app
 const app = express();
@@ -58,12 +88,18 @@ const app = express();
 // Security middleware
 app.use(helmet());
 
-// Request logging
-if (NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-} else {
-  app.use(morgan('combined'));
-}
+// Add correlation ID to all requests (must be early in middleware chain)
+app.use(correlationIdMiddleware);
+
+// Request logging using morgan with winston integration
+const morganFormat = NODE_ENV === 'development' ? 'dev' : 'combined';
+const morganStream = {
+  write: (message: string) => {
+    // Remove trailing newline and log at http level
+    logger.http(message.trim());
+  },
+};
+app.use(morgan(morganFormat, { stream: morganStream }));
 
 // Body parsing middleware
 app.use(express.json({ limit: '50mb' }));
@@ -73,7 +109,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(apiLimiter);
 
 // CORS middleware
-app.use((req: Request, res: Response, next: NextFunction) => {
+app.use((req: Request, res: Response, next: NextFunction): void => {
   const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [
     'http://localhost:3000',
     'http://localhost:3002',
@@ -90,21 +126,15 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
 
   if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
+    res.sendStatus(200);
+    return;
   }
 
   next();
 });
 
-// Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
-  res.status(200).json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    environment: NODE_ENV,
-    uptime: process.uptime(),
-  });
-});
+// Health check routes (before rate limiting to ensure they always respond)
+app.use('/health', createHealthRoutes(healthService));
 
 // API routes
 app.use('/api/auth', createAuthRouter(pool));
@@ -114,10 +144,11 @@ app.use('/api/teams', createTeamsRouter(pool));
 app.use('/api/api-keys', createApiKeysRouter(pool));
 app.use('/api/templates', createTemplateRouter(pool));
 app.use('/api/webhooks', createWebhookRouter(pool));
+app.use('/api/pdf', createPdfRouter(pool)); // PDF processing endpoints
 app.use('/api/signing', createSigningRouter(pool)); // Public signing links
 
 // API documentation placeholder
-app.get('/api/docs', (req: Request, res: Response) => {
+app.get('/api/docs', (_req: Request, res: Response) => {
   res.status(200).json({
     message: 'API Documentation',
     version: '1.0.0',
@@ -128,6 +159,7 @@ app.get('/api/docs', (req: Request, res: Response) => {
       apiKeys: '/api/api-keys',
       templates: '/api/templates',
       webhooks: '/api/webhooks',
+      pdf: '/api/pdf',
       signing: '/api/signing',
     },
   });
@@ -146,35 +178,48 @@ app.use(errorHandler);
 
 // Start server
 const server = app.listen(PORT, () => {
-  console.log(`✓ Server running on port ${PORT}`);
-  console.log(`✓ Environment: ${NODE_ENV}`);
-  console.log(`✓ Health check: http://localhost:${PORT}/health`);
-  console.log(`✓ API docs: http://localhost:${PORT}/api/docs`);
-});
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM signal received: closing HTTP server');
-  server.close(async () => {
-    console.log('HTTP server closed');
-    await webhookWorker.close();
-    pool.end(() => {
-      console.log('Database pool closed');
-      process.exit(0);
-    });
+  logger.info('Server started', {
+    port: PORT,
+    environment: NODE_ENV,
+    healthCheck: `http://localhost:${PORT}/health`,
+    apiDocs: `http://localhost:${PORT}/api/docs`,
   });
 });
 
-process.on('SIGINT', async () => {
-  console.log('SIGINT signal received: closing HTTP server');
+// Graceful shutdown handler
+const gracefulShutdown = async (signal: string) => {
+  logger.info(`${signal} received: initiating graceful shutdown`);
+
   server.close(async () => {
-    console.log('HTTP server closed');
-    await webhookWorker.close();
-    pool.end(() => {
-      console.log('Database pool closed');
-      process.exit(0);
-    });
+    logger.info('HTTP server closed');
+
+    try {
+      await webhookWorker.close();
+      logger.info('Webhook worker closed');
+
+      await pdfWorker.close();
+      logger.info('PDF worker closed');
+
+      await cleanupWorker.close();
+      await cleanupQueue.close();
+      logger.info('Cleanup worker and queue closed');
+
+      await healthRedis.quit();
+      logger.info('Health Redis connection closed');
+
+      pool.end(() => {
+        logger.info('Database pool closed');
+        logger.info('Graceful shutdown complete');
+        process.exit(0);
+      });
+    } catch (error) {
+      logger.error('Error during shutdown', { error: (error as Error).message });
+      process.exit(1);
+    }
   });
-});
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 export default app;

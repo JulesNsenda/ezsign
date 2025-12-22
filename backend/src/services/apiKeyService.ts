@@ -27,7 +27,11 @@ export class ApiKeyService {
     const values = [data.user_id, hash, data.name, data.expires_at || null];
 
     const result = await this.pool.query<ApiKeyData>(query, values);
-    const apiKey = new ApiKey(result.rows[0]);
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error('Failed to create API key');
+    }
+    const apiKey = new ApiKey(row);
 
     return {
       apiKey,
@@ -47,11 +51,12 @@ export class ApiKeyService {
 
     const result = await this.pool.query<ApiKeyData>(query, [hash]);
 
-    if (result.rows.length === 0) {
+    const row = result.rows[0];
+    if (!row) {
       return null;
     }
 
-    return new ApiKey(result.rows[0]);
+    return new ApiKey(row);
   }
 
   /**
@@ -96,11 +101,12 @@ export class ApiKeyService {
 
     const result = await this.pool.query<ApiKeyData>(query, [id]);
 
-    if (result.rows.length === 0) {
+    const row = result.rows[0];
+    if (!row) {
       return null;
     }
 
-    return new ApiKey(result.rows[0]);
+    return new ApiKey(row);
   }
 
   /**
@@ -152,11 +158,12 @@ export class ApiKeyService {
 
     const result = await this.pool.query<ApiKeyData>(query, values);
 
-    if (result.rows.length === 0) {
+    const row = result.rows[0];
+    if (!row) {
       return null;
     }
 
-    return new ApiKey(result.rows[0]);
+    return new ApiKey(row);
   }
 
   /**
@@ -226,7 +233,8 @@ export class ApiKeyService {
     `;
 
     const result = await this.pool.query<{ count: string }>(query, [userId]);
+    const row = result.rows[0];
 
-    return parseInt(result.rows[0].count, 10);
+    return parseInt(row?.count || '0', 10);
   }
 }

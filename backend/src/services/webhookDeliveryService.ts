@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import crypto from 'crypto';
 import axios, { AxiosError } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
+import logger from '@/services/loggerService';
 
 export interface WebhookDeliveryResult {
   success: boolean;
@@ -49,7 +50,7 @@ export class WebhookDeliveryService {
    * Deliver webhook to endpoint
    */
   async deliverWebhook(
-    webhookId: string,
+    _webhookId: string,
     url: string,
     secret: string,
     eventType: string,
@@ -210,7 +211,7 @@ export class WebhookDeliveryService {
       return null;
     }
 
-    const delayMs = delays[attempts] || delays[delays.length - 1];
+    const delayMs = delays[attempts] ?? delays[delays.length - 1] ?? 30 * 60 * 1000;
     return new Date(Date.now() + delayMs);
   }
 
@@ -228,7 +229,7 @@ export class WebhookDeliveryService {
     );
 
     if (eventResult.rows.length === 0) {
-      console.error(`Webhook event ${eventId} not found`);
+      logger.error('Webhook event not found', { eventId });
       return;
     }
 
@@ -258,7 +259,7 @@ export class WebhookDeliveryService {
         result.response_body,
         result.response_time_ms
       );
-      console.log(`✓ Webhook event ${eventId} delivered successfully (${result.status_code})`);
+      logger.debug('Webhook event delivered successfully', { eventId, statusCode: result.status_code });
     } else {
       // Determine if we should retry
       const shouldRetry = this.shouldRetry(result.status_code) && currentAttempts + 1 < 3;
@@ -273,13 +274,18 @@ export class WebhookDeliveryService {
       );
 
       if (shouldRetry) {
-        console.log(
-          `✗ Webhook event ${eventId} failed (${result.status_code || 'network error'}), will retry (attempt ${currentAttempts + 1}/3)`
-        );
+        logger.warn('Webhook event failed, will retry', {
+          eventId,
+          statusCode: result.status_code,
+          attempt: currentAttempts + 1,
+          maxAttempts: 3,
+        });
       } else {
-        console.log(
-          `✗ Webhook event ${eventId} failed permanently (${result.status_code || 'network error'})`
-        );
+        logger.error('Webhook event failed permanently', {
+          eventId,
+          statusCode: result.status_code,
+          error: result.error_message,
+        });
       }
     }
   }

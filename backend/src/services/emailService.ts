@@ -1,4 +1,5 @@
 import nodemailer, { Transporter } from 'nodemailer';
+import logger from '@/services/loggerService';
 
 export interface EmailConfig {
   host: string;
@@ -156,7 +157,7 @@ export class EmailService {
         <head>
           <meta charset="utf-8">
           <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
             .container { max-width: 600px; margin: 0 auto; padding: 20px; }
             .header { background-color: ${headerColor}; color: white; padding: 20px; text-align: center; }
             .content { padding: 30px 20px; background-color: #f9fafb; }
@@ -172,6 +173,8 @@ export class EmailService {
             .footer { padding: 20px; text-align: center; color: #6b7280; font-size: 14px; }
             .message { background-color: #e0e7ff; padding: 15px; border-radius: 5px; margin: 15px 0; }
             .reminder { background-color: #fef3c7; padding: 15px; border-radius: 5px; margin: 15px 0; }
+            .link-box { background-color: #f3f4f6; padding: 12px; border-radius: 5px; margin: 15px 0; word-break: break-all; overflow-wrap: break-word; font-size: 12px; }
+            .link-box a { color: #4F46E5; text-decoration: none; }
           </style>
         </head>
         <body>
@@ -192,8 +195,8 @@ export class EmailService {
               <div style="text-align: center;">
                 <a href="${data.signingUrl}" class="button">Review & Sign Document</a>
               </div>
-              <p>If the button doesn't work, copy and paste this link into your browser:</p>
-              <p><a href="${data.signingUrl}">${data.signingUrl}</a></p>
+              <p style="font-size: 13px; color: #6b7280;">If the button doesn't work, copy and paste this link into your browser:</p>
+              <div class="link-box"><a href="${data.signingUrl}">${data.signingUrl}</a></div>
             </div>
             <div class="footer">
               <p>This is an automated email from EzSign. Please do not reply to this email.</p>
@@ -322,7 +325,7 @@ This is an automated email from EzSign. Please do not reply to this email.
         <head>
           <meta charset="utf-8">
           <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
             .container { max-width: 600px; margin: 0 auto; padding: 20px; }
             .header { background-color: #f59e0b; color: white; padding: 20px; text-align: center; }
             .content { padding: 30px 20px; background-color: #f9fafb; }
@@ -337,6 +340,8 @@ This is an automated email from EzSign. Please do not reply to this email.
             }
             .footer { padding: 20px; text-align: center; color: #6b7280; font-size: 14px; }
             .reminder { background-color: #fef3c7; padding: 15px; border-radius: 5px; margin: 15px 0; }
+            .link-box { background-color: #f3f4f6; padding: 12px; border-radius: 5px; margin: 15px 0; word-break: break-all; overflow-wrap: break-word; font-size: 12px; }
+            .link-box a { color: #f59e0b; text-decoration: none; }
           </style>
         </head>
         <body>
@@ -355,8 +360,8 @@ This is an automated email from EzSign. Please do not reply to this email.
               <div style="text-align: center;">
                 <a href="${data.signingUrl}" class="button">Sign Document Now</a>
               </div>
-              <p>If the button doesn't work, copy and paste this link into your browser:</p>
-              <p><a href="${data.signingUrl}">${data.signingUrl}</a></p>
+              <p style="font-size: 13px; color: #6b7280;">If the button doesn't work, copy and paste this link into your browser:</p>
+              <div class="link-box"><a href="${data.signingUrl}">${data.signingUrl}</a></div>
             </div>
             <div class="footer">
               <p>This is an automated email from EzSign. Please do not reply to this email.</p>
@@ -491,7 +496,7 @@ If you have any concerns, please contact support.
       await this.transporter.verify();
       return true;
     } catch (error) {
-      console.error('Email service verification failed:', error);
+      logger.error('Email service verification failed', { error: (error as Error).message });
       return false;
     }
   }
@@ -543,7 +548,7 @@ If you have any concerns, please contact support.
         <head>
           <meta charset="utf-8">
           <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
             .container { max-width: 600px; margin: 0 auto; padding: 20px; }
             .header { background-color: #4F46E5; color: white; padding: 20px; text-align: center; }
             .content { padding: 30px 20px; background-color: #f9fafb; }
@@ -558,6 +563,8 @@ If you have any concerns, please contact support.
             }
             .footer { padding: 20px; text-align: center; color: #6b7280; font-size: 14px; }
             .info { background-color: #e0e7ff; padding: 15px; border-radius: 5px; margin: 15px 0; }
+            .link-box { background-color: #f3f4f6; padding: 12px; border-radius: 5px; margin: 15px 0; word-break: break-all; overflow-wrap: break-word; font-size: 12px; }
+            .link-box a { color: #4F46E5; text-decoration: none; }
           </style>
         </head>
         <body>
@@ -575,8 +582,8 @@ If you have any concerns, please contact support.
               <div style="text-align: center;">
                 <a href="${verificationUrl}" class="button">Verify Email Address</a>
               </div>
-              <p>If the button doesn't work, copy and paste this link into your browser:</p>
-              <p><a href="${verificationUrl}">${verificationUrl}</a></p>
+              <p style="font-size: 13px; color: #6b7280;">If the button doesn't work, copy and paste this link into your browser:</p>
+              <div class="link-box"><a href="${verificationUrl}">${verificationUrl}</a></div>
               <p>If you didn't create an account with EzSign, you can safely ignore this email.</p>
             </div>
             <div class="footer">

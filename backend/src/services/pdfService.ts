@@ -57,6 +57,99 @@ export interface DateField extends TextField {
   format?: 'iso' | 'locale' | 'short';
 }
 
+export interface CheckboxField {
+  /** Page number (0-indexed) */
+  page: number;
+  /** X coordinate (from left) in points */
+  x: number;
+  /** Y coordinate (from bottom) in points */
+  y: number;
+  /** Width in points */
+  width: number;
+  /** Height in points */
+  height: number;
+  /** Whether checkbox is checked */
+  checked: boolean;
+  /** Checkbox styling options */
+  options?: {
+    /** Border color as hex string (default: #000000) */
+    borderColor?: string;
+    /** Check mark color as hex string (default: #000000) */
+    checkColor?: string;
+    /** Background color as hex string (default: #FFFFFF) */
+    backgroundColor?: string;
+    /** Border width in points (default: 1) */
+    borderWidth?: number;
+    /** Style of check mark: 'x' for X mark, 'checkmark' for ✓ (default: 'x') */
+    style?: 'x' | 'checkmark';
+  };
+}
+
+export interface RadioOption {
+  /** Label displayed next to the radio button */
+  label: string;
+  /** Value of this option */
+  value: string;
+}
+
+export interface RadioField {
+  /** Page number (0-indexed) */
+  page: number;
+  /** X coordinate (from left) in points */
+  x: number;
+  /** Y coordinate (from bottom) in points */
+  y: number;
+  /** Width in points */
+  width: number;
+  /** Height in points */
+  height: number;
+  /** Available options for the radio group */
+  options: RadioOption[];
+  /** Currently selected value (if any) */
+  selectedValue?: string;
+  /** Radio group styling options */
+  settings?: {
+    /** Layout direction: 'vertical' or 'horizontal' (default: 'vertical') */
+    orientation?: 'horizontal' | 'vertical';
+    /** Font size in points (default: 12) */
+    fontSize?: number;
+    /** Text color as hex string (default: #000000) */
+    textColor?: string;
+    /** Spacing between options in points (default: 20) */
+    optionSpacing?: number;
+  };
+}
+
+export interface DropdownField {
+  /** Page number (0-indexed) */
+  page: number;
+  /** X coordinate (from left) in points */
+  x: number;
+  /** Y coordinate (from bottom) in points */
+  y: number;
+  /** Width in points */
+  width: number;
+  /** Height in points */
+  height: number;
+  /** Available options for the dropdown */
+  options: RadioOption[];
+  /** Currently selected value (if any) */
+  selectedValue?: string;
+  /** Dropdown styling options */
+  settings?: {
+    /** Placeholder text when nothing selected (default: 'Select an option') */
+    placeholder?: string;
+    /** Font size in points (default: 12) */
+    fontSize?: number;
+    /** Text color as hex string (default: #000000) */
+    textColor?: string;
+    /** Background color as hex string (default: #FFFFFF) */
+    backgroundColor?: string;
+    /** Border color as hex string (default: #000000) */
+    borderColor?: string;
+  };
+}
+
 /**
  * PDF processing service using pdf-lib
  * Provides methods for reading, modifying, and generating PDFs
@@ -244,6 +337,276 @@ export class PdfService {
   }
 
   /**
+   * Convert hex color string to RGB values (0-1 range)
+   */
+  private hexToRgb(hex: string): { r: number; g: number; b: number } {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (!result || !result[1] || !result[2] || !result[3]) {
+      return { r: 0, g: 0, b: 0 }; // Default to black
+    }
+    return {
+      r: parseInt(result[1], 16) / 255,
+      g: parseInt(result[2], 16) / 255,
+      b: parseInt(result[3], 16) / 255,
+    };
+  }
+
+  /**
+   * Add checkbox to PDF
+   * Renders a checkbox with optional check mark (X or ✓)
+   */
+  async addCheckbox(pdfBuffer: Buffer, field: CheckboxField): Promise<Buffer> {
+    const pdfDoc = await this.loadPdf(pdfBuffer);
+    const pages = pdfDoc.getPages();
+
+    if (field.page >= pages.length) {
+      throw new Error(`Page ${field.page} does not exist in PDF`);
+    }
+
+    const page = pages[field.page];
+    if (!page) {
+      throw new Error(`Page ${field.page} could not be retrieved`);
+    }
+
+    const borderColorHex = field.options?.borderColor ?? '#000000';
+    const checkColorHex = field.options?.checkColor ?? '#000000';
+    const backgroundColorHex = field.options?.backgroundColor ?? '#FFFFFF';
+    const borderColor = this.hexToRgb(borderColorHex);
+    const checkColor = this.hexToRgb(checkColorHex);
+    const backgroundColor = this.hexToRgb(backgroundColorHex);
+    const borderWidth = field.options?.borderWidth || 1;
+    const style = field.options?.style || 'x';
+
+    // Draw background rectangle
+    page.drawRectangle({
+      x: field.x,
+      y: field.y,
+      width: field.width,
+      height: field.height,
+      color: rgb(backgroundColor.r, backgroundColor.g, backgroundColor.b),
+      borderColor: rgb(borderColor.r, borderColor.g, borderColor.b),
+      borderWidth,
+    });
+
+    // Draw check mark if checked
+    if (field.checked) {
+      const padding = Math.min(field.width, field.height) * 0.2;
+      const lineWidth = Math.max(1, Math.min(field.width, field.height) * 0.1);
+
+      if (style === 'checkmark') {
+        // Draw a checkmark (✓)
+        const startX = field.x + padding;
+        const midX = field.x + field.width * 0.35;
+        const endX = field.x + field.width - padding;
+        const startY = field.y + field.height * 0.5;
+        const midY = field.y + padding;
+        const endY = field.y + field.height - padding;
+
+        // Short stroke (down-left part of checkmark)
+        page.drawLine({
+          start: { x: startX, y: startY },
+          end: { x: midX, y: midY },
+          thickness: lineWidth,
+          color: rgb(checkColor.r, checkColor.g, checkColor.b),
+        });
+
+        // Long stroke (up-right part of checkmark)
+        page.drawLine({
+          start: { x: midX, y: midY },
+          end: { x: endX, y: endY },
+          thickness: lineWidth,
+          color: rgb(checkColor.r, checkColor.g, checkColor.b),
+        });
+      } else {
+        // Draw X mark (default)
+        // First diagonal line (top-left to bottom-right)
+        page.drawLine({
+          start: { x: field.x + padding, y: field.y + field.height - padding },
+          end: { x: field.x + field.width - padding, y: field.y + padding },
+          thickness: lineWidth,
+          color: rgb(checkColor.r, checkColor.g, checkColor.b),
+        });
+
+        // Second diagonal line (top-right to bottom-left)
+        page.drawLine({
+          start: { x: field.x + field.width - padding, y: field.y + field.height - padding },
+          end: { x: field.x + padding, y: field.y + padding },
+          thickness: lineWidth,
+          color: rgb(checkColor.r, checkColor.g, checkColor.b),
+        });
+      }
+    }
+
+    return Buffer.from(await pdfDoc.save());
+  }
+
+  /**
+   * Add radio button group to PDF
+   * Renders radio buttons with labels in vertical or horizontal layout
+   */
+  async addRadioGroup(pdfBuffer: Buffer, field: RadioField): Promise<Buffer> {
+    const pdfDoc = await this.loadPdf(pdfBuffer);
+    const pages = pdfDoc.getPages();
+
+    if (field.page >= pages.length) {
+      throw new Error(`Page ${field.page} does not exist in PDF`);
+    }
+
+    const page = pages[field.page];
+    if (!page) {
+      throw new Error(`Page ${field.page} could not be retrieved`);
+    }
+
+    // Import font for labels
+    const { StandardFonts } = await import('pdf-lib');
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    // Get settings with defaults
+    const fontSize = field.settings?.fontSize || 12;
+    const textColorHex = field.settings?.textColor || '#000000';
+    const textColor = this.hexToRgb(textColorHex);
+    const spacing = field.settings?.optionSpacing || 20;
+    const isVertical = field.settings?.orientation !== 'horizontal';
+    const circleRadius = 6;
+    const circleOuterBorderWidth = 1;
+
+    // Starting position - for vertical, start from top of field area
+    // PDF y-axis goes up, so we start at the top (y + height) and work down
+    let currentX = field.x;
+    let currentY = field.y + field.height - fontSize;
+
+    for (const option of field.options) {
+      const isSelected = option.value === field.selectedValue;
+
+      // Draw outer circle (unfilled)
+      page.drawCircle({
+        x: currentX + circleRadius,
+        y: currentY - circleRadius + fontSize / 2,
+        size: circleRadius,
+        borderColor: rgb(0, 0, 0),
+        borderWidth: circleOuterBorderWidth,
+      });
+
+      // Draw inner filled circle if selected
+      if (isSelected) {
+        page.drawCircle({
+          x: currentX + circleRadius,
+          y: currentY - circleRadius + fontSize / 2,
+          size: circleRadius - 3,
+          color: rgb(0, 0, 0),
+        });
+      }
+
+      // Draw label text
+      page.drawText(option.label, {
+        x: currentX + circleRadius * 2 + 5,
+        y: currentY,
+        size: fontSize,
+        font,
+        color: rgb(textColor.r, textColor.g, textColor.b),
+      });
+
+      // Move to next position
+      if (isVertical) {
+        currentY -= spacing;
+      } else {
+        const textWidth = font.widthOfTextAtSize(option.label, fontSize);
+        currentX += circleRadius * 2 + 10 + textWidth + spacing;
+      }
+    }
+
+    return Buffer.from(await pdfDoc.save());
+  }
+
+  /**
+   * Add a dropdown field to PDF
+   * Renders as a rectangle with the selected value text and a dropdown arrow indicator
+   */
+  async addDropdown(pdfBuffer: Buffer, field: DropdownField): Promise<Buffer> {
+    const pdfDoc = await this.loadPdf(pdfBuffer);
+    const pages = pdfDoc.getPages();
+
+    if (field.page >= pages.length) {
+      throw new Error(`Page ${field.page} does not exist in PDF`);
+    }
+
+    const page = pages[field.page];
+    if (!page) {
+      throw new Error(`Page ${field.page} could not be retrieved`);
+    }
+
+    // Import font for text
+    const { StandardFonts } = await import('pdf-lib');
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    // Get settings with defaults
+    const fontSize = field.settings?.fontSize || 12;
+    const textColorHex = field.settings?.textColor || '#000000';
+    const textColor = this.hexToRgb(textColorHex);
+    const backgroundColorHex = field.settings?.backgroundColor || '#FFFFFF';
+    const backgroundColor = this.hexToRgb(backgroundColorHex);
+    const borderColorHex = field.settings?.borderColor || '#000000';
+    const borderColor = this.hexToRgb(borderColorHex);
+    const placeholder = field.settings?.placeholder || 'Select an option';
+
+    // Draw background rectangle
+    page.drawRectangle({
+      x: field.x,
+      y: field.y,
+      width: field.width,
+      height: field.height,
+      color: rgb(backgroundColor.r, backgroundColor.g, backgroundColor.b),
+      borderColor: rgb(borderColor.r, borderColor.g, borderColor.b),
+      borderWidth: 1,
+    });
+
+    // Find selected option label
+    const selectedOption = field.options.find((o) => o.value === field.selectedValue);
+    const displayText = selectedOption?.label || placeholder;
+
+    // Draw text (vertically centered)
+    const textY = field.y + (field.height - fontSize) / 2;
+    const maxTextWidth = field.width - 25; // Leave room for dropdown arrow
+
+    // Truncate text if too long
+    let truncatedText = displayText;
+    while (
+      font.widthOfTextAtSize(truncatedText, fontSize) > maxTextWidth &&
+      truncatedText.length > 3
+    ) {
+      truncatedText = truncatedText.slice(0, -4) + '...';
+    }
+
+    page.drawText(truncatedText, {
+      x: field.x + 5,
+      y: textY,
+      size: fontSize,
+      font,
+      color: selectedOption
+        ? rgb(textColor.r, textColor.g, textColor.b)
+        : rgb(0.5, 0.5, 0.5), // Gray for placeholder
+    });
+
+    // Draw dropdown arrow indicator (a small downward-pointing chevron)
+    const arrowX = field.x + field.width - 15;
+    const arrowY = field.y + field.height / 2;
+    page.drawLine({
+      start: { x: arrowX - 4, y: arrowY + 2 },
+      end: { x: arrowX, y: arrowY - 2 },
+      thickness: 1.5,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+    page.drawLine({
+      start: { x: arrowX, y: arrowY - 2 },
+      end: { x: arrowX + 4, y: arrowY + 2 },
+      thickness: 1.5,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+
+    return Buffer.from(await pdfDoc.save());
+  }
+
+  /**
    * Add multiple fields to PDF in a single operation
    */
   async addMultipleFields(
@@ -252,6 +615,9 @@ export class PdfService {
       signatures?: SignatureField[];
       textFields?: TextField[];
       dateFields?: DateField[];
+      checkboxFields?: CheckboxField[];
+      radioFields?: RadioField[];
+      dropdownFields?: DropdownField[];
     }
   ): Promise<Buffer> {
     let currentPdfBuffer = pdfBuffer;
@@ -274,6 +640,27 @@ export class PdfService {
     if (fields.dateFields) {
       for (const dateField of fields.dateFields) {
         currentPdfBuffer = await this.addDateField(currentPdfBuffer, dateField);
+      }
+    }
+
+    // Add checkbox fields
+    if (fields.checkboxFields) {
+      for (const checkboxField of fields.checkboxFields) {
+        currentPdfBuffer = await this.addCheckbox(currentPdfBuffer, checkboxField);
+      }
+    }
+
+    // Add radio fields
+    if (fields.radioFields) {
+      for (const radioField of fields.radioFields) {
+        currentPdfBuffer = await this.addRadioGroup(currentPdfBuffer, radioField);
+      }
+    }
+
+    // Add dropdown fields
+    if (fields.dropdownFields) {
+      for (const dropdownField of fields.dropdownFields) {
+        currentPdfBuffer = await this.addDropdown(currentPdfBuffer, dropdownField);
       }
     }
 
@@ -474,13 +861,36 @@ export class PdfService {
     pageNumber: number,
     options?: { width?: number; height?: number; scale?: number }
   ): Promise<Buffer> {
-    const pdfjsLib = await import('pdfjs-dist');
-    const { createCanvas } = await import('canvas');
+    // Use legacy build for Node.js compatibility
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const canvasModule = await import('canvas');
+    const { createCanvas } = canvasModule;
 
-    // Load PDF with pdfjs-dist
+    // Provide Node.js polyfills for browser APIs that pdfjs-dist expects
+    // DOMMatrix is required for PDF rendering transformations
+    const nodeCanvasFactory = {
+      create: (width: number, height: number) => {
+        const canvas = createCanvas(width, height);
+        const context = canvas.getContext('2d');
+        return { canvas, context };
+      },
+      reset: (canvasAndContext: { canvas: ReturnType<typeof createCanvas>; context: any }, width: number, height: number) => {
+        canvasAndContext.canvas.width = width;
+        canvasAndContext.canvas.height = height;
+      },
+      destroy: (canvasAndContext: { canvas: ReturnType<typeof createCanvas>; context: any }) => {
+        canvasAndContext.canvas.width = 0;
+        canvasAndContext.canvas.height = 0;
+      },
+    };
+
+    // Load PDF with pdfjs-dist using Node.js-compatible options
     const loadingTask = pdfjsLib.getDocument({
       data: new Uint8Array(pdfBuffer),
       useSystemFonts: true,
+      isOffscreenCanvasSupported: false,
+      // Disable worker for Node.js environment
+      disableFontFace: true,
     });
     const pdf = await loadingTask.promise;
 
@@ -493,14 +903,14 @@ export class PdfService {
     const canvasWidth = options?.width || viewport.width;
     const canvasHeight = options?.height || viewport.height;
 
-    // Create canvas
-    const canvas = createCanvas(canvasWidth, canvasHeight);
-    const context = canvas.getContext('2d');
+    // Create canvas using factory
+    const { canvas, context } = nodeCanvasFactory.create(Math.ceil(canvasWidth), Math.ceil(canvasHeight));
 
     // Render PDF page to canvas
     const renderContext = {
       canvasContext: context as any,
       viewport: viewport,
+      canvasFactory: nodeCanvasFactory,
     };
     await page.render(renderContext as any).promise;
 

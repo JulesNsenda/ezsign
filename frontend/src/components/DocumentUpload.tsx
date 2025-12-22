@@ -160,7 +160,7 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({ onSuccess, onCan
               <Button
                 type="button"
                 variant="secondary"
-                size="small"
+                size="sm"
                 onClick={(e) => {
                   e.stopPropagation();
                   setFile(null);

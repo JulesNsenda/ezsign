@@ -91,6 +91,8 @@ export const FieldPalette: React.FC<FieldPaletteProps> = () => {
     { type: 'date', label: 'Date', color: '#ffc107', icon: '📅' },
     { type: 'text', label: 'Text', color: '#17a2b8', icon: '📝' },
     { type: 'checkbox', label: 'Checkbox', color: '#6c757d', icon: '☑' },
+    { type: 'radio', label: 'Radio', color: '#9333ea', icon: '⊙' },
+    { type: 'dropdown', label: 'Dropdown', color: '#0891b2', icon: '▼' },
   ];
 
   return (

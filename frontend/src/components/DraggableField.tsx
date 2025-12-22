@@ -1,6 +1,5 @@
 import React from 'react';
 import { useDraggable } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
 import type { Field, FieldType } from '@/types';
 
 /**
@@ -23,6 +22,8 @@ const FIELD_COLORS: Record<FieldType, string> = {
   date: '#ffc107',
   text: '#17a2b8',
   checkbox: '#6c757d',
+  radio: '#9333ea',
+  dropdown: '#0891b2',
 };
 
 const FIELD_LABELS: Record<FieldType, string> = {
@@ -31,6 +32,8 @@ const FIELD_LABELS: Record<FieldType, string> = {
   date: 'Date',
   text: 'Text',
   checkbox: 'Checkbox',
+  radio: 'Radio',
+  dropdown: 'Dropdown',
 };
 
 export const DraggableField: React.FC<DraggableFieldProps> = ({
@@ -45,7 +48,7 @@ export const DraggableField: React.FC<DraggableFieldProps> = ({
   // Use custom border color if provided, otherwise use field type color
   const fieldColor = borderColor || FIELD_COLORS[field.type];
 
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: field.id,
     data: field,
   });
