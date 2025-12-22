@@ -10,6 +10,7 @@ import DroppablePdfContainer from '@/components/DroppablePdfContainer';
 import FieldProperties from '@/components/FieldProperties';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
+import ConfirmModal from '@/components/ConfirmModal';
 import { useDocument } from '@/hooks/useDocuments';
 import { useFields, useCreateField, useUpdateField, useDeleteField } from '@/hooks/useFields';
 import { useSigners, useCreateSigner, useDeleteSigner, useSendDocument } from '@/hooks/useSigners';
@@ -38,6 +39,19 @@ export const PrepareDocument: React.FC = () => {
   const [templateName, setTemplateName] = useState('');
   const [templateDescription, setTemplateDescription] = useState('');
   const [zoom, setZoom] = useState(1);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isLoading?: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    isLoading: false,
+  });
   const [showMobileFieldPalette, setShowMobileFieldPalette] = useState(false);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
@@ -274,8 +288,9 @@ export const PrepareDocument: React.FC = () => {
     }
   };
 
-  const handleDeleteField = useCallback(async (fieldId: string) => {
+  const executeDeleteField = useCallback(async (fieldId: string) => {
     if (!id) return;
+    setConfirmModal(prev => ({ ...prev, isLoading: true }));
     try {
       await deleteFieldMutation.mutateAsync({ documentId: id, fieldId });
       refetchFields();
@@ -284,8 +299,20 @@ export const PrepareDocument: React.FC = () => {
     } catch (error: any) {
       const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to delete field';
       toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to delete field');
+    } finally {
+      setConfirmModal(prev => ({ ...prev, isOpen: false, isLoading: false }));
     }
   }, [id, deleteFieldMutation, refetchFields, toast]);
+
+  const handleDeleteField = useCallback((fieldId: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Field',
+      message: 'Are you sure you want to delete this field?',
+      onConfirm: () => executeDeleteField(fieldId),
+      isLoading: false,
+    });
+  }, [executeDeleteField]);
 
   // Stable callback for selecting a field
   const handleSelectField = useCallback((fieldId: string) => {
@@ -374,8 +401,9 @@ export const PrepareDocument: React.FC = () => {
     }
   };
 
-  const handleDeleteSigner = async (signerId: string) => {
+  const executeDeleteSigner = async (signerId: string) => {
     if (!id) return;
+    setConfirmModal(prev => ({ ...prev, isLoading: true }));
     try {
       await deleteSignerMutation.mutateAsync({ documentId: id, signerId });
       refetchSigners();
@@ -383,7 +411,19 @@ export const PrepareDocument: React.FC = () => {
     } catch (error: any) {
       const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to remove signer';
       toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to remove signer');
+    } finally {
+      setConfirmModal(prev => ({ ...prev, isOpen: false, isLoading: false }));
     }
+  };
+
+  const handleDeleteSigner = (signerId: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Remove Signer',
+      message: 'Are you sure you want to remove this signer? Any fields assigned to them will become unassigned.',
+      onConfirm: () => executeDeleteSigner(signerId),
+      isLoading: false,
+    });
   };
 
   const handleSaveAsTemplate = async () => {
@@ -931,6 +971,18 @@ export const PrepareDocument: React.FC = () => {
             </div>
           </div>
         </Modal>
+
+        {/* Confirm Modal for destructive actions */}
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          onConfirm={confirmModal.onConfirm}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          confirmText="Delete"
+          variant="danger"
+          isLoading={confirmModal.isLoading}
+        />
       </div>
     </Layout>
   );

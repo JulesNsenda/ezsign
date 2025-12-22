@@ -422,6 +422,7 @@ export class SigningController {
             const checkboxFields: any[] = [];
             const radioFields: any[] = [];
             const dropdownFields: any[] = [];
+            const textareaFields: any[] = [];
 
             for (const row of allSignaturesResult.rows) {
               const pageNumber = parseInt(row.page);
@@ -487,6 +488,24 @@ export class SigningController {
                   break;
                 }
 
+                case 'textarea': {
+                  // Textarea field - use text_value as multi-line text
+                  const properties = row.properties || {};
+                  textareaFields.push({
+                    ...baseField,
+                    text: row.text_value || '',
+                    settings: {
+                      fontSize: properties.fontSize || 12,
+                      textColor: properties.textColor || '#000000',
+                      backgroundColor: properties.backgroundColor || '#FFFFFF',
+                      borderColor: properties.borderColor || '#000000',
+                      lineHeight: 1.2,
+                    },
+                  });
+                  logger.debug('Processing textarea field', { fieldId: row.field_id, textLength: row.text_value?.length });
+                  break;
+                }
+
                 case 'text': {
                   // Text field - use text_value
                   const properties = row.properties || {};
@@ -516,10 +535,17 @@ export class SigningController {
 
                 case 'checkbox': {
                   // Checkbox field - use text_value to determine checked state
+                  const properties = row.properties || {};
                   checkboxFields.push({
                     ...baseField,
                     checked: row.text_value === 'checked',
-                    checkColor: '#000000',
+                    options: {
+                      checkColor: properties.checkColor || '#000000',
+                      borderColor: properties.borderColor || '#000000',
+                      backgroundColor: properties.backgroundColor || '#FFFFFF',
+                      borderWidth: properties.borderWidth || 1,
+                      style: properties.style || 'checkmark',
+                    },
                   });
                   logger.debug('Processing checkbox field', { fieldId: row.field_id, checked: row.text_value === 'checked' });
                   break;
@@ -554,6 +580,7 @@ export class SigningController {
               checkboxCount: checkboxFields.length,
               radioCount: radioFields.length,
               dropdownCount: dropdownFields.length,
+              textareaCount: textareaFields.length,
             });
 
             // Apply all fields to the PDF
@@ -566,6 +593,7 @@ export class SigningController {
                 checkboxFields: checkboxFields.length > 0 ? checkboxFields : undefined,
                 radioFields: radioFields.length > 0 ? radioFields : undefined,
                 dropdownFields: dropdownFields.length > 0 ? dropdownFields : undefined,
+                textareaFields: textareaFields.length > 0 ? textareaFields : undefined,
               }
             );
 

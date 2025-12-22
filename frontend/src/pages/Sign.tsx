@@ -5,6 +5,7 @@ import SignaturePad from '@/components/SignaturePad';
 import RadioFieldInput from '@/components/RadioFieldInput';
 import DropdownFieldInput from '@/components/DropdownFieldInput';
 import TextFieldInput from '@/components/TextFieldInput';
+import TextareaFieldInput from '@/components/TextareaFieldInput';
 import DateFieldInput from '@/components/DateFieldInput';
 import CheckboxFieldInput from '@/components/CheckboxFieldInput';
 import Modal from '@/components/Modal';
@@ -285,6 +286,26 @@ export const Sign: React.FC = () => {
     }
   };
 
+  const handleTextareaInput = (value: string) => {
+    if (!currentField) return;
+
+    // For textarea fields, we store the multi-line text as text_value
+    const newSignature: SignatureData = {
+      field_id: currentField.id,
+      signature_type: 'typed' as SignatureType,
+      signature_data: `textarea:${value}`, // Marker for textarea input
+      text_value: value,
+    };
+
+    setCollectedSignatures([...collectedSignatures, newSignature]);
+    setIsSignatureModalOpen(false);
+
+    // Auto-advance to next field if there are more
+    if (currentFieldIndex < unsignedFields.length - 1) {
+      setTimeout(() => handleNextField(), 300);
+    }
+  };
+
   const handleTextInput = (value: string) => {
     if (!currentField) return;
 
@@ -441,6 +462,17 @@ export const Sign: React.FC = () => {
           />
         );
 
+      case 'textarea':
+        return (
+          <TextareaFieldInput
+            placeholder={currentField.properties?.placeholder as string || 'Enter your text here...'}
+            maxLength={currentField.properties?.maxLength as number || 1000}
+            rows={currentField.properties?.rows as number || 4}
+            onSave={handleTextareaInput}
+            onCancel={() => setIsSignatureModalOpen(false)}
+          />
+        );
+
       default:
         return (
           <div className="text-center p-4">
@@ -583,6 +615,14 @@ export const Sign: React.FC = () => {
                                 </div>
                               );
                             }
+                            case 'textarea':
+                              return (
+                                <div className="px-2 text-center overflow-hidden">
+                                  <span className="text-xs font-medium text-purple-800 line-clamp-3 whitespace-pre-wrap">
+                                    {sig.text_value}
+                                  </span>
+                                </div>
+                              );
                             case 'text':
                               return (
                                 <div className="px-2 text-center">
@@ -892,6 +932,8 @@ const getModalTitle = (fieldType?: string): string => {
     case 'date':
       return 'Select Date';
     case 'text':
+      return 'Enter Text';
+    case 'textarea':
       return 'Enter Text';
     case 'checkbox':
       return 'Confirm Checkbox';

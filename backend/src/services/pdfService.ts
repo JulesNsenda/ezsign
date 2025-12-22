@@ -150,6 +150,34 @@ export interface DropdownField {
   };
 }
 
+export interface TextareaField {
+  /** Page number (0-indexed) */
+  page: number;
+  /** X coordinate (from left) in points */
+  x: number;
+  /** Y coordinate (from bottom) in points */
+  y: number;
+  /** Width in points */
+  width: number;
+  /** Height in points */
+  height: number;
+  /** Text content (may contain newlines) */
+  text: string;
+  /** Textarea styling options */
+  settings?: {
+    /** Font size in points (default: 12) */
+    fontSize?: number;
+    /** Text color as hex string (default: #000000) */
+    textColor?: string;
+    /** Background color as hex string (default: #FFFFFF) */
+    backgroundColor?: string;
+    /** Border color as hex string (default: #000000) */
+    borderColor?: string;
+    /** Line height multiplier (default: 1.2) */
+    lineHeight?: number;
+  };
+}
+
 /**
  * PDF processing service using pdf-lib
  * Provides methods for reading, modifying, and generating PDFs
@@ -607,6 +635,120 @@ export class PdfService {
   }
 
   /**
+   * Add a textarea (multi-line text) field to PDF
+   * Wraps text within the field boundaries
+   */
+  async addTextarea(pdfBuffer: Buffer, field: TextareaField): Promise<Buffer> {
+    const pdfDoc = await this.loadPdf(pdfBuffer);
+    const pages = pdfDoc.getPages();
+
+    if (field.page >= pages.length) {
+      throw new Error(`Page ${field.page} does not exist in PDF`);
+    }
+
+    const page = pages[field.page];
+    if (!page) {
+      throw new Error(`Page ${field.page} could not be retrieved`);
+    }
+
+    // Import font for text
+    const { StandardFonts } = await import('pdf-lib');
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    // Get settings with defaults
+    const fontSize = field.settings?.fontSize || 12;
+    const textColorHex = field.settings?.textColor || '#000000';
+    const textColor = this.hexToRgb(textColorHex);
+    const backgroundColorHex = field.settings?.backgroundColor || '#FFFFFF';
+    const backgroundColor = this.hexToRgb(backgroundColorHex);
+    const borderColorHex = field.settings?.borderColor || '#000000';
+    const borderColor = this.hexToRgb(borderColorHex);
+    const lineHeight = (field.settings?.lineHeight || 1.2) * fontSize;
+
+    // Draw background rectangle
+    page.drawRectangle({
+      x: field.x,
+      y: field.y,
+      width: field.width,
+      height: field.height,
+      color: rgb(backgroundColor.r, backgroundColor.g, backgroundColor.b),
+      borderColor: rgb(borderColor.r, borderColor.g, borderColor.b),
+      borderWidth: 1,
+    });
+
+    // Word wrap and render text
+    const padding = 5;
+    const maxWidth = field.width - padding * 2;
+    const text = field.text || '';
+
+    // Split by newlines first, then wrap each line
+    const paragraphs = text.split('\n');
+    const wrappedLines: string[] = [];
+
+    for (const paragraph of paragraphs) {
+      if (paragraph.trim() === '') {
+        wrappedLines.push(''); // Preserve empty lines
+        continue;
+      }
+
+      const words = paragraph.split(' ');
+      let currentLine = '';
+
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        const testWidth = font.widthOfTextAtSize(testLine, fontSize);
+
+        if (testWidth <= maxWidth) {
+          currentLine = testLine;
+        } else {
+          if (currentLine) {
+            wrappedLines.push(currentLine);
+          }
+          // If a single word is too long, truncate it
+          if (font.widthOfTextAtSize(word, fontSize) > maxWidth) {
+            let truncated = word;
+            while (
+              font.widthOfTextAtSize(truncated + '...', fontSize) > maxWidth &&
+              truncated.length > 1
+            ) {
+              truncated = truncated.slice(0, -1);
+            }
+            wrappedLines.push(truncated + '...');
+            currentLine = '';
+          } else {
+            currentLine = word;
+          }
+        }
+      }
+      if (currentLine) {
+        wrappedLines.push(currentLine);
+      }
+    }
+
+    // Calculate starting Y position (top of field, going down)
+    // PDF y-axis: y is at bottom, so we start at y + height and work down
+    let currentY = field.y + field.height - padding - fontSize;
+    const minY = field.y + padding; // Don't go below field boundary
+
+    for (const line of wrappedLines) {
+      if (currentY < minY) break; // Stop if we've reached the bottom
+
+      if (line.trim()) {
+        page.drawText(line, {
+          x: field.x + padding,
+          y: currentY,
+          size: fontSize,
+          font,
+          color: rgb(textColor.r, textColor.g, textColor.b),
+        });
+      }
+      currentY -= lineHeight;
+    }
+
+    return Buffer.from(await pdfDoc.save());
+  }
+
+  /**
    * Add multiple fields to PDF in a single operation
    */
   async addMultipleFields(
@@ -618,6 +760,7 @@ export class PdfService {
       checkboxFields?: CheckboxField[];
       radioFields?: RadioField[];
       dropdownFields?: DropdownField[];
+      textareaFields?: TextareaField[];
     }
   ): Promise<Buffer> {
     let currentPdfBuffer = pdfBuffer;
@@ -661,6 +804,13 @@ export class PdfService {
     if (fields.dropdownFields) {
       for (const dropdownField of fields.dropdownFields) {
         currentPdfBuffer = await this.addDropdown(currentPdfBuffer, dropdownField);
+      }
+    }
+
+    // Add textarea fields
+    if (fields.textareaFields) {
+      for (const textareaField of fields.textareaFields) {
+        currentPdfBuffer = await this.addTextarea(currentPdfBuffer, textareaField);
       }
     }
 
