@@ -422,6 +422,7 @@ export class SigningController {
             const checkboxFields: any[] = [];
             const radioFields: any[] = [];
             const dropdownFields: any[] = [];
+            const textareaFields: any[] = [];
 
             for (const row of allSignaturesResult.rows) {
               const pageNumber = parseInt(row.page);
@@ -484,6 +485,24 @@ export class SigningController {
                     },
                   });
                   logger.debug('Processing dropdown field', { fieldId: row.field_id, selectedValue: row.text_value });
+                  break;
+                }
+
+                case 'textarea': {
+                  // Textarea field - use text_value as multi-line text
+                  const properties = row.properties || {};
+                  textareaFields.push({
+                    ...baseField,
+                    text: row.text_value || '',
+                    settings: {
+                      fontSize: properties.fontSize || 12,
+                      textColor: properties.textColor || '#000000',
+                      backgroundColor: properties.backgroundColor || '#FFFFFF',
+                      borderColor: properties.borderColor || '#000000',
+                      lineHeight: 1.2,
+                    },
+                  });
+                  logger.debug('Processing textarea field', { fieldId: row.field_id, textLength: row.text_value?.length });
                   break;
                 }
 
@@ -554,6 +573,7 @@ export class SigningController {
               checkboxCount: checkboxFields.length,
               radioCount: radioFields.length,
               dropdownCount: dropdownFields.length,
+              textareaCount: textareaFields.length,
             });
 
             // Apply all fields to the PDF
@@ -566,6 +586,7 @@ export class SigningController {
                 checkboxFields: checkboxFields.length > 0 ? checkboxFields : undefined,
                 radioFields: radioFields.length > 0 ? radioFields : undefined,
                 dropdownFields: dropdownFields.length > 0 ? dropdownFields : undefined,
+                textareaFields: textareaFields.length > 0 ? textareaFields : undefined,
               }
             );
 

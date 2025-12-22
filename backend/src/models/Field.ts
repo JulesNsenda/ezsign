@@ -1,4 +1,4 @@
-export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio' | 'dropdown';
+export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio' | 'dropdown' | 'textarea';
 
 export interface RadioOption {
   label: string;
@@ -31,6 +31,10 @@ export interface FieldProperties {
 
   // Dropdown field properties
   // Note: uses 'options', 'selectedValue' (shared with radio) and 'placeholder' (shared with text)
+
+  // Textarea field properties
+  rows?: number; // Number of visible text rows (default: 3)
+  // Note: also uses 'placeholder', 'maxLength', 'fontSize', 'textColor' from text
 
   // General properties
   backgroundColor?: string;
@@ -155,6 +159,13 @@ export class Field {
    */
   isDropdown(): boolean {
     return this.type === 'dropdown';
+  }
+
+  /**
+   * Check if field is a textarea (multi-line text) field
+   */
+  isTextarea(): boolean {
+    return this.type === 'textarea';
   }
 
   /**
@@ -332,6 +343,16 @@ export class Field {
       }
     }
 
+    // Validate textarea field properties
+    if (this.isTextarea()) {
+      if (props.rows !== undefined && (props.rows < 1 || props.rows > 20)) {
+        errors.push('Textarea rows must be between 1 and 20');
+      }
+      if (props.maxLength !== undefined && (props.maxLength < 1 || props.maxLength > 10000)) {
+        errors.push('Textarea maxLength must be between 1 and 10000');
+      }
+    }
+
     return {
       valid: errors.length === 0,
       errors,
@@ -415,6 +436,19 @@ export class Field {
           borderColor: '#000000',
           borderWidth: 1,
         };
+      case 'textarea':
+        return {
+          placeholder: '',
+          rows: 3,
+          fontSize: 12,
+          fontFamily: 'Helvetica',
+          textColor: '#000000',
+          textAlign: 'left',
+          maxLength: 1000,
+          backgroundColor: '#FFFFFF',
+          borderColor: '#000000',
+          borderWidth: 1,
+        };
       default:
         return {};
     }
@@ -424,7 +458,7 @@ export class Field {
    * Validate field type
    */
   static isValidFieldType(type: string): type is FieldType {
-    return ['signature', 'initials', 'date', 'text', 'checkbox', 'radio', 'dropdown'].includes(type);
+    return ['signature', 'initials', 'date', 'text', 'checkbox', 'radio', 'dropdown', 'textarea'].includes(type);
   }
 
   /**
@@ -446,6 +480,8 @@ export class Field {
         return { width: 100, height: 50 }; // Minimum for 2 vertical options
       case 'dropdown':
         return { width: 120, height: 25 };
+      case 'textarea':
+        return { width: 150, height: 60 }; // Taller for multi-line text
       default:
         return { width: 50, height: 25 };
     }
@@ -471,6 +507,7 @@ export class Field {
       checkbox: 'Checkbox',
       radio: 'Radio Button Group',
       dropdown: 'Dropdown Select',
+      textarea: 'Multi-line Text',
     };
     return typeDescriptions[this.type] || 'Unknown Field';
   }

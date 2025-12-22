@@ -285,6 +285,94 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
           </>
         )}
 
+        {/* Textarea Field Options */}
+        {field.type === 'textarea' && (
+          <>
+            <div className="border-t border-base-300 pt-4">
+              <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
+                Placeholder Text
+              </label>
+              <input
+                type="text"
+                value={(field.properties?.placeholder as string) || ''}
+                onChange={(e) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      placeholder: e.target.value,
+                    },
+                  })
+                }
+                placeholder="Enter text here..."
+                className="input-docuseal text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
+                Visible Rows
+              </label>
+              <input
+                type="number"
+                value={(field.properties?.rows as number) || 3}
+                onChange={(e) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      rows: Number(e.target.value),
+                    },
+                  })
+                }
+                min={1}
+                max={10}
+                className="input-docuseal text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
+                Max Characters
+              </label>
+              <input
+                type="number"
+                value={(field.properties?.maxLength as number) || 1000}
+                onChange={(e) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      maxLength: Number(e.target.value),
+                    },
+                  })
+                }
+                min={10}
+                max={5000}
+                className="input-docuseal text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
+                Font Size
+              </label>
+              <input
+                type="number"
+                value={(field.properties?.fontSize as number) || 12}
+                onChange={(e) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      fontSize: Number(e.target.value),
+                    },
+                  })
+                }
+                min={8}
+                max={24}
+                className="input-docuseal text-sm"
+              />
+            </div>
+          </>
+        )}
+
         {/* Assign to Signer */}
         <div>
           <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
