@@ -52,6 +52,7 @@ export enum QueueName {
   PDF_PROCESSING = 'pdf-processing',
   WEBHOOK_DELIVERY = 'webhook-delivery',
   CLEANUP = 'cleanup',
+  SCHEDULED_SEND = 'scheduled-send',
 }
 
 /**

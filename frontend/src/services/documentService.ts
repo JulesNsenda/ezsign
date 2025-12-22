@@ -16,9 +16,23 @@ export interface ListDocumentsParams {
   page?: number;
   limit?: number;
   team_id?: string;
-  status?: 'draft' | 'pending' | 'completed' | 'cancelled';
+  status?: 'draft' | 'scheduled' | 'pending' | 'completed' | 'cancelled';
   sort_by?: 'created_at' | 'updated_at' | 'title';
   sort_order?: 'asc' | 'desc';
+}
+
+export interface ScheduleDocumentData {
+  sendAt: string;
+  timezone: string;
+}
+
+export interface ScheduleResponse {
+  message: string;
+  documentId: string;
+  status: string;
+  scheduledSendAt: string;
+  timezone: string;
+  jobId: string;
 }
 
 export interface UpdateDocumentData {
@@ -104,6 +118,39 @@ export const documentService = {
    */
   async getMetadata(id: string): Promise<any> {
     const response = await apiClient.get(`/documents/${id}/metadata`);
+    return response.data;
+  },
+
+  /**
+   * Schedule a document to be sent at a specific time
+   */
+  async schedule(id: string, data: ScheduleDocumentData): Promise<ScheduleResponse> {
+    const response = await apiClient.post<ScheduleResponse>(`/documents/${id}/schedule`, data);
+    return response.data;
+  },
+
+  /**
+   * Cancel a scheduled document send
+   */
+  async cancelSchedule(id: string): Promise<{ message: string; documentId: string; status: string }> {
+    const response = await apiClient.delete<{ message: string; documentId: string; status: string }>(
+      `/documents/${id}/schedule`
+    );
+    return response.data;
+  },
+
+  /**
+   * Get schedule status for a document
+   */
+  async getScheduleStatus(id: string): Promise<{
+    documentId: string;
+    isScheduled: boolean;
+    status: string;
+    scheduledSendAt?: string;
+    timezone?: string;
+    jobId?: string;
+  }> {
+    const response = await apiClient.get(`/documents/${id}/schedule`);
     return response.data;
   },
 };

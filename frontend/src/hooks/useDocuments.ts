@@ -1,5 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import documentService, { type CreateDocumentData, type ListDocumentsParams, type UpdateDocumentData } from '@/services/documentService';
+import documentService, {
+  type CreateDocumentData,
+  type ListDocumentsParams,
+  type UpdateDocumentData,
+  type ScheduleDocumentData,
+} from '@/services/documentService';
 
 /**
  * Custom hook for document operations using TanStack Query
@@ -75,5 +80,40 @@ export const useDownloadDocument = () => {
       window.document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     },
+  });
+};
+
+export const useScheduleDocument = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ScheduleDocumentData }) =>
+      documentService.schedule(id, data),
+    onSuccess: (_, variables) => {
+      // Invalidate specific document and list
+      queryClient.invalidateQueries({ queryKey: ['documents', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['documents'] });
+    },
+  });
+};
+
+export const useCancelSchedule = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => documentService.cancelSchedule(id),
+    onSuccess: (_, id) => {
+      // Invalidate specific document and list
+      queryClient.invalidateQueries({ queryKey: ['documents', id] });
+      queryClient.invalidateQueries({ queryKey: ['documents'] });
+    },
+  });
+};
+
+export const useScheduleStatus = (id: string) => {
+  return useQuery({
+    queryKey: ['documents', id, 'schedule'],
+    queryFn: () => documentService.getScheduleStatus(id),
+    enabled: !!id,
   });
 };
