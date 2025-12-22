@@ -4,9 +4,11 @@ import path from 'path';
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 import express, { Request, Response, NextFunction } from 'express';
+import { createServer } from 'http';
 import { Pool } from 'pg';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import { socketService } from '@/services/socketService';
 import { createAuthRouter } from '@/routes/auth';
 import { createDocumentRouter } from '@/routes/documentRoutes';
 import { createTeamsRouter } from '@/routes/teams';
@@ -178,19 +180,33 @@ app.use((req: Request, res: Response) => {
 // Error handling middleware (must be last)
 app.use(errorHandler);
 
+// Create HTTP server
+const httpServer = createServer(app);
+
+// Initialize Socket.IO
+socketService.initialize(httpServer, pool);
+
 // Start server
-const server = app.listen(PORT, () => {
+const server = httpServer.listen(PORT, () => {
   logger.info('Server started', {
     port: PORT,
     environment: NODE_ENV,
     healthCheck: `http://localhost:${PORT}/health`,
     apiDocs: `http://localhost:${PORT}/api/docs`,
+    websocket: `ws://localhost:${PORT}`,
   });
 });
 
 // Graceful shutdown handler
 const gracefulShutdown = async (signal: string) => {
   logger.info(`${signal} received: initiating graceful shutdown`);
+
+  // Close Socket.IO connections
+  const io = socketService.getIO();
+  if (io) {
+    io.close();
+    logger.info('Socket.IO server closed');
+  }
 
   server.close(async () => {
     logger.info('HTTP server closed');

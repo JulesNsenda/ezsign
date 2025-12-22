@@ -7,6 +7,7 @@ import Modal from '@/components/Modal';
 import ConfirmModal from '@/components/ConfirmModal';
 import DocumentThumbnail from '@/components/DocumentThumbnail';
 import { useDocuments, useDeleteDocument, useDownloadDocument } from '@/hooks/useDocuments';
+import { useDocumentUpdates } from '@/hooks/useDocumentUpdates';
 import { useToast } from '@/hooks/useToast';
 import type { Document } from '@/types';
 import DocumentUpload from '@/components/DocumentUpload';
@@ -35,6 +36,9 @@ export const Documents: React.FC = () => {
   const deleteMutation = useDeleteDocument();
   const downloadMutation = useDownloadDocument();
   const toast = useToast();
+
+  // Subscribe to real-time document updates
+  useDocumentUpdates();
 
   const handleDelete = async () => {
     if (!documentToDelete) return;

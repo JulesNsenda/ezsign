@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { SocketProvider } from './contexts/SocketContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
@@ -38,7 +39,8 @@ function App() {
           <BrowserRouter>
             <ToastProvider>
               <AuthProvider>
-              <Routes>
+                <SocketProvider>
+                  <Routes>
                 {/* Public routes */}
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
@@ -91,9 +93,10 @@ function App() {
                   }
                 />
 
-                {/* Redirect unknown routes to dashboard */}
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
+                  {/* Redirect unknown routes to dashboard */}
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </SocketProvider>
               </AuthProvider>
             </ToastProvider>
           </BrowserRouter>

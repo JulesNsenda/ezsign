@@ -5,6 +5,7 @@ import { DocumentService } from '@/services/documentService';
 import { LocalStorageAdapter } from '@/adapters/LocalStorageAdapter';
 import { createStorageService } from '@/services/storageService';
 import { pdfQueueService } from '@/services/pdfQueueService';
+import { socketService } from '@/services/socketService';
 import logger from '@/services/loggerService';
 import path from 'path';
 
@@ -94,6 +95,14 @@ export class DocumentController {
           error: err.message,
           correlationId: req.correlationId,
         });
+      });
+
+      // Emit WebSocket event for document creation
+      socketService.emitDocumentUpdate({
+        documentId: document.id,
+        status: 'created',
+        updatedAt: new Date().toISOString(),
+        ownerId: req.user.userId,
       });
 
       res.status(201).json({
@@ -324,6 +333,14 @@ export class DocumentController {
         return;
       }
 
+      // Emit WebSocket event for document update
+      socketService.emitDocumentUpdate({
+        documentId: document.id,
+        status: document.status,
+        updatedAt: new Date().toISOString(),
+        ownerId: req.user.userId,
+      });
+
       res.status(200).json({
         message: 'Document updated successfully',
         document: document.toPublicJSON(),
@@ -370,6 +387,14 @@ export class DocumentController {
         });
         return;
       }
+
+      // Emit WebSocket event for document deletion
+      socketService.emitDocumentUpdate({
+        documentId: id,
+        status: 'deleted',
+        updatedAt: new Date().toISOString(),
+        ownerId: req.user.userId,
+      });
 
       res.status(200).json({
         message: 'Document deleted successfully',
