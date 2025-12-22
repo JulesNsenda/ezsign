@@ -4,16 +4,15 @@ import { SigningController } from '@/controllers/signingController';
 import { authenticate } from '@/middleware/auth';
 import { EmailService, EmailConfig } from '@/services/emailService';
 import { PdfService } from '@/services/pdfService';
-import { StorageService } from '@/services/storageService';
-import { LocalStorageAdapter } from '@/adapters/LocalStorageAdapter';
+import { createStorageService } from '@/services/storageService';
+import { createStorageAdapter } from '@/config/storage';
 
 export const createSigningRouter = (pool: Pool): Router => {
   const router = Router();
 
   // Initialize services
-  const storagePath = process.env.FILE_STORAGE_PATH || './storage';
-  const storageAdapter = new LocalStorageAdapter(storagePath);
-  const storageService = new StorageService(storageAdapter);
+  const storageAdapter = createStorageAdapter();
+  const storageService = createStorageService(storageAdapter);
   const pdfService = new PdfService();
 
   const emailUser = process.env.EMAIL_SMTP_USER || '';
@@ -47,9 +46,8 @@ export const createDocumentSigningRouter = (pool: Pool): Router => {
   const router = Router();
 
   // Initialize services (same as above)
-  const storagePath = process.env.FILE_STORAGE_PATH || './storage';
-  const storageAdapter = new LocalStorageAdapter(storagePath);
-  const storageService = new StorageService(storageAdapter);
+  const storageAdapter = createStorageAdapter();
+  const storageService = createStorageService(storageAdapter);
   const pdfService = new PdfService();
 
   const emailUser = process.env.EMAIL_SMTP_USER || '';

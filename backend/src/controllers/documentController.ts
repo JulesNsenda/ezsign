@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import multer from 'multer';
 import { DocumentService } from '@/services/documentService';
-import { LocalStorageAdapter } from '@/adapters/LocalStorageAdapter';
+import { createStorageAdapter, getStorageConfig } from '@/config/storage';
 import { createStorageService } from '@/services/storageService';
 import { pdfQueueService } from '@/services/pdfQueueService';
 import { socketService } from '@/services/socketService';
@@ -31,9 +31,10 @@ export class DocumentController {
   public uploadMiddleware: multer.Multer;
 
   constructor(pool: Pool) {
-    // Initialize storage adapter
-    this.storagePath = process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
-    const storageAdapter = new LocalStorageAdapter(this.storagePath);
+    // Initialize storage adapter based on configuration
+    const storageConfig = getStorageConfig();
+    this.storagePath = storageConfig.local?.basePath || process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
+    const storageAdapter = createStorageAdapter(storageConfig);
     const storageService = createStorageService(storageAdapter);
 
     this.documentService = new DocumentService(pool, storageService);
