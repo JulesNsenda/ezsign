@@ -235,6 +235,10 @@ export const PrepareDocument: React.FC = () => {
           return { width: 20, height: 20 }; // min: 15x15
         case 'radio':
           return { width: 150, height: 80 }; // space for options
+        case 'textarea':
+          return { width: 200, height: 80 }; // min: 150x60
+        case 'dropdown':
+          return { width: 150, height: 30 }; // min: 100x25
         default:
           return { width: 150, height: 50 };
       }
@@ -924,7 +928,7 @@ export const PrepareDocument: React.FC = () => {
             setTemplateDescription('');
           }}
           title="Save as Template"
-          width="95%"
+          width="450px"
         >
           <div className="flex flex-col gap-5">
             <div>

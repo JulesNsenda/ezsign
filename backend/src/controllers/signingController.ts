@@ -434,7 +434,12 @@ export class SigningController {
             [signer.document_id]
           );
 
-          logger.debug('Found signatures to apply', { documentId: signer.document_id, count: allSignaturesResult.rows.length });
+          logger.info('Found signatures to apply', {
+            documentId: signer.document_id,
+            count: allSignaturesResult.rows.length,
+            signerIds: allSignaturesResult.rows.map(r => r.signer_id),
+            fieldIds: allSignaturesResult.rows.map(r => r.field_id),
+          });
 
           // Apply signatures to PDF
           try {
