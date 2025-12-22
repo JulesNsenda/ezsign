@@ -16,6 +16,8 @@ export interface FieldProperties {
 
   // Checkbox properties
   checked?: boolean;
+  checkColor?: string; // Color of the check mark (default: #000000)
+  style?: 'checkmark' | 'x'; // Check mark style (default: checkmark)
 
   // Date field properties
   dateFormat?: string; // e.g., 'MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD'
@@ -407,7 +409,9 @@ export class Field {
           checked: false,
           backgroundColor: '#FFFFFF',
           borderColor: '#000000',
+          checkColor: '#000000',
           borderWidth: 1,
+          style: 'checkmark', // 'checkmark' for ✓ or 'x' for X mark
         };
       case 'radio':
         return {

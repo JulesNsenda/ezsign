@@ -135,6 +135,30 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
           </label>
         </div>
 
+        {/* Checkbox Field Options */}
+        {field.type === 'checkbox' && (
+          <div className="border-t border-base-300 pt-4">
+            <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
+              Check Style
+            </label>
+            <select
+              value={(field.properties?.style as string) || 'checkmark'}
+              onChange={(e) =>
+                onUpdate({
+                  properties: {
+                    ...field.properties,
+                    style: e.target.value as 'checkmark' | 'x',
+                  },
+                })
+              }
+              className="input-docuseal text-sm"
+            >
+              <option value="checkmark">Checkmark (✓)</option>
+              <option value="x">X Mark (✗)</option>
+            </select>
+          </div>
+        )}
+
         {/* Radio Field Options */}
         {field.type === 'radio' && (
           <>

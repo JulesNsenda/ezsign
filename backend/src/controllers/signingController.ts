@@ -535,10 +535,17 @@ export class SigningController {
 
                 case 'checkbox': {
                   // Checkbox field - use text_value to determine checked state
+                  const properties = row.properties || {};
                   checkboxFields.push({
                     ...baseField,
                     checked: row.text_value === 'checked',
-                    checkColor: '#000000',
+                    options: {
+                      checkColor: properties.checkColor || '#000000',
+                      borderColor: properties.borderColor || '#000000',
+                      backgroundColor: properties.backgroundColor || '#FFFFFF',
+                      borderWidth: properties.borderWidth || 1,
+                      style: properties.style || 'checkmark',
+                    },
                   });
                   logger.debug('Processing checkbox field', { fieldId: row.field_id, checked: row.text_value === 'checked' });
                   break;
