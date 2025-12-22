@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { Template, UpdateTemplateData, TemplateData, TemplateField, TemplateFieldData } from '@/models/Template';
 import { StorageService } from '@/services/storageService';
 import { PdfService } from '@/services/pdfService';
+import logger from '@/services/loggerService';
 
 export class TemplateService {
   private pool: Pool;
@@ -332,7 +333,7 @@ export class TemplateService {
       await this.storageService.deleteFile(template.file_path);
     } catch (error) {
       // Log error but don't fail the delete operation
-      console.error('Failed to delete template file:', error);
+      logger.warn('Failed to delete template file', { error: (error as Error).message, templateId });
     }
 
     // Delete from database (cascade will delete template_fields)

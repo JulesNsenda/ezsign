@@ -1,7 +1,9 @@
 import { Job } from 'bullmq';
+import { Pool } from 'pg';
 import { createWorker, QueueName } from '@/config/queue';
 import { PdfJobData, PdfJobType } from '@/services/pdfQueueService';
 import { pdfService } from '@/services/pdfService';
+import logger from '@/services/loggerService';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -11,8 +13,11 @@ import * as path from 'path';
  */
 export class PdfWorker {
   private worker;
+  private pool: Pool | null;
 
-  constructor() {
+  constructor(pool?: Pool) {
+    this.pool = pool || null;
+
     this.worker = createWorker<PdfJobData>(
       QueueName.PDF_PROCESSING,
       this.processJob.bind(this),
@@ -29,10 +34,17 @@ export class PdfWorker {
   }
 
   /**
+   * Set database pool for database updates
+   */
+  setPool(pool: Pool): void {
+    this.pool = pool;
+  }
+
+  /**
    * Process PDF job based on type
    */
   private async processJob(job: Job<PdfJobData>): Promise<any> {
-    console.log(`Processing PDF job ${job.id} of type ${job.data.type}`);
+    logger.debug('Processing PDF job', { jobId: job.id, type: job.data.type });
 
     try {
       switch (job.data.type) {
@@ -55,7 +67,7 @@ export class PdfWorker {
           throw new Error(`Unknown job type: ${(job.data as any).type}`);
       }
     } catch (error) {
-      console.error(`PDF job ${job.id} failed:`, error);
+      logger.error('PDF job failed', { jobId: job.id, error: (error as Error).message });
       throw error;
     }
   }
@@ -65,7 +77,7 @@ export class PdfWorker {
    */
   private async generateThumbnail(
     job: Job<PdfJobData>
-  ): Promise<{ thumbnailPath: string }> {
+  ): Promise<{ thumbnailPath: string; relativePath: string }> {
     const data = job.data as Extract<PdfJobData, { type: PdfJobType.GENERATE_THUMBNAIL }>;
 
     await job.updateProgress(10);
@@ -81,19 +93,39 @@ export class PdfWorker {
     });
     await job.updateProgress(70);
 
-    // Save thumbnail
-    const thumbnailDir = path.join(path.dirname(data.filePath), 'thumbnails');
+    // Save thumbnail in a structured directory
+    // Get storage base path from environment or use default
+    const storagePath = process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
+    const thumbnailDir = path.join(storagePath, 'thumbnails');
     await fs.mkdir(thumbnailDir, { recursive: true });
 
-    const thumbnailPath = path.join(
-      thumbnailDir,
-      `${path.basename(data.filePath, '.pdf')}_thumbnail.png`
-    );
+    // Use document ID for consistent naming
+    const thumbnailFilename = `${data.documentId}.png`;
+    const thumbnailPath = path.join(thumbnailDir, thumbnailFilename);
+    const relativePath = `thumbnails/${thumbnailFilename}`;
+
     await fs.writeFile(thumbnailPath, thumbnail);
+    await job.updateProgress(90);
+
+    // Update database with thumbnail path
+    if (this.pool) {
+      try {
+        await this.pool.query(
+          `UPDATE documents
+           SET thumbnail_path = $1, thumbnail_generated_at = NOW()
+           WHERE id = $2`,
+          [relativePath, data.documentId]
+        );
+      } catch (dbError) {
+        logger.warn('Failed to update document with thumbnail path', { error: (dbError as Error).message, documentId: data.documentId });
+        // Don't throw - the thumbnail was still generated successfully
+      }
+    }
+
     await job.updateProgress(100);
 
-    console.log(`Generated thumbnail for document ${data.documentId}`);
-    return { thumbnailPath };
+    logger.debug('Generated thumbnail for document', { documentId: data.documentId });
+    return { thumbnailPath, relativePath };
   }
 
   /**
@@ -101,7 +133,7 @@ export class PdfWorker {
    */
   private async optimizePdf(
     job: Job<PdfJobData>
-  ): Promise<{ optimizedPath: string; sizeSaved: number }> {
+  ): Promise<{ optimizedPath: string; sizeSaved: number; originalSize: number; optimizedSize: number }> {
     const data = job.data as Extract<PdfJobData, { type: PdfJobType.OPTIMIZE_PDF }>;
 
     await job.updateProgress(10);
@@ -116,15 +148,33 @@ export class PdfWorker {
     const optimizedSize = optimizedBuffer.length;
     await job.updateProgress(70);
 
-    // Save optimized version
-    const optimizedPath = data.filePath.replace('.pdf', '_optimized.pdf');
-    await fs.writeFile(optimizedPath, optimizedBuffer);
+    // Replace original file with optimized version
+    await fs.writeFile(data.filePath, optimizedBuffer);
+    await job.updateProgress(85);
+
+    // Update database with optimization info
+    if (this.pool) {
+      try {
+        await this.pool.query(
+          `UPDATE documents
+           SET is_optimized = true,
+               original_file_size = $1,
+               file_size = $2,
+               optimized_at = NOW()
+           WHERE id = $3`,
+          [originalSize, optimizedSize, data.documentId]
+        );
+      } catch (dbError) {
+        logger.warn('Failed to update document with optimization info', { error: (dbError as Error).message, documentId: data.documentId });
+      }
+    }
+
     await job.updateProgress(100);
 
     const sizeSaved = originalSize - optimizedSize;
-    console.log(`Optimized document ${data.documentId}, saved ${sizeSaved} bytes`);
+    logger.debug('Optimized document', { documentId: data.documentId, sizeSaved, percentSaved: Math.round((sizeSaved / originalSize) * 100) });
 
-    return { optimizedPath, sizeSaved };
+    return { optimizedPath: data.filePath, sizeSaved, originalSize, optimizedSize };
   }
 
   /**
@@ -150,7 +200,7 @@ export class PdfWorker {
     await fs.writeFile(flattenedPath, flattenedBuffer);
     await job.updateProgress(100);
 
-    console.log(`Flattened document ${data.documentId}`);
+    logger.debug('Flattened document', { documentId: data.documentId });
     return { flattenedPath };
   }
 
@@ -181,7 +231,7 @@ export class PdfWorker {
     await fs.writeFile(watermarkedPath, watermarkedBuffer);
     await job.updateProgress(100);
 
-    console.log(`Added watermark to document ${data.documentId}`);
+    logger.debug('Added watermark to document', { documentId: data.documentId });
     return { watermarkedPath };
   }
 
@@ -209,7 +259,7 @@ export class PdfWorker {
     await fs.writeFile(data.outputPath, mergedBuffer);
     await job.updateProgress(100);
 
-    console.log(`Merged ${data.filePaths.length} PDFs into ${data.outputPath}`);
+    logger.debug('Merged PDFs', { count: data.filePaths.length, outputPath: data.outputPath });
     return { mergedPath: data.outputPath };
   }
 
@@ -218,15 +268,15 @@ export class PdfWorker {
    */
   private setupEventListeners(): void {
     this.worker.on('completed', (job: Job<PdfJobData>) => {
-      console.log(`PDF job ${job.id} completed successfully`);
+      logger.debug('PDF job completed successfully', { jobId: job.id });
     });
 
     this.worker.on('failed', (job: Job<PdfJobData> | undefined, error: Error) => {
-      console.error(`PDF job ${job?.id} failed:`, error.message);
+      logger.error('PDF job failed', { jobId: job?.id, error: error.message });
     });
 
     this.worker.on('error', (error: Error) => {
-      console.error('PDF worker error:', error);
+      logger.error('PDF worker error', { error: error.message, stack: error.stack });
     });
   }
 
@@ -238,18 +288,9 @@ export class PdfWorker {
   }
 }
 
-// Create and export worker instance
-export const pdfWorker = new PdfWorker();
-
-// Handle graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, closing PDF worker...');
-  await pdfWorker.close();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  console.log('SIGINT received, closing PDF worker...');
-  await pdfWorker.close();
-  process.exit(0);
-});
+/**
+ * Factory function to create PDF worker with database pool
+ */
+export function createPdfWorker(pool: Pool): PdfWorker {
+  return new PdfWorker(pool);
+}

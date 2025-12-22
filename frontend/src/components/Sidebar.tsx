@@ -8,7 +8,7 @@ import { Link, useLocation } from 'react-router-dom';
 interface NavItem {
   path: string;
   label: string;
-  icon: JSX.Element;
+  icon: React.ReactElement;
 }
 
 const navItems: NavItem[] = [

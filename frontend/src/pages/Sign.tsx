@@ -1,12 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import PdfViewer from '@/components/PdfViewer';
 import SignaturePad from '@/components/SignaturePad';
+import RadioFieldInput from '@/components/RadioFieldInput';
+import DropdownFieldInput from '@/components/DropdownFieldInput';
+import TextFieldInput from '@/components/TextFieldInput';
+import DateFieldInput from '@/components/DateFieldInput';
+import CheckboxFieldInput from '@/components/CheckboxFieldInput';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import { useSigningSession, useSubmitSignatures } from '@/hooks/useSignature';
+import { useToast } from '@/hooks/useToast';
 import signatureService, { type SignatureData } from '@/services/signatureService';
-import type { SignatureType } from '@/types';
+import type { SignatureType, RadioOption } from '@/types';
 
 /**
  * Signing page for signers to review and sign documents
@@ -14,6 +20,7 @@ import type { SignatureType } from '@/types';
 
 export const Sign: React.FC = () => {
   const { token } = useParams<{ token: string }>();
+  const { error: showError, warning: showWarning } = useToast();
 
   const [currentPage, setCurrentPage] = useState(0);
   const [currentFieldIndex, setCurrentFieldIndex] = useState<number>(0);
@@ -49,6 +56,42 @@ export const Sign: React.FC = () => {
       }
     }
   }, [session, currentFieldIndex, collectedSignatures]);
+
+  // Calculate all memoized values BEFORE any conditional returns (React hooks rules)
+  const fields = session?.fields || [];
+  const signatures = session?.signatures || [];
+
+  const signerFields = useMemo(() => {
+    if (!session) return [];
+    return fields.filter(
+      (field) => !field.signer_email || field.signer_email === session.signer.email
+    );
+  }, [fields, session]);
+
+  const requiredFields = useMemo(() => {
+    return signerFields.filter((field) => field.required);
+  }, [signerFields]);
+
+  const completedRequiredFields = useMemo(() => {
+    return requiredFields.filter(
+      (field) =>
+        signatures.some((sig) => sig.field_id === field.id) ||
+        collectedSignatures.some((sig) => sig.field_id === field.id)
+    );
+  }, [requiredFields, signatures, collectedSignatures]);
+
+  const incompleteRequiredFields = useMemo(() => {
+    return requiredFields.filter(
+      (field) =>
+        !signatures.some((sig) => sig.field_id === field.id) &&
+        !collectedSignatures.some((sig) => sig.field_id === field.id)
+    );
+  }, [requiredFields, signatures, collectedSignatures]);
+
+  const allRequiredComplete = incompleteRequiredFields.length === 0;
+  const requiredProgress = requiredFields.length > 0
+    ? Math.round((completedRequiredFields.length / requiredFields.length) * 100)
+    : 100;
 
   // NOW we can do conditional returns after all hooks are called
   if (isLoading) {
@@ -131,11 +174,7 @@ export const Sign: React.FC = () => {
     );
   }
 
-  // Calculate variables after all conditional returns
-  // Add defensive checks for arrays
-  const fields = session.fields || [];
-  const signatures = session.signatures || [];
-
+  // Calculate derived values (non-hook) after conditional returns
   const unsignedFields = fields.filter(
     (field) =>
       !signatures.some((sig) => sig.field_id === field.id) &&
@@ -204,14 +243,210 @@ export const Sign: React.FC = () => {
     }
   };
 
+  const handleRadioSelection = (selectedValue: string) => {
+    if (!currentField) return;
+
+    // For radio fields, we store the selected value as text_value
+    // and create a placeholder signature_data
+    const newSignature: SignatureData = {
+      field_id: currentField.id,
+      signature_type: 'typed' as SignatureType,
+      signature_data: `radio:${selectedValue}`, // Marker for radio selection
+      text_value: selectedValue,
+    };
+
+    setCollectedSignatures([...collectedSignatures, newSignature]);
+    setIsSignatureModalOpen(false);
+
+    // Auto-advance to next field if there are more
+    if (currentFieldIndex < unsignedFields.length - 1) {
+      setTimeout(() => handleNextField(), 300);
+    }
+  };
+
+  const handleDropdownSelection = (selectedValue: string) => {
+    if (!currentField) return;
+
+    // For dropdown fields, we store the selected value as text_value
+    // and create a placeholder signature_data
+    const newSignature: SignatureData = {
+      field_id: currentField.id,
+      signature_type: 'typed' as SignatureType,
+      signature_data: `dropdown:${selectedValue}`, // Marker for dropdown selection
+      text_value: selectedValue,
+    };
+
+    setCollectedSignatures([...collectedSignatures, newSignature]);
+    setIsSignatureModalOpen(false);
+
+    // Auto-advance to next field if there are more
+    if (currentFieldIndex < unsignedFields.length - 1) {
+      setTimeout(() => handleNextField(), 300);
+    }
+  };
+
+  const handleTextInput = (value: string) => {
+    if (!currentField) return;
+
+    const newSignature: SignatureData = {
+      field_id: currentField.id,
+      signature_type: 'typed' as SignatureType,
+      signature_data: `text:${value}`,
+      text_value: value,
+    };
+
+    setCollectedSignatures([...collectedSignatures, newSignature]);
+    setIsSignatureModalOpen(false);
+
+    if (currentFieldIndex < unsignedFields.length - 1) {
+      setTimeout(() => handleNextField(), 300);
+    }
+  };
+
+  const handleDateInput = (_value: string, formattedValue: string) => {
+    if (!currentField) return;
+
+    const newSignature: SignatureData = {
+      field_id: currentField.id,
+      signature_type: 'typed' as SignatureType,
+      signature_data: `date:${formattedValue}`,
+      text_value: formattedValue,
+    };
+
+    setCollectedSignatures([...collectedSignatures, newSignature]);
+    setIsSignatureModalOpen(false);
+
+    if (currentFieldIndex < unsignedFields.length - 1) {
+      setTimeout(() => handleNextField(), 300);
+    }
+  };
+
+  const handleCheckboxInput = (checked: boolean) => {
+    if (!currentField) return;
+
+    const newSignature: SignatureData = {
+      field_id: currentField.id,
+      signature_type: 'typed' as SignatureType,
+      signature_data: `checkbox:${checked ? 'true' : 'false'}`,
+      text_value: checked ? 'checked' : 'unchecked',
+    };
+
+    setCollectedSignatures([...collectedSignatures, newSignature]);
+    setIsSignatureModalOpen(false);
+
+    if (currentFieldIndex < unsignedFields.length - 1) {
+      setTimeout(() => handleNextField(), 300);
+    }
+  };
+
+  // Helper to navigate to a specific field by ID
+  const navigateToFieldById = (fieldId: string) => {
+    const fieldIndex = unsignedFields.findIndex((f) => f.id === fieldId);
+    if (fieldIndex >= 0) {
+      setCurrentFieldIndex(fieldIndex);
+      const field = unsignedFields[fieldIndex];
+      if (field) {
+        setCurrentPage(field.page);
+      }
+    }
+  };
+
   const handleSubmitAllSignatures = async () => {
-    if (!token || collectedSignatures.length === 0) return;
+    if (!token) return;
+
+    // Block submission if required fields are incomplete
+    if (!allRequiredComplete) {
+      const remainingCount = incompleteRequiredFields.length;
+      showWarning(
+        `Please complete all required fields. ${remainingCount} required field${remainingCount > 1 ? 's' : ''} remaining.`
+      );
+      // Navigate to first incomplete required field
+      if (incompleteRequiredFields.length > 0) {
+        navigateToFieldById(incompleteRequiredFields[0].id);
+      }
+      return;
+    }
+
+    if (collectedSignatures.length === 0) return;
 
     try {
       await submitSignaturesMutation.mutateAsync({ token, signatures: collectedSignatures });
       setIsCompleted(true);
-    } catch (error: any) {
-      alert(error.response?.data?.error?.message || 'Failed to submit signatures');
+    } catch (err: any) {
+      showError(err.response?.data?.error?.message || 'Failed to submit signatures');
+    }
+  };
+
+  // Render the appropriate input component based on field type
+  const renderFieldInput = () => {
+    if (!currentField) return null;
+
+    switch (currentField.type) {
+      case 'signature':
+      case 'initials':
+        return (
+          <SignaturePad
+            onSave={handleSignField}
+            onCancel={() => setIsSignatureModalOpen(false)}
+          />
+        );
+
+      case 'text':
+        return (
+          <TextFieldInput
+            onSave={handleTextInput}
+            onCancel={() => setIsSignatureModalOpen(false)}
+            placeholder="Enter text..."
+            maxLength={currentField.properties?.maxLength as number || 255}
+          />
+        );
+
+      case 'date':
+        return (
+          <DateFieldInput
+            onSave={handleDateInput}
+            onCancel={() => setIsSignatureModalOpen(false)}
+            dateFormat={currentField.properties?.dateFormat as string || 'MM/DD/YYYY'}
+          />
+        );
+
+      case 'checkbox':
+        return (
+          <CheckboxFieldInput
+            onSave={handleCheckboxInput}
+            onCancel={() => setIsSignatureModalOpen(false)}
+            label={currentField.properties?.label as string || 'I confirm this selection'}
+          />
+        );
+
+      case 'radio':
+        return (
+          <RadioFieldInput
+            options={(currentField.properties?.options as RadioOption[]) || []}
+            orientation={currentField.properties?.orientation as 'horizontal' | 'vertical' || 'vertical'}
+            onSave={handleRadioSelection}
+            onCancel={() => setIsSignatureModalOpen(false)}
+            fieldName={`radio-${currentField.id}`}
+          />
+        );
+
+      case 'dropdown':
+        return (
+          <DropdownFieldInput
+            options={(currentField.properties?.options as RadioOption[]) || []}
+            placeholder={currentField.properties?.placeholder as string || 'Select an option'}
+            onSave={handleDropdownSelection}
+            onCancel={() => setIsSignatureModalOpen(false)}
+            fieldName={`dropdown-${currentField.id}`}
+          />
+        );
+
+      default:
+        return (
+          <div className="text-center p-4">
+            <p className="text-base-content/60">Unknown field type: {currentField.type}</p>
+          </div>
+        );
     }
   };
 
@@ -315,6 +550,80 @@ export const Sign: React.FC = () => {
                         const field = fields.find((f) => f.id === sig.field_id);
                         if (!field || field.page !== currentPage) return null;
 
+                        // Get display content based on field type
+                        const renderFieldContent = () => {
+                          switch (field.type) {
+                            case 'radio': {
+                              const radioLabel = field.properties?.options
+                                ? (field.properties.options as RadioOption[]).find(
+                                    (opt) => opt.value === sig.text_value
+                                  )?.label || sig.text_value
+                                : sig.text_value;
+                              return (
+                                <div className="flex items-center gap-2 px-2">
+                                  <span className="text-blue-600 font-bold">●</span>
+                                  <span className="text-sm font-medium text-blue-800 truncate">
+                                    {radioLabel}
+                                  </span>
+                                </div>
+                              );
+                            }
+                            case 'dropdown': {
+                              const dropdownLabel = field.properties?.options
+                                ? (field.properties.options as RadioOption[]).find(
+                                    (opt) => opt.value === sig.text_value
+                                  )?.label || sig.text_value
+                                : sig.text_value;
+                              return (
+                                <div className="flex items-center gap-2 px-2">
+                                  <span className="text-cyan-600 font-bold">▼</span>
+                                  <span className="text-sm font-medium text-cyan-800 truncate">
+                                    {dropdownLabel}
+                                  </span>
+                                </div>
+                              );
+                            }
+                            case 'text':
+                              return (
+                                <div className="px-2 text-center">
+                                  <span className="text-sm font-medium text-blue-800 truncate">
+                                    {sig.text_value}
+                                  </span>
+                                </div>
+                              );
+                            case 'date':
+                              return (
+                                <div className="px-2 text-center">
+                                  <span className="text-sm font-medium text-blue-800">
+                                    {sig.text_value}
+                                  </span>
+                                </div>
+                              );
+                            case 'checkbox':
+                              return (
+                                <div className="flex items-center justify-center">
+                                  {sig.text_value === 'checked' ? (
+                                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  ) : (
+                                    <span className="text-blue-400 text-xs">—</span>
+                                  )}
+                                </div>
+                              );
+                            case 'signature':
+                            case 'initials':
+                            default:
+                              return (
+                                <img
+                                  src={sig.signature_data}
+                                  alt="Signature"
+                                  className="max-w-full max-h-full object-contain"
+                                />
+                              );
+                          }
+                        };
+
                         return (
                           <div
                             key={`collected-${idx}`}
@@ -328,11 +637,7 @@ export const Sign: React.FC = () => {
                               borderColor: 'rgba(59, 130, 246, 1)',
                             }}
                           >
-                            <img
-                              src={sig.signature_data}
-                              alt="Signature"
-                              className="max-w-full max-h-full object-contain"
-                            />
+                            {renderFieldContent()}
                           </div>
                         );
                       })}
@@ -477,7 +782,9 @@ export const Sign: React.FC = () => {
                           className={`w-full text-left p-3 rounded-lg border transition-all duration-200 ${
                             index === currentFieldIndex
                               ? 'bg-accent/10 border-accent shadow-sm'
-                              : 'bg-base-100 border-base-300 hover:bg-base-200 hover:border-base-content/20'
+                              : field.required
+                                ? 'bg-base-100 border-error/30 hover:bg-base-200 hover:border-error/50'
+                                : 'bg-base-100 border-base-300 hover:bg-base-200 hover:border-base-content/20'
                           }`}
                         >
                           <div className="flex items-center gap-2 mb-1">
@@ -486,12 +793,18 @@ export const Sign: React.FC = () => {
                             }`}>
                               {index + 1}
                             </span>
-                            <span className="text-sm font-medium text-neutral truncate">
+                            <span className="text-sm font-medium text-neutral truncate flex items-center gap-1">
                               {field.type.charAt(0).toUpperCase() + field.type.slice(1)}
+                              {field.required && (
+                                <span className="text-error text-xs font-bold">*</span>
+                              )}
                             </span>
                           </div>
                           <div className="text-xs text-base-content/50 pl-7">
                             Page {field.page + 1}
+                            {field.required && (
+                              <span className="ml-2 text-error/70">Required</span>
+                            )}
                           </div>
                         </button>
                       ))}
@@ -518,6 +831,36 @@ export const Sign: React.FC = () => {
                     <div className="text-xs text-base-content/50 mt-2 text-center">
                       {totalSigned} of {fields.length} fields signed
                     </div>
+
+                    {/* Required fields progress */}
+                    {requiredFields.length > 0 && (
+                      <div className="mt-4 pt-3 border-t border-base-300">
+                        <div className="flex justify-between items-center text-sm mb-2">
+                          <span className="text-base-content/60 font-medium flex items-center gap-1">
+                            Required
+                            <span className="text-error">*</span>
+                          </span>
+                          <span className={`font-bold ${allRequiredComplete ? 'text-success' : 'text-error'}`}>
+                            {completedRequiredFields.length} of {requiredFields.length}
+                          </span>
+                        </div>
+                        <div className="h-2 bg-base-300 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-500 rounded-full ${
+                              allRequiredComplete
+                                ? 'bg-gradient-to-r from-success to-success/80'
+                                : 'bg-gradient-to-r from-error to-error/80'
+                            }`}
+                            style={{ width: `${requiredProgress}%` }}
+                          />
+                        </div>
+                        {!allRequiredComplete && (
+                          <div className="text-xs text-error/70 mt-2 text-center">
+                            {incompleteRequiredFields.length} required field{incompleteRequiredFields.length > 1 ? 's' : ''} remaining
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </>
               )}
@@ -526,20 +869,39 @@ export const Sign: React.FC = () => {
         </div>
       </div>
 
-      {/* Signature Modal */}
+      {/* Field Input Modal */}
       <Modal
         isOpen={isSignatureModalOpen}
         onClose={() => setIsSignatureModalOpen(false)}
-        title={`Sign ${currentField?.type || 'Field'}`}
+        title={getModalTitle(currentField?.type)}
         width="500px"
       >
-        <SignaturePad
-          onSave={handleSignField}
-          onCancel={() => setIsSignatureModalOpen(false)}
-        />
+        {renderFieldInput()}
       </Modal>
     </div>
   );
+};
+
+// Helper function to get modal title based on field type
+const getModalTitle = (fieldType?: string): string => {
+  switch (fieldType) {
+    case 'signature':
+      return 'Add Your Signature';
+    case 'initials':
+      return 'Add Your Initials';
+    case 'date':
+      return 'Select Date';
+    case 'text':
+      return 'Enter Text';
+    case 'checkbox':
+      return 'Confirm Checkbox';
+    case 'radio':
+      return 'Select Option';
+    case 'dropdown':
+      return 'Select from List';
+    default:
+      return 'Complete Field';
+  }
 };
 
 export default Sign;

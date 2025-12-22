@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { TeamService } from '@/services/teamService';
 import { AuthenticatedRequest } from '@/middleware/auth';
+import logger from '@/services/loggerService';
 
 export class TeamController {
   private teamService: TeamService;
@@ -26,14 +27,22 @@ export class TeamController {
         return;
       }
 
-      const teams = await this.teamService.findByUserId(
-        authenticatedReq.user.userId
-      );
+      const userId = authenticatedReq.user.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
+
+      const teams = await this.teamService.findByUserId(userId);
 
       // Get role for each team
       const teamsWithRoles = await Promise.all(
         teams.map(async (team) => {
-          const member = await this.teamService.getMember(team.id, authenticatedReq.user!.userId);
+          const member = await this.teamService.getMember(team.id, userId);
           return {
             ...team.toJSON(),
             role: member?.role || 'member',
@@ -45,7 +54,7 @@ export class TeamController {
         teams: teamsWithRoles,
       });
     } catch (error) {
-      console.error('Get teams error:', error);
+      logger.error('Get teams error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to retrieve teams',
@@ -65,6 +74,16 @@ export class TeamController {
         res.status(401).json({
           error: 'Unauthorized',
           message: 'Authentication required',
+        });
+        return;
+      }
+
+      const userId = authenticatedReq.user.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
         });
         return;
       }
@@ -92,7 +111,7 @@ export class TeamController {
       // Create team
       const team = await this.teamService.createTeam({
         name,
-        owner_id: authenticatedReq.user.userId,
+        owner_id: userId,
       });
 
       res.status(201).json({
@@ -100,7 +119,7 @@ export class TeamController {
         team: team.toJSON(),
       });
     } catch (error) {
-      console.error('Create team error:', error);
+      logger.error('Create team error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to create team',
@@ -124,7 +143,25 @@ export class TeamController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Team ID is required',
+        });
+        return;
+      }
+
+      const userId = authenticatedReq.user.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
 
       const team = await this.teamService.findById(id);
 
@@ -139,7 +176,7 @@ export class TeamController {
       // Check if user is a member
       const isMember = await this.teamService.isMember(
         id,
-        authenticatedReq.user.userId
+        userId
       );
 
       if (!isMember && authenticatedReq.user.role !== 'admin') {
@@ -154,7 +191,7 @@ export class TeamController {
         team: team.toJSON(),
       });
     } catch (error) {
-      console.error('Get team error:', error);
+      logger.error('Get team error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to retrieve team',
@@ -178,8 +215,26 @@ export class TeamController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
       const { name } = req.body;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Team ID is required',
+        });
+        return;
+      }
+
+      const userId = authenticatedReq.user.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
 
       // Find existing team
       const existingTeam = await this.teamService.findById(id);
@@ -195,7 +250,7 @@ export class TeamController {
       // Check if user is admin/owner or system admin
       const isAdminOrOwner = await this.teamService.isAdminOrOwner(
         id,
-        authenticatedReq.user.userId
+        userId
       );
 
       if (!isAdminOrOwner && authenticatedReq.user.role !== 'admin') {
@@ -223,7 +278,7 @@ export class TeamController {
         team: updatedTeam?.toJSON(),
       });
     } catch (error) {
-      console.error('Update team error:', error);
+      logger.error('Update team error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to update team',
@@ -247,7 +302,25 @@ export class TeamController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Team ID is required',
+        });
+        return;
+      }
+
+      const userId = authenticatedReq.user.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
 
       // Find existing team
       const existingTeam = await this.teamService.findById(id);
@@ -262,7 +335,7 @@ export class TeamController {
 
       // Only owner or system admin can delete a team
       if (
-        existingTeam.owner_id !== authenticatedReq.user.userId &&
+        existingTeam.owner_id !== userId &&
         authenticatedReq.user.role !== 'admin'
       ) {
         res.status(403).json({
@@ -279,7 +352,7 @@ export class TeamController {
         message: 'Team deleted successfully',
       });
     } catch (error) {
-      console.error('Delete team error:', error);
+      logger.error('Delete team error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to delete team',
@@ -303,7 +376,25 @@ export class TeamController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Team ID is required',
+        });
+        return;
+      }
+
+      const userId = authenticatedReq.user.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
 
       // Check if team exists
       const team = await this.teamService.findById(id);
@@ -319,7 +410,7 @@ export class TeamController {
       // Check if user is a member
       const isMember = await this.teamService.isMember(
         id,
-        authenticatedReq.user.userId
+        userId
       );
 
       if (!isMember && authenticatedReq.user.role !== 'admin') {
@@ -336,7 +427,7 @@ export class TeamController {
         members: members.map((member) => member.toJSON()),
       });
     } catch (error) {
-      console.error('Get team members error:', error);
+      logger.error('Get team members error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to retrieve team members',
@@ -360,8 +451,26 @@ export class TeamController {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params.id;
       const { userId, role } = req.body;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Team ID is required',
+        });
+        return;
+      }
+
+      const currentUserId = authenticatedReq.user.userId;
+
+      if (!currentUserId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
 
       // Validate input
       if (!userId) {
@@ -395,7 +504,7 @@ export class TeamController {
       // Check if user is admin/owner
       const isAdminOrOwner = await this.teamService.isAdminOrOwner(
         id,
-        authenticatedReq.user.userId
+        currentUserId
       );
 
       if (!isAdminOrOwner && authenticatedReq.user.role !== 'admin') {
@@ -428,7 +537,7 @@ export class TeamController {
         member: member.toJSON(),
       });
     } catch (error) {
-      console.error('Add team member error:', error);
+      logger.error('Add team member error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to add team member',
@@ -452,7 +561,34 @@ export class TeamController {
         return;
       }
 
-      const { id, userId } = req.params;
+      const id = req.params.id;
+      const userId = req.params.userId;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Team ID is required',
+        });
+        return;
+      }
+
+      if (!userId) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'User ID is required',
+        });
+        return;
+      }
+
+      const currentUserId = authenticatedReq.user.userId;
+
+      if (!currentUserId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
 
       // Check if team exists
       const team = await this.teamService.findById(id);
@@ -482,10 +618,10 @@ export class TeamController {
       // - Members can remove themselves
       const isAdminOrOwner = await this.teamService.isAdminOrOwner(
         id,
-        authenticatedReq.user.userId
+        currentUserId
       );
 
-      const isSelf = authenticatedReq.user.userId === userId;
+      const isSelf = currentUserId === userId;
       const isSystemAdmin = authenticatedReq.user.role === 'admin';
 
       if (!isSystemAdmin && !isAdminOrOwner && !isSelf) {
@@ -512,7 +648,7 @@ export class TeamController {
         message: 'Team member removed successfully',
       });
     } catch (error) {
-      console.error('Remove team member error:', error);
+      logger.error('Remove team member error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to remove team member',
@@ -536,8 +672,35 @@ export class TeamController {
         return;
       }
 
-      const { id, userId } = req.params;
+      const id = req.params.id;
+      const userId = req.params.userId;
       const { role } = req.body;
+
+      if (!id) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Team ID is required',
+        });
+        return;
+      }
+
+      if (!userId) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'User ID is required',
+        });
+        return;
+      }
+
+      const currentUserId = authenticatedReq.user.userId;
+
+      if (!currentUserId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User ID is required',
+        });
+        return;
+      }
 
       // Validate input
       if (!role) {
@@ -582,7 +745,7 @@ export class TeamController {
       // Only admins/owners or system admins can update roles
       const isAdminOrOwner = await this.teamService.isAdminOrOwner(
         id,
-        authenticatedReq.user.userId
+        currentUserId
       );
 
       if (!isAdminOrOwner && authenticatedReq.user.role !== 'admin') {
@@ -614,7 +777,7 @@ export class TeamController {
         member: updatedMember?.toJSON(),
       });
     } catch (error) {
-      console.error('Update team member role error:', error);
+      logger.error('Update team member role error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to update team member role',

@@ -169,10 +169,40 @@ export class PdfQueueService {
   }
 
   /**
-   * Get job status
+   * Get job by ID
    */
-  async getJobStatus(jobId: string): Promise<Job<PdfJobData> | undefined> {
+  async getJob(jobId: string): Promise<Job<PdfJobData> | undefined> {
     return this.queue.getJob(jobId);
+  }
+
+  /**
+   * Get detailed job status
+   */
+  async getJobStatus(jobId: string): Promise<{
+    id: string;
+    status: string;
+    progress: number;
+    result?: any;
+    error?: string;
+    createdAt?: Date;
+    processedAt?: Date;
+    finishedAt?: Date;
+  } | null> {
+    const job = await this.queue.getJob(jobId);
+    if (!job) return null;
+
+    const state = await job.getState();
+
+    return {
+      id: job.id!,
+      status: state,
+      progress: typeof job.progress === 'number' ? job.progress : 0,
+      result: job.returnvalue,
+      error: job.failedReason,
+      createdAt: job.timestamp ? new Date(job.timestamp) : undefined,
+      processedAt: job.processedOn ? new Date(job.processedOn) : undefined,
+      finishedAt: job.finishedOn ? new Date(job.finishedOn) : undefined,
+    };
   }
 
   /**

@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import SignatureCanvas from 'signature_pad';
 import Button from './Button';
+import { useToast } from '@/hooks/useToast';
 
 /**
  * Signature pad component with drawn, typed, and uploaded signature options
@@ -26,6 +27,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
   const [mode, setMode] = useState<SignatureType>('drawn');
   const [typedText, setTypedText] = useState('');
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const { warning } = useToast();
 
   useEffect(() => {
     if (canvasRef.current && mode === 'drawn') {
@@ -57,13 +59,13 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
 
     if (mode === 'drawn') {
       if (signaturePadRef.current?.isEmpty()) {
-        alert('Please provide a signature');
+        warning('Please provide a signature');
         return;
       }
       signatureData = signaturePadRef.current?.toDataURL() || '';
     } else if (mode === 'typed') {
       if (!typedText.trim()) {
-        alert('Please type your name');
+        warning('Please type your name');
         return;
       }
       // Create a canvas with typed text
@@ -86,7 +88,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
       fontFamily = font;
     } else if (mode === 'uploaded') {
       if (!uploadedImage) {
-        alert('Please upload a signature image');
+        warning('Please upload a signature image');
         return;
       }
       signatureData = uploadedImage;
@@ -99,7 +101,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
     const file = e.target.files?.[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
-        alert('Please upload an image file');
+        warning('Please upload an image file');
         return;
       }
       const reader = new FileReader();

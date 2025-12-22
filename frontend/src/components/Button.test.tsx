@@ -47,11 +47,11 @@ describe('Button', () => {
   });
 
   it('should apply size styles', () => {
-    const { rerender } = render(<Button size="small">Small</Button>);
+    const { rerender } = render(<Button size="sm">Small</Button>);
     let button = screen.getByText('Small') as HTMLButtonElement;
     expect(button.style.fontSize).toBe('0.875rem');
 
-    rerender(<Button size="large">Large</Button>);
+    rerender(<Button size="lg">Large</Button>);
     button = screen.getByText('Large') as HTMLButtonElement;
     expect(button.style.fontSize).toBe('1.125rem');
   });

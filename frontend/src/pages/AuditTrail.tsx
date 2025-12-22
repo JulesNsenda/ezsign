@@ -144,7 +144,7 @@ export const AuditTrail: React.FC = () => {
             ))}
           </select>
           {eventTypeFilter && (
-            <Button size="small" variant="secondary" onClick={() => setEventTypeFilter('')}>
+            <Button size="sm" variant="secondary" onClick={() => setEventTypeFilter('')}>
               Clear Filter
             </Button>
           )}

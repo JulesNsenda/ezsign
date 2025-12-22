@@ -4,6 +4,7 @@ import axios from 'axios';
 import { Webhook, WebhookData, WebhookEvent, WebhookEventData, CreateWebhookData, UpdateWebhookData } from '@/models/Webhook';
 import { createQueue, QueueName } from '@/config/queue';
 import { WebhookJobData } from '@/workers/webhookWorker';
+import logger from '@/services/loggerService';
 
 export class WebhookService {
   private pool: Pool;
@@ -127,11 +128,11 @@ export class WebhookService {
     const activeWebhooks = webhooks.filter((w) => w.isActive() && w.listensToEvent(eventType));
 
     if (activeWebhooks.length === 0) {
-      console.log(`No active webhooks found for user ${userId} and event ${eventType}`);
+      logger.debug('No active webhooks found', { userId, eventType });
       return;
     }
 
-    console.log(`Triggering ${activeWebhooks.length} webhooks for event ${eventType}`);
+    logger.debug('Triggering webhooks', { count: activeWebhooks.length, eventType });
 
     // Create webhook event records and queue for delivery
     for (const webhook of activeWebhooks) {
@@ -151,9 +152,9 @@ export class WebhookService {
           eventId,
         } as WebhookJobData);
 
-        console.log(`✓ Queued webhook event ${eventId} for delivery`);
+        logger.debug('Queued webhook event for delivery', { eventId });
       } catch (error) {
-        console.error(`✗ Failed to queue webhook ${webhook.id} for event ${eventType}:`, error);
+        logger.error('Failed to queue webhook', { webhookId: webhook.id, eventType, error: (error as Error).message });
       }
     }
   }

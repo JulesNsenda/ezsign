@@ -4,6 +4,8 @@ import multer from 'multer';
 import { DocumentService } from '@/services/documentService';
 import { LocalStorageAdapter } from '@/adapters/LocalStorageAdapter';
 import { createStorageService } from '@/services/storageService';
+import { pdfQueueService } from '@/services/pdfQueueService';
+import logger from '@/services/loggerService';
 import path from 'path';
 
 // Configure multer for memory storage (we'll process the file before storing)
@@ -24,12 +26,13 @@ const upload = multer({
 
 export class DocumentController {
   private documentService: DocumentService;
+  private storagePath: string;
   public uploadMiddleware: multer.Multer;
 
   constructor(pool: Pool) {
     // Initialize storage adapter
-    const storagePath = process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
-    const storageAdapter = new LocalStorageAdapter(storagePath);
+    this.storagePath = process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
+    const storageAdapter = new LocalStorageAdapter(this.storagePath);
     const storageService = createStorageService(storageAdapter);
 
     this.documentService = new DocumentService(pool, storageService);
@@ -78,12 +81,27 @@ export class DocumentController {
         originalFilename: req.file.originalname,
       });
 
+      // Queue thumbnail generation (async, don't await)
+      const filePath = path.join(this.storagePath, document.file_path);
+      pdfQueueService.addThumbnailJob({
+        documentId: document.id,
+        filePath,
+        maxWidth: 200,
+        maxHeight: 300,
+      }).catch((err) => {
+        logger.warn('Failed to queue thumbnail generation', {
+          documentId: document.id,
+          error: err.message,
+          correlationId: req.correlationId,
+        });
+      });
+
       res.status(201).json({
         message: 'Document uploaded successfully',
         document: document.toPublicJSON(),
       });
     } catch (error) {
-      console.error('Document upload error:', error);
+      logger.error('Document upload error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
 
       if (error instanceof Error && error.message.includes('PDF')) {
         res.status(400).json({
@@ -183,7 +201,7 @@ export class DocumentController {
         },
       });
     } catch (error) {
-      console.error('Document list error:', error);
+      logger.error('Document list error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to retrieve documents',
@@ -229,7 +247,7 @@ export class DocumentController {
         document: document.toPublicJSON(),
       });
     } catch (error) {
-      console.error('Get document error:', error);
+      logger.error('Get document error', { error: (error as Error).message, stack: (error as Error).stack, documentId: req.params.id, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to retrieve document',
@@ -311,7 +329,7 @@ export class DocumentController {
         document: document.toPublicJSON(),
       });
     } catch (error) {
-      console.error('Update document error:', error);
+      logger.error('Update document error', { error: (error as Error).message, stack: (error as Error).stack, documentId: req.params.id, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to update document',
@@ -357,7 +375,7 @@ export class DocumentController {
         message: 'Document deleted successfully',
       });
     } catch (error) {
-      console.error('Delete document error:', error);
+      logger.error('Delete document error', { error: (error as Error).message, stack: (error as Error).stack, documentId: req.params.id, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to delete document',
@@ -440,7 +458,7 @@ export class DocumentController {
         },
       });
     } catch (error) {
-      console.error('Get document metadata error:', error);
+      logger.error('Get document metadata error', { error: (error as Error).message, stack: (error as Error).stack, documentId: req.params.id, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to retrieve document metadata',
@@ -506,7 +524,7 @@ export class DocumentController {
 
       res.send(fileBuffer);
     } catch (error) {
-      console.error('Download document error:', error);
+      logger.error('Download document error', { error: (error as Error).message, stack: (error as Error).stack, documentId: req.params.id, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to download document',
@@ -560,7 +578,7 @@ export class DocumentController {
       res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
       res.send(thumbnail);
     } catch (error) {
-      console.error('Generate thumbnail error:', error);
+      logger.error('Generate thumbnail error', { error: (error as Error).message, stack: (error as Error).stack, documentId: req.params.id, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to generate thumbnail',

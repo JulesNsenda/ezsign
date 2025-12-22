@@ -1,17 +1,20 @@
 # Development Dockerfile for EzSign Backend
-FROM node:20-alpine AS development
+# Using Debian slim for better native module compatibility (canvas)
+FROM node:20-slim AS development
 
-# Install dumb-init and build dependencies for native modules
-RUN apk add --no-cache \
+# Install dumb-init and build dependencies for native modules (canvas)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     dumb-init \
     python3 \
     make \
     g++ \
-    cairo-dev \
-    jpeg-dev \
-    pango-dev \
-    giflib-dev \
-    pixman-dev
+    pkg-config \
+    libcairo2-dev \
+    libjpeg-dev \
+    libpango1.0-dev \
+    libgif-dev \
+    libpixman-1-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

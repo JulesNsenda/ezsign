@@ -4,6 +4,7 @@ import { SignerService } from '../services/signerService.js';
 import { DocumentService } from '../services/documentService.js';
 import { EmailService } from '../services/emailService.js';
 import { CreateSignerData, UpdateSignerData } from '../models/Signer.js';
+import logger from '@/services/loggerService';
 
 export class SignerController {
   private signerService: SignerService;
@@ -416,7 +417,7 @@ export class SignerController {
         },
       });
     } catch (error) {
-      console.error('Resend signing email error:', error);
+      logger.error('Resend signing email error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({
         success: false,

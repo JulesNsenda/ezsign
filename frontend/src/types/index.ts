@@ -38,8 +38,32 @@ export interface ApiResponse<T = any> {
 
 export type DocumentStatus = 'draft' | 'pending' | 'completed' | 'cancelled';
 export type WorkflowType = 'single' | 'sequential' | 'parallel';
-export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox';
+export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio' | 'dropdown';
 export type SignatureType = 'drawn' | 'typed' | 'uploaded';
+
+export interface RadioOption {
+  label: string;
+  value: string;
+}
+
+export interface RadioFieldProperties {
+  options: RadioOption[];
+  selectedValue?: string;
+  orientation: 'horizontal' | 'vertical';
+  fontSize?: number;
+  textColor?: string;
+  optionSpacing?: number;
+}
+
+export interface DropdownFieldProperties {
+  options: RadioOption[];
+  selectedValue?: string;
+  placeholder?: string;
+  fontSize?: number;
+  textColor?: string;
+  backgroundColor?: string;
+  borderColor?: string;
+}
 
 export interface Document {
   id: string;
@@ -52,9 +76,19 @@ export interface Document {
   workflow_type: WorkflowType;
   page_count: number;
   file_size: number;
+  file_size_formatted?: string;
   mime_type: string;
   created_at: string;
   updated_at: string;
+  // Thumbnail fields
+  has_thumbnail?: boolean;
+  thumbnail_generated_at?: string;
+  // Optimization fields
+  is_optimized?: boolean;
+  original_file_size?: number;
+  optimized_at?: string;
+  optimization_savings?: number;
+  optimization_percentage?: number;
 }
 
 export interface Field {
