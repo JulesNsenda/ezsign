@@ -4,10 +4,14 @@ import Button from '@/components/Button';
 import Modal from '@/components/Modal';
 import ConfirmModal from '@/components/ConfirmModal';
 import Card from '@/components/Card';
+import TwoFactorSetup from '@/components/TwoFactorSetup';
+import BackupCodesDisplay from '@/components/BackupCodesDisplay';
 import { useAuth } from '@/hooks/useAuth';
+import { useTheme } from '@/contexts/ThemeContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/useToast';
 import apiClient from '@/api/client';
+import { twoFactorService, type TwoFactorStatus } from '@/services/twoFactorService';
 
 interface ApiKey {
   id: string;
@@ -37,10 +41,11 @@ interface Team {
  */
 export const Settings: React.FC = () => {
   const { user, logout } = useAuth();
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'apikeys' | 'webhooks' | 'teams'>(
+  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'security' | 'apikeys' | 'webhooks' | 'teams'>(
     'profile'
   );
 
@@ -59,6 +64,14 @@ export const Settings: React.FC = () => {
   const [isWebhookModalOpen, setIsWebhookModalOpen] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookEvents, setWebhookEvents] = useState<string[]>([]);
+
+  // 2FA
+  const [is2FASetupModalOpen, setIs2FASetupModalOpen] = useState(false);
+  const [is2FADisableModalOpen, setIs2FADisableModalOpen] = useState(false);
+  const [is2FABackupCodesModalOpen, setIs2FABackupCodesModalOpen] = useState(false);
+  const [disableCode, setDisableCode] = useState('');
+  const [regenerateCode, setRegenerateCode] = useState('');
+  const [newBackupCodes, setNewBackupCodes] = useState<string[]>([]);
 
   // Confirm Modal
   const [confirmModal, setConfirmModal] = useState<{
@@ -98,6 +111,38 @@ export const Settings: React.FC = () => {
       return response.data.teams || [];
     },
     enabled: activeTab === 'teams',
+  });
+
+  const { data: twoFactorStatus, refetch: refetch2FAStatus } = useQuery<TwoFactorStatus>({
+    queryKey: ['2fa-status'],
+    queryFn: () => twoFactorService.getStatus(),
+    enabled: activeTab === 'security',
+  });
+
+  const disable2FAMutation = useMutation({
+    mutationFn: (code: string) => twoFactorService.disable(code),
+    onSuccess: () => {
+      toast.success('Two-factor authentication disabled');
+      setIs2FADisableModalOpen(false);
+      setDisableCode('');
+      refetch2FAStatus();
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error?.message || 'Failed to disable 2FA');
+    },
+  });
+
+  const regenerateBackupCodesMutation = useMutation({
+    mutationFn: (code: string) => twoFactorService.regenerateBackupCodes(code),
+    onSuccess: (codes) => {
+      setNewBackupCodes(codes);
+      setRegenerateCode('');
+      refetch2FAStatus();
+      toast.success('Backup codes regenerated');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error?.message || 'Failed to regenerate backup codes');
+    },
   });
 
   const changePasswordMutation = useMutation({
@@ -224,6 +269,7 @@ export const Settings: React.FC = () => {
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: '👤' },
+    { id: 'appearance', label: 'Appearance', icon: '🎨' },
     { id: 'security', label: 'Security', icon: '🔒' },
     { id: 'apikeys', label: 'API Keys', icon: '🔑' },
     { id: 'webhooks', label: 'Webhooks', icon: '🔗' },
@@ -318,6 +364,126 @@ export const Settings: React.FC = () => {
           </div>
         )}
 
+        {/* Appearance Tab */}
+        {activeTab === 'appearance' && (
+          <div className="grid gap-6 max-w-2xl">
+            <Card title="Theme">
+              <div className="flex flex-col gap-6">
+                <div>
+                  <p className="text-sm text-base-content/60 mb-4">
+                    Choose how EzSign looks to you. Select a single theme, or sync with your system settings.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Light Theme Option */}
+                    <button
+                      onClick={() => setTheme('light')}
+                      className={`
+                        p-4 rounded-xl border-2 transition-all duration-200 text-left
+                        ${theme === 'light'
+                          ? 'border-neutral bg-neutral/5 shadow-md'
+                          : 'border-base-300 hover:border-base-content/30 hover:bg-base-200'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-lg bg-[#faf7f5] border border-gray-200 flex items-center justify-center shadow-sm">
+                          <svg className="w-5 h-5 text-amber-500" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-neutral">Light</p>
+                          <p className="text-xs text-base-content/60">Bright and clean</p>
+                        </div>
+                      </div>
+                      {theme === 'light' && (
+                        <div className="flex items-center gap-1 text-xs text-neutral font-medium">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm13.36-1.814a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
+                          </svg>
+                          Active
+                        </div>
+                      )}
+                    </button>
+
+                    {/* Dark Theme Option */}
+                    <button
+                      onClick={() => setTheme('dark')}
+                      className={`
+                        p-4 rounded-xl border-2 transition-all duration-200 text-left
+                        ${theme === 'dark'
+                          ? 'border-neutral bg-neutral/5 shadow-md'
+                          : 'border-base-300 hover:border-base-content/30 hover:bg-base-200'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-lg bg-[#1a1a1a] border border-gray-700 flex items-center justify-center shadow-sm">
+                          <svg className="w-5 h-5 text-indigo-400" fill="currentColor" viewBox="0 0 24 24">
+                            <path fillRule="evenodd" d="M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6a9 9 0 009 9 8.97 8.97 0 003.463-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.701-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-neutral">Dark</p>
+                          <p className="text-xs text-base-content/60">Easy on the eyes</p>
+                        </div>
+                      </div>
+                      {theme === 'dark' && (
+                        <div className="flex items-center gap-1 text-xs text-neutral font-medium">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm13.36-1.814a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
+                          </svg>
+                          Active
+                        </div>
+                      )}
+                    </button>
+
+                    {/* System Theme Option */}
+                    <button
+                      onClick={() => setTheme('system')}
+                      className={`
+                        p-4 rounded-xl border-2 transition-all duration-200 text-left
+                        ${theme === 'system'
+                          ? 'border-neutral bg-neutral/5 shadow-md'
+                          : 'border-base-300 hover:border-base-content/30 hover:bg-base-200'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#faf7f5] to-[#1a1a1a] border border-gray-300 flex items-center justify-center shadow-sm">
+                          <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-neutral">System</p>
+                          <p className="text-xs text-base-content/60">Match OS setting</p>
+                        </div>
+                      </div>
+                      {theme === 'system' && (
+                        <div className="flex items-center gap-1 text-xs text-neutral font-medium">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm13.36-1.814a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
+                          </svg>
+                          Active
+                        </div>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {theme === 'system' && (
+                  <div className="p-3 bg-base-200 rounded-lg text-sm text-base-content/70">
+                    <p>
+                      Currently using <span className="font-semibold text-neutral">{resolvedTheme}</span> mode based on your system preferences.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </Card>
+          </div>
+        )}
+
         {/* Security Tab */}
         {activeTab === 'security' && (
           <div className="grid gap-6 max-w-2xl">
@@ -334,16 +500,58 @@ export const Settings: React.FC = () => {
             </Card>
 
             <Card title="Two-Factor Authentication">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div>
-                  <h3 className="font-semibold text-neutral mb-1">2FA Status</h3>
-                  <p className="text-sm text-base-content/60">
-                    <span className="text-warning font-medium">Not Enabled</span> - Add an extra layer of security
-                  </p>
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-semibold text-neutral mb-1">2FA Status</h3>
+                    {twoFactorStatus?.isEnabled ? (
+                      <p className="text-sm text-base-content/60">
+                        <span className="text-success font-medium">Enabled</span> - Your account is protected with 2FA
+                        {twoFactorStatus.enabledAt && (
+                          <span className="block text-xs mt-1">
+                            Enabled on {new Date(twoFactorStatus.enabledAt).toLocaleDateString()}
+                          </span>
+                        )}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-base-content/60">
+                        <span className="text-warning font-medium">Not Enabled</span> - Add an extra layer of security
+                      </p>
+                    )}
+                  </div>
+                  {twoFactorStatus?.isEnabled ? (
+                    <Button
+                      variant="danger"
+                      onClick={() => setIs2FADisableModalOpen(true)}
+                    >
+                      Disable 2FA
+                    </Button>
+                  ) : (
+                    <Button onClick={() => setIs2FASetupModalOpen(true)}>
+                      Enable 2FA
+                    </Button>
+                  )}
                 </div>
-                <Button variant="outline" disabled>
-                  Enable 2FA (Coming Soon)
-                </Button>
+
+                {twoFactorStatus?.isEnabled && (
+                  <div className="border-t border-base-300 pt-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div>
+                        <h4 className="font-medium text-neutral mb-1">Backup Codes</h4>
+                        <p className="text-sm text-base-content/60">
+                          {twoFactorStatus.backupCodesRemaining} of 10 backup codes remaining
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIs2FABackupCodesModalOpen(true)}
+                      >
+                        Regenerate Codes
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </Card>
 
@@ -830,6 +1038,155 @@ export const Settings: React.FC = () => {
           confirmText="Delete"
           variant="danger"
         />
+
+        {/* 2FA Setup Modal */}
+        <Modal
+          isOpen={is2FASetupModalOpen}
+          onClose={() => setIs2FASetupModalOpen(false)}
+          title="Set Up Two-Factor Authentication"
+          width="500px"
+        >
+          <TwoFactorSetup
+            onComplete={() => {
+              setIs2FASetupModalOpen(false);
+              refetch2FAStatus();
+            }}
+            onCancel={() => setIs2FASetupModalOpen(false)}
+          />
+        </Modal>
+
+        {/* 2FA Disable Modal */}
+        <Modal
+          isOpen={is2FADisableModalOpen}
+          onClose={() => {
+            setIs2FADisableModalOpen(false);
+            setDisableCode('');
+          }}
+          title="Disable Two-Factor Authentication"
+        >
+          <div className="flex flex-col gap-4">
+            <div className="p-4 bg-warning/10 border border-warning/30 rounded-xl">
+              <div className="flex gap-3">
+                <svg className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div>
+                  <p className="font-semibold text-neutral mb-1">Warning</p>
+                  <p className="text-sm text-base-content/70">
+                    Disabling 2FA will make your account less secure. You'll need to enter your current 2FA code to proceed.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-neutral mb-2">
+                Verification Code
+              </label>
+              <input
+                type="text"
+                value={disableCode}
+                onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="000000"
+                className="input-docuseal text-center text-xl tracking-wider font-mono"
+                maxLength={6}
+              />
+            </div>
+            <div className="flex gap-3 justify-end pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIs2FADisableModalOpen(false);
+                  setDisableCode('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => disable2FAMutation.mutate(disableCode)}
+                loading={disable2FAMutation.isPending}
+                disabled={disableCode.length !== 6}
+              >
+                Disable 2FA
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Backup Codes Regeneration Modal */}
+        <Modal
+          isOpen={is2FABackupCodesModalOpen}
+          onClose={() => {
+            setIs2FABackupCodesModalOpen(false);
+            setRegenerateCode('');
+            setNewBackupCodes([]);
+          }}
+          title={newBackupCodes.length > 0 ? 'New Backup Codes' : 'Regenerate Backup Codes'}
+          width="500px"
+        >
+          {newBackupCodes.length > 0 ? (
+            <div className="flex flex-col gap-4">
+              <BackupCodesDisplay codes={newBackupCodes} />
+              <div className="flex justify-end">
+                <Button
+                  onClick={() => {
+                    setIs2FABackupCodesModalOpen(false);
+                    setNewBackupCodes([]);
+                  }}
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="p-4 bg-warning/10 border border-warning/30 rounded-xl">
+                <div className="flex gap-3">
+                  <svg className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div>
+                    <p className="font-semibold text-neutral mb-1">Warning</p>
+                    <p className="text-sm text-base-content/70">
+                      This will invalidate all your existing backup codes. Make sure to save the new codes.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-neutral mb-2">
+                  Enter your current 2FA code to regenerate
+                </label>
+                <input
+                  type="text"
+                  value={regenerateCode}
+                  onChange={(e) => setRegenerateCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="000000"
+                  className="input-docuseal text-center text-xl tracking-wider font-mono"
+                  maxLength={6}
+                />
+              </div>
+              <div className="flex gap-3 justify-end pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIs2FABackupCodesModalOpen(false);
+                    setRegenerateCode('');
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => regenerateBackupCodesMutation.mutate(regenerateCode)}
+                  loading={regenerateBackupCodesMutation.isPending}
+                  disabled={regenerateCode.length !== 6}
+                >
+                  Regenerate
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
       </div>
     </Layout>
   );

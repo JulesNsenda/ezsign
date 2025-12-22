@@ -3,7 +3,7 @@ import { Pool } from 'pg';
 import { AuthController } from '@/controllers/authController';
 import { EmailService, EmailConfig } from '@/services/emailService';
 import { authenticate } from '@/middleware/auth';
-import { passwordChangeLimiter } from '@/middleware/rateLimiter';
+import { passwordChangeLimiter, twoFactorLimiter } from '@/middleware/rateLimiter';
 
 export const createAuthRouter = (pool: Pool): Router => {
   const router = Router();
@@ -36,6 +36,9 @@ export const createAuthRouter = (pool: Pool): Router => {
 
   // Login
   router.post('/login', authController.login);
+
+  // Verify 2FA during login
+  router.post('/verify-2fa', twoFactorLimiter, authController.verify2fa);
 
   // Logout
   router.post('/logout', authController.logout);

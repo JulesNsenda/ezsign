@@ -7,6 +7,7 @@ import { Field } from '@/models/Field';
 import { EmailService } from '@/services/emailService';
 import { PdfService } from '@/services/pdfService';
 import { StorageService } from '@/services/storageService';
+import { socketService } from '@/services/socketService';
 import logger from '@/services/loggerService';
 
 export class SigningController {
@@ -129,6 +130,14 @@ export class SigningController {
         'UPDATE documents SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
         ['pending', documentId]
       );
+
+      // Emit WebSocket event for document status change
+      socketService.emitDocumentUpdate({
+        documentId,
+        status: 'pending',
+        updatedAt: new Date().toISOString(),
+        updatedBy: userId,
+      });
 
       // Get user info for sender name
       const userResult = await this.pool.query(
@@ -372,6 +381,30 @@ export class SigningController {
           `UPDATE signers SET status = 'signed', signed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
           [signer.id]
         );
+
+        // Get document owner for WebSocket emission
+        const ownerResult = await client.query(
+          'SELECT user_id FROM documents WHERE id = $1',
+          [signer.document_id]
+        );
+        const documentOwnerId = ownerResult.rows[0]?.user_id;
+
+        // Emit WebSocket event for signer status change
+        socketService.emitSignerUpdate({
+          documentId: signer.document_id,
+          signerId: signer.id,
+          signerEmail: signer.email,
+          status: 'signed',
+          signedAt: new Date().toISOString(),
+        });
+
+        // Also emit document update to notify owner
+        socketService.emitDocumentUpdate({
+          documentId: signer.document_id,
+          status: 'signing_progress',
+          updatedAt: new Date().toISOString(),
+          ownerId: documentOwnerId,
+        });
 
         // Check if all signers have signed (document completion)
         const allSignersResult = await client.query(
@@ -618,6 +651,14 @@ export class SigningController {
             'UPDATE documents SET status = $1, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
             ['completed', signer.document_id]
           );
+
+          // Emit WebSocket event for document completion
+          socketService.emitDocumentUpdate({
+            documentId: signer.document_id,
+            status: 'completed',
+            updatedAt: new Date().toISOString(),
+            ownerId: document.user_id,
+          });
 
           // Send completion notification to document owner
           const ownerResult = await client.query(

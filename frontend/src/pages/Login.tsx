@@ -5,6 +5,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/useAuth';
 import Button from '@/components/Button';
+import TwoFactorVerify from '@/components/TwoFactorVerify';
+import BackupCodeVerify from '@/components/BackupCodeVerify';
 
 /**
  * Login page
@@ -17,12 +19,21 @@ const loginSchema = z.object({
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
+type LoginStep = 'credentials' | 'totp' | 'backup';
+
+interface TwoFactorState {
+  twoFactorToken: string;
+  userId: string;
+}
+
 export const Login: React.FC = () => {
-  const { login } = useAuth();
+  const { login, verify2fa } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [error, setError] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loginStep, setLoginStep] = useState<LoginStep>('credentials');
+  const [twoFactorState, setTwoFactorState] = useState<TwoFactorState | null>(null);
 
   const {
     register,
@@ -32,16 +43,31 @@ export const Login: React.FC = () => {
     resolver: zodResolver(loginSchema),
   });
 
+  const redirectAfterLogin = () => {
+    const from = (location.state as any)?.from?.pathname || '/';
+    navigate(from, { replace: true });
+  };
+
   const onSubmit = async (data: LoginFormData) => {
     setError('');
     setIsSubmitting(true);
 
     try {
-      await login(data);
+      const response = await login(data);
 
-      // Redirect to the page they were trying to access, or home
-      const from = (location.state as any)?.from?.pathname || '/';
-      navigate(from, { replace: true });
+      // Check if 2FA is required
+      if (response.twoFactorRequired && response.twoFactorToken) {
+        setTwoFactorState({
+          twoFactorToken: response.twoFactorToken,
+          userId: response.userId || '',
+        });
+        setLoginStep('totp');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // No 2FA, redirect
+      redirectAfterLogin();
     } catch (err: any) {
       setError(err.response?.data?.error?.message || 'Login failed. Please try again.');
     } finally {
@@ -49,6 +75,108 @@ export const Login: React.FC = () => {
     }
   };
 
+  const handleTOTPVerify = async (code: string) => {
+    if (!twoFactorState) return;
+
+    setError('');
+    setIsSubmitting(true);
+
+    try {
+      await verify2fa({
+        twoFactorToken: twoFactorState.twoFactorToken,
+        code,
+      });
+      redirectAfterLogin();
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || 'Invalid verification code');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleBackupVerify = async (code: string) => {
+    if (!twoFactorState) return;
+
+    setError('');
+    setIsSubmitting(true);
+
+    try {
+      await verify2fa({
+        twoFactorToken: twoFactorState.twoFactorToken,
+        code,
+        isBackupCode: true,
+      });
+      redirectAfterLogin();
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || 'Invalid backup code');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleBackToLogin = () => {
+    setLoginStep('credentials');
+    setTwoFactorState(null);
+    setError('');
+  };
+
+  // Render 2FA TOTP verification step
+  if (loginStep === 'totp') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-200 via-base-200 to-base-300 px-4 py-12">
+        <div className="w-full max-w-md animate-fade-in">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-neutral to-neutral/80 text-base-100 mb-4 shadow-lg">
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+            </div>
+            <h1 className="text-4xl font-bold text-neutral mb-2">EzSign</h1>
+          </div>
+
+          <div className="bg-base-100 rounded-2xl shadow-xl border border-base-300/50 p-8">
+            <TwoFactorVerify
+              onVerify={handleTOTPVerify}
+              onCancel={handleBackToLogin}
+              onUseBackupCode={() => setLoginStep('backup')}
+              isLoading={isSubmitting}
+              error={error}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Render backup code verification step
+  if (loginStep === 'backup') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-200 via-base-200 to-base-300 px-4 py-12">
+        <div className="w-full max-w-md animate-fade-in">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-neutral to-neutral/80 text-base-100 mb-4 shadow-lg">
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+            </div>
+            <h1 className="text-4xl font-bold text-neutral mb-2">EzSign</h1>
+          </div>
+
+          <div className="bg-base-100 rounded-2xl shadow-xl border border-base-300/50 p-8">
+            <BackupCodeVerify
+              onVerify={handleBackupVerify}
+              onCancel={handleBackToLogin}
+              onUseTOTP={() => setLoginStep('totp')}
+              isLoading={isSubmitting}
+              error={error}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Default: Render credentials form
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-200 via-base-200 to-base-300 px-4 py-12">
       <div className="w-full max-w-md animate-fade-in">

@@ -27,6 +27,7 @@
     "react-rnd": "^10.5.2",
     "react-router-dom": "^7.9.3",
     "signature_pad": "^5.1.1",
+    "socket.io-client": "^4.8.1",
     "zod": "^4.1.12"
   },
   "devDependencies": {

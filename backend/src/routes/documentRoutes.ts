@@ -10,8 +10,8 @@ import { SignerService } from '@/services/signerService';
 import { DocumentService } from '@/services/documentService';
 import { PdfService } from '@/services/pdfService';
 import { EmailService, EmailConfig } from '@/services/emailService';
-import { StorageService } from '@/services/storageService';
-import { LocalStorageAdapter } from '@/adapters/LocalStorageAdapter';
+import { createStorageService } from '@/services/storageService';
+import { createStorageAdapter } from '@/config/storage';
 
 export const createDocumentRouter = (pool: Pool): Router => {
   const router = Router();
@@ -24,9 +24,8 @@ export const createDocumentRouter = (pool: Pool): Router => {
   const signerService = new SignerService(pool);
 
   // Initialize storage and email services for document and signer operations
-  const storagePath = process.env.FILE_STORAGE_PATH || './storage';
-  const storageAdapter = new LocalStorageAdapter(storagePath);
-  const storageService = new StorageService(storageAdapter);
+  const storageAdapter = createStorageAdapter();
+  const storageService = createStorageService(storageAdapter);
   const documentService = new DocumentService(pool, storageService);
 
   const emailUser = process.env.EMAIL_SMTP_USER || '';

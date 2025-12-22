@@ -2,16 +2,32 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { UserService } from '@/services/userService';
 import { EmailService } from '@/services/emailService';
+import { TwoFactorService } from '@/services/twoFactorService';
 import { tokenService } from '@/services/tokenService';
 import logger from '@/services/loggerService';
+
+// Temporary token storage for 2FA login flow (in production, use Redis)
+const twoFactorPendingLogins = new Map<string, { userId: string; email: string; role: string; expiresAt: number }>();
+
+// Clean up expired pending logins periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of twoFactorPendingLogins.entries()) {
+    if (data.expiresAt < now) {
+      twoFactorPendingLogins.delete(token);
+    }
+  }
+}, 60000); // Clean up every minute
 
 export class AuthController {
   private userService: UserService;
   private emailService: EmailService | null;
+  private twoFactorService: TwoFactorService;
 
   constructor(pool: Pool, emailService?: EmailService) {
     this.userService = new UserService(pool);
     this.emailService = emailService || null;
+    this.twoFactorService = new TwoFactorService(pool);
   }
 
   /**
@@ -240,7 +256,33 @@ export class AuthController {
         return;
       }
 
-      // Generate tokens
+      // Check if 2FA is enabled for this user
+      const twoFactorEnabled = await this.twoFactorService.isEnabled(user.id);
+
+      if (twoFactorEnabled) {
+        // Generate a temporary token for the 2FA flow
+        const crypto = await import('crypto');
+        const twoFactorToken = crypto.randomBytes(32).toString('hex');
+        const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+        // Store pending login
+        twoFactorPendingLogins.set(twoFactorToken, {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+          expiresAt,
+        });
+
+        res.status(200).json({
+          twoFactorRequired: true,
+          twoFactorToken,
+          userId: user.id,
+          message: 'Two-factor authentication required',
+        });
+        return;
+      }
+
+      // Generate tokens (no 2FA required)
       const tokens = tokenService.generateTokenPair({
         userId: user.id,
         email: user.email,
@@ -257,6 +299,104 @@ export class AuthController {
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to login',
+      });
+    }
+  };
+
+  /**
+   * Complete login with 2FA verification
+   * POST /api/auth/verify-2fa
+   */
+  verify2fa = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { twoFactorToken, code, isBackupCode } = req.body;
+
+      if (!twoFactorToken || !code) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Two-factor token and code are required',
+        });
+        return;
+      }
+
+      // Get pending login data
+      const pendingLogin = twoFactorPendingLogins.get(twoFactorToken);
+
+      if (!pendingLogin) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'Invalid or expired two-factor token. Please login again.',
+        });
+        return;
+      }
+
+      // Check if token has expired
+      if (pendingLogin.expiresAt < Date.now()) {
+        twoFactorPendingLogins.delete(twoFactorToken);
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'Two-factor token has expired. Please login again.',
+        });
+        return;
+      }
+
+      // Verify the 2FA code
+      let isValid: boolean;
+      if (isBackupCode) {
+        isValid = await this.twoFactorService.verifyBackupCode(pendingLogin.userId, code);
+      } else {
+        isValid = await this.twoFactorService.verify(pendingLogin.userId, code);
+      }
+
+      if (!isValid) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'Invalid verification code',
+        });
+        return;
+      }
+
+      // Remove the pending login
+      twoFactorPendingLogins.delete(twoFactorToken);
+
+      // Get fresh user data
+      const user = await this.userService.findById(pendingLogin.userId);
+
+      if (!user) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'User not found',
+        });
+        return;
+      }
+
+      // Generate tokens
+      const tokens = tokenService.generateTokenPair({
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+      });
+
+      res.status(200).json({
+        message: 'Login successful',
+        user: user.toJSON(),
+        ...tokens,
+      });
+    } catch (error) {
+      const errorMessage = (error as Error).message;
+
+      if (errorMessage.includes('locked')) {
+        res.status(429).json({
+          error: 'Too Many Requests',
+          message: errorMessage,
+        });
+        return;
+      }
+
+      logger.error('2FA verification error', { error: errorMessage, stack: (error as Error).stack, correlationId: req.correlationId });
+      res.status(500).json({
+        error: 'Internal Server Error',
+        message: 'Failed to verify two-factor authentication',
       });
     }
   };

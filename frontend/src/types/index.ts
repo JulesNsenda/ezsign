@@ -22,6 +22,10 @@ export interface AuthResponse {
   user: User;
   accessToken: string;
   refreshToken: string;
+  // 2FA fields
+  twoFactorRequired?: boolean;
+  twoFactorToken?: string;
+  userId?: string;
 }
 
 export interface ApiError {
