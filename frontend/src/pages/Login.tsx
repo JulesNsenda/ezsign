@@ -101,10 +101,10 @@ export const Login: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      // For backup codes, we use the same verify2fa but the backend handles it
       await verify2fa({
         twoFactorToken: twoFactorState.twoFactorToken,
         code,
+        isBackupCode: true,
       });
       redirectAfterLogin();
     } catch (err: any) {

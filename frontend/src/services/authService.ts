@@ -29,6 +29,7 @@ export interface ResetPasswordData {
 export interface TwoFactorLoginData {
   twoFactorToken: string;
   code: string;
+  isBackupCode?: boolean;
 }
 
 export const authService = {
