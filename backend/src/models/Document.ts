@@ -1,4 +1,4 @@
-export type DocumentStatus = 'draft' | 'pending' | 'completed' | 'cancelled';
+export type DocumentStatus = 'draft' | 'scheduled' | 'pending' | 'completed' | 'cancelled';
 export type WorkflowType = 'single' | 'sequential' | 'parallel';
 
 export interface DocumentData {
@@ -234,7 +234,8 @@ export class Document {
     newStatus: DocumentStatus
   ): boolean {
     const validTransitions: Record<DocumentStatus, DocumentStatus[]> = {
-      draft: ['pending'],
+      draft: ['scheduled', 'pending'],
+      scheduled: ['draft', 'pending'], // Can cancel back to draft or proceed to pending
       pending: ['completed', 'cancelled'],
       completed: [], // Completed documents cannot transition
       cancelled: [], // Cancelled documents cannot transition
@@ -254,7 +255,7 @@ export class Document {
    * Validate document status
    */
   static isValidStatus(status: string): status is DocumentStatus {
-    return ['draft', 'pending', 'completed', 'cancelled'].includes(status);
+    return ['draft', 'scheduled', 'pending', 'completed', 'cancelled'].includes(status);
   }
 
   /**

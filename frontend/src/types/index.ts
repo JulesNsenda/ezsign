@@ -40,7 +40,7 @@ export interface ApiResponse<T = any> {
   error?: ApiError;
 }
 
-export type DocumentStatus = 'draft' | 'pending' | 'completed' | 'cancelled';
+export type DocumentStatus = 'draft' | 'scheduled' | 'pending' | 'completed' | 'cancelled';
 export type WorkflowType = 'single' | 'sequential' | 'parallel';
 export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio' | 'dropdown' | 'textarea';
 export type SignatureType = 'drawn' | 'typed' | 'uploaded';
@@ -103,6 +103,9 @@ export interface Document {
   optimized_at?: string;
   optimization_savings?: number;
   optimization_percentage?: number;
+  // Scheduling fields
+  scheduled_send_at?: string;
+  scheduled_timezone?: string;
 }
 
 export interface Field {

@@ -26,6 +26,7 @@ import { correlationIdMiddleware } from '@/middleware/correlationId';
 import { createWebhookWorker } from '@/workers/webhookWorker';
 import { createPdfWorker } from '@/workers/pdfWorker';
 import { createCleanupWorker, createCleanupQueue, scheduleCleanupJobs } from '@/workers/cleanupWorker';
+import { createScheduledSendWorker } from '@/workers/scheduledSendWorker';
 import { getRedisConnection } from '@/config/queue';
 import logger from '@/services/loggerService';
 
@@ -71,6 +72,10 @@ logger.info('PDF worker initialized');
 const cleanupWorker = createCleanupWorker(pool);
 const cleanupQueue = createCleanupQueue();
 logger.info('Cleanup worker initialized');
+
+// Initialize scheduled send worker for delayed document sending
+const scheduledSendWorker = createScheduledSendWorker(pool);
+logger.info('Scheduled send worker initialized');
 
 // Schedule cleanup jobs (async, don't await - let server start)
 scheduleCleanupJobs(cleanupQueue).catch((error) => {
@@ -221,6 +226,9 @@ const gracefulShutdown = async (signal: string) => {
       await cleanupWorker.close();
       await cleanupQueue.close();
       logger.info('Cleanup worker and queue closed');
+
+      await scheduledSendWorker.close();
+      logger.info('Scheduled send worker closed');
 
       await healthRedis.quit();
       logger.info('Health Redis connection closed');
