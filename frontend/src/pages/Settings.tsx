@@ -5,6 +5,7 @@ import Modal from '@/components/Modal';
 import ConfirmModal from '@/components/ConfirmModal';
 import Card from '@/components/Card';
 import { useAuth } from '@/hooks/useAuth';
+import { useTheme } from '@/contexts/ThemeContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/useToast';
 import apiClient from '@/api/client';
@@ -37,10 +38,11 @@ interface Team {
  */
 export const Settings: React.FC = () => {
   const { user, logout } = useAuth();
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'apikeys' | 'webhooks' | 'teams'>(
+  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'security' | 'apikeys' | 'webhooks' | 'teams'>(
     'profile'
   );
 
@@ -224,6 +226,7 @@ export const Settings: React.FC = () => {
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: '👤' },
+    { id: 'appearance', label: 'Appearance', icon: '🎨' },
     { id: 'security', label: 'Security', icon: '🔒' },
     { id: 'apikeys', label: 'API Keys', icon: '🔑' },
     { id: 'webhooks', label: 'Webhooks', icon: '🔗' },
@@ -313,6 +316,126 @@ export const Settings: React.FC = () => {
                 <Button variant="danger" onClick={logout}>
                   Sign Out
                 </Button>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Appearance Tab */}
+        {activeTab === 'appearance' && (
+          <div className="grid gap-6 max-w-2xl">
+            <Card title="Theme">
+              <div className="flex flex-col gap-6">
+                <div>
+                  <p className="text-sm text-base-content/60 mb-4">
+                    Choose how EzSign looks to you. Select a single theme, or sync with your system settings.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Light Theme Option */}
+                    <button
+                      onClick={() => setTheme('light')}
+                      className={`
+                        p-4 rounded-xl border-2 transition-all duration-200 text-left
+                        ${theme === 'light'
+                          ? 'border-neutral bg-neutral/5 shadow-md'
+                          : 'border-base-300 hover:border-base-content/30 hover:bg-base-200'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-lg bg-[#faf7f5] border border-gray-200 flex items-center justify-center shadow-sm">
+                          <svg className="w-5 h-5 text-amber-500" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-neutral">Light</p>
+                          <p className="text-xs text-base-content/60">Bright and clean</p>
+                        </div>
+                      </div>
+                      {theme === 'light' && (
+                        <div className="flex items-center gap-1 text-xs text-neutral font-medium">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm13.36-1.814a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
+                          </svg>
+                          Active
+                        </div>
+                      )}
+                    </button>
+
+                    {/* Dark Theme Option */}
+                    <button
+                      onClick={() => setTheme('dark')}
+                      className={`
+                        p-4 rounded-xl border-2 transition-all duration-200 text-left
+                        ${theme === 'dark'
+                          ? 'border-neutral bg-neutral/5 shadow-md'
+                          : 'border-base-300 hover:border-base-content/30 hover:bg-base-200'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-lg bg-[#1a1a1a] border border-gray-700 flex items-center justify-center shadow-sm">
+                          <svg className="w-5 h-5 text-indigo-400" fill="currentColor" viewBox="0 0 24 24">
+                            <path fillRule="evenodd" d="M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6a9 9 0 009 9 8.97 8.97 0 003.463-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.701-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-neutral">Dark</p>
+                          <p className="text-xs text-base-content/60">Easy on the eyes</p>
+                        </div>
+                      </div>
+                      {theme === 'dark' && (
+                        <div className="flex items-center gap-1 text-xs text-neutral font-medium">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm13.36-1.814a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
+                          </svg>
+                          Active
+                        </div>
+                      )}
+                    </button>
+
+                    {/* System Theme Option */}
+                    <button
+                      onClick={() => setTheme('system')}
+                      className={`
+                        p-4 rounded-xl border-2 transition-all duration-200 text-left
+                        ${theme === 'system'
+                          ? 'border-neutral bg-neutral/5 shadow-md'
+                          : 'border-base-300 hover:border-base-content/30 hover:bg-base-200'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#faf7f5] to-[#1a1a1a] border border-gray-300 flex items-center justify-center shadow-sm">
+                          <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-neutral">System</p>
+                          <p className="text-xs text-base-content/60">Match OS setting</p>
+                        </div>
+                      </div>
+                      {theme === 'system' && (
+                        <div className="flex items-center gap-1 text-xs text-neutral font-medium">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm13.36-1.814a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
+                          </svg>
+                          Active
+                        </div>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {theme === 'system' && (
+                  <div className="p-3 bg-base-200 rounded-lg text-sm text-base-content/70">
+                    <p>
+                      Currently using <span className="font-semibold text-neutral">{resolvedTheme}</span> mode based on your system preferences.
+                    </p>
+                  </div>
+                )}
               </div>
             </Card>
           </div>

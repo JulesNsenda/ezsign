@@ -35,7 +35,7 @@ export class ApiKeyController {
         apiKeys: apiKeys.map((key) => key.toJSON()),
       });
     } catch (error) {
-      console.error('Get API keys error:', error);
+      logger.error('Get API keys error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to retrieve API keys',
@@ -109,7 +109,7 @@ export class ApiKeyController {
           'This is the only time the full API key will be displayed. Please store it securely.',
       });
     } catch (error) {
-      console.error('Create API key error:', error);
+      logger.error('Create API key error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to create API key',
@@ -166,7 +166,7 @@ export class ApiKeyController {
         apiKey: apiKey.toJSON(),
       });
     } catch (error) {
-      console.error('Get API key error:', error);
+      logger.error('Get API key error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to retrieve API key',
@@ -251,7 +251,7 @@ export class ApiKeyController {
         apiKey: updatedKey?.toJSON(),
       });
     } catch (error) {
-      console.error('Update API key error:', error);
+      logger.error('Update API key error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to update API key',
