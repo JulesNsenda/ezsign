@@ -4,6 +4,7 @@ import Layout from '@/components/Layout';
 import Button from '@/components/Button';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
+import { useDocumentUpdates } from '@/hooks/useDocumentUpdates';
 import apiClient from '@/api/client';
 import type { Document } from '@/types';
 
@@ -21,6 +22,9 @@ interface DashboardStats {
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { isAuthenticated, isLoading } = useAuth();
+
+  // Subscribe to real-time document updates
+  useDocumentUpdates();
 
   const { data: stats } = useQuery<DashboardStats>({
     queryKey: ['dashboard-stats'],

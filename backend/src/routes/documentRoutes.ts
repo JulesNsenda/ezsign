@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { DocumentController } from '@/controllers/documentController';
 import { FieldController } from '@/controllers/fieldController';
 import { SignerController } from '@/controllers/signerController';
+import { ScheduleController } from '@/controllers/scheduleController';
 import { authenticate } from '@/middleware/auth';
 import { createDocumentAccessMiddleware } from '@/middleware/documentAccess';
 import { FieldService } from '@/services/fieldService';
@@ -10,8 +11,9 @@ import { SignerService } from '@/services/signerService';
 import { DocumentService } from '@/services/documentService';
 import { PdfService } from '@/services/pdfService';
 import { EmailService, EmailConfig } from '@/services/emailService';
-import { StorageService } from '@/services/storageService';
-import { LocalStorageAdapter } from '@/adapters/LocalStorageAdapter';
+import { createStorageService } from '@/services/storageService';
+import { createStorageAdapter } from '@/config/storage';
+import { createScheduledSendService } from '@/services/scheduledSendService';
 
 export const createDocumentRouter = (pool: Pool): Router => {
   const router = Router();
@@ -24,9 +26,8 @@ export const createDocumentRouter = (pool: Pool): Router => {
   const signerService = new SignerService(pool);
 
   // Initialize storage and email services for document and signer operations
-  const storagePath = process.env.FILE_STORAGE_PATH || './storage';
-  const storageAdapter = new LocalStorageAdapter(storagePath);
-  const storageService = new StorageService(storageAdapter);
+  const storageAdapter = createStorageAdapter();
+  const storageService = createStorageService(storageAdapter);
   const documentService = new DocumentService(pool, storageService);
 
   const emailUser = process.env.EMAIL_SMTP_USER || '';
@@ -48,6 +49,10 @@ export const createDocumentRouter = (pool: Pool): Router => {
 
   const fieldController = new FieldController(fieldService, signerService);
   const signerController = new SignerController(signerService, pool, documentService, emailService);
+
+  // Initialize scheduled send service and controller
+  const scheduledSendService = createScheduledSendService(pool);
+  const scheduleController = new ScheduleController(pool, scheduledSendService, signerService);
 
   // All document routes require authentication
   router.use(authenticate);
@@ -86,6 +91,11 @@ export const createDocumentRouter = (pool: Pool): Router => {
   router.get('/:id/fields/:fieldId', checkDocumentAccess, fieldController.getField);
   router.put('/:id/fields/:fieldId', checkDocumentAccess, fieldController.updateField);
   router.delete('/:id/fields/:fieldId', checkDocumentAccess, fieldController.deleteField);
+
+  // Schedule management routes
+  router.post('/:id/schedule', checkDocumentAccess, scheduleController.scheduleDocument);
+  router.delete('/:id/schedule', checkDocumentAccess, scheduleController.cancelScheduledSend);
+  router.get('/:id/schedule', checkDocumentAccess, scheduleController.getScheduleStatus);
 
   // Signer management routes
   router.get('/:id/signers/validate', checkDocumentAccess, signerController.validateSigners);

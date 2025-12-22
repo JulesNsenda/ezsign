@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+/* Light Theme (default) */
 @theme {
   --color-primary: #e4e0e1;
   --color-secondary: #ef9fbc;
@@ -23,6 +24,29 @@
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+}
+
+/* Dark Theme */
+[data-theme="dark"] {
+  --color-primary: #3d3a3b;
+  --color-secondary: #9f4f6c;
+  --color-accent: #c9942f;
+  --color-neutral: #e8e4e5;
+  --color-base-100: #1a1a1a;
+  --color-base-200: #242424;
+  --color-base-300: #2d2d2d;
+  --color-base-content: #e8e4e5;
+  --color-success: #10b981;
+  --color-error: #ef4444;
+  --color-warning: #f59e0b;
+  --color-info: #3b82f6;
+
+  /* Dark mode shadows (subtle glow effect) */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.3);
 }
 
 /* Professional custom styles */
@@ -151,4 +175,13 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: #d1ccc9;
+}
+
+/* Dark mode scrollbar */
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #3d3d3d;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #4d4d4d;
 }

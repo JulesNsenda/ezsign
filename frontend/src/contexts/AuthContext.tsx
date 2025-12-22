@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, type ReactNode } from 'react';
-import type { User } from '@/types';
-import authService, { type LoginData, type RegisterData } from '@/services/authService';
+import type { User, AuthResponse } from '@/types';
+import authService, { type LoginData, type RegisterData, type TwoFactorLoginData } from '@/services/authService';
 
 /**
  * Authentication context
@@ -11,7 +11,8 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (data: LoginData) => Promise<void>;
+  login: (data: LoginData) => Promise<AuthResponse>;
+  verify2fa: (data: TwoFactorLoginData) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -51,9 +52,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   /**
    * Login user
+   * Returns the response so caller can check if 2FA is required
    */
-  const login = async (data: LoginData): Promise<void> => {
+  const login = async (data: LoginData): Promise<AuthResponse> => {
     const response = await authService.login(data);
+    // Only set user if 2FA is not required
+    if (!response.twoFactorRequired && response.user) {
+      setUser(response.user);
+    }
+    return response;
+  };
+
+  /**
+   * Complete 2FA verification
+   */
+  const verify2fa = async (data: TwoFactorLoginData): Promise<void> => {
+    const response = await authService.verify2fa(data);
     setUser(response.user);
   };
 
@@ -88,6 +102,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isAuthenticated: !!user,
     isLoading,
     login,
+    verify2fa,
     register,
     logout,
     refreshUser,

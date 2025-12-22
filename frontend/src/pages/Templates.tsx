@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
+import ConfirmModal from '@/components/ConfirmModal';
 import {
   useTemplates,
   useDeleteTemplate,
@@ -286,27 +287,16 @@ export const Templates: React.FC = () => {
         </Modal>
 
         {/* Delete Confirmation Modal */}
-        <Modal
+        <ConfirmModal
           isOpen={!!templateToDelete}
           onClose={() => setTemplateToDelete(null)}
+          onConfirm={handleDelete}
           title="Delete Template"
-        >
-          <p className="text-base-content/80 mb-6">
-            Are you sure you want to delete this template? This action cannot be undone.
-          </p>
-          <div className="flex gap-3 justify-end">
-            <Button variant="outline" onClick={() => setTemplateToDelete(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              onClick={handleDelete}
-              loading={deleteMutation.isPending}
-            >
-              Delete
-            </Button>
-          </div>
-        </Modal>
+          message="Are you sure you want to delete this template? This action cannot be undone."
+          confirmText="Delete"
+          variant="danger"
+          isLoading={deleteMutation.isPending}
+        />
       </div>
     </Layout>
   );

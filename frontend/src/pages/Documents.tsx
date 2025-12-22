@@ -4,8 +4,10 @@ import Layout from '@/components/Layout';
 import Table, { type TableColumn } from '@/components/Table';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
+import ConfirmModal from '@/components/ConfirmModal';
 import DocumentThumbnail from '@/components/DocumentThumbnail';
 import { useDocuments, useDeleteDocument, useDownloadDocument } from '@/hooks/useDocuments';
+import { useDocumentUpdates } from '@/hooks/useDocumentUpdates';
 import { useToast } from '@/hooks/useToast';
 import type { Document } from '@/types';
 import DocumentUpload from '@/components/DocumentUpload';
@@ -28,12 +30,15 @@ export const Documents: React.FC = () => {
     limit: 10,
     sort_by: 'created_at',
     sort_order: 'desc',
-    status: statusFilter ? (statusFilter as 'draft' | 'pending' | 'completed' | 'cancelled') : undefined,
+    status: statusFilter ? (statusFilter as 'draft' | 'scheduled' | 'pending' | 'completed' | 'cancelled') : undefined,
   });
 
   const deleteMutation = useDeleteDocument();
   const downloadMutation = useDownloadDocument();
   const toast = useToast();
+
+  // Subscribe to real-time document updates
+  useDocumentUpdates();
 
   const handleDelete = async () => {
     if (!documentToDelete) return;
@@ -57,18 +62,31 @@ export const Documents: React.FC = () => {
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, scheduledAt?: string) => {
     const styles: Record<string, string> = {
       draft: 'bg-base-300 text-base-content',
+      scheduled: 'bg-primary/20 text-primary',
       pending: 'bg-secondary/20 text-secondary',
       completed: 'bg-success/20 text-success',
       cancelled: 'bg-error/20 text-error',
     };
 
     return (
-      <span className={`px-3 py-1 rounded-full text-xs font-medium ${styles[status] || styles.draft}`}>
-        {status.toUpperCase()}
-      </span>
+      <div className="flex flex-col gap-1">
+        <span className={`px-3 py-1 rounded-full text-xs font-medium ${styles[status] || styles.draft}`}>
+          {status.toUpperCase()}
+        </span>
+        {status === 'scheduled' && scheduledAt && (
+          <span className="text-xs text-base-content/60">
+            {new Date(scheduledAt).toLocaleString(undefined, {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
+        )}
+      </div>
     );
   };
 
@@ -99,7 +117,7 @@ export const Documents: React.FC = () => {
     {
       key: 'status',
       label: 'Status',
-      render: (value) => getStatusBadge(value),
+      render: (value, row) => getStatusBadge(value, row.scheduled_send_at),
     },
     {
       key: 'page_count',
@@ -122,6 +140,15 @@ export const Documents: React.FC = () => {
               onClick={() => navigate(`/documents/${row.id}/prepare`)}
             >
               Prepare
+            </Button>
+          )}
+          {row.status === 'scheduled' && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => navigate(`/documents/${row.id}/prepare`)}
+            >
+              Manage
             </Button>
           )}
           <Button
@@ -198,6 +225,7 @@ export const Documents: React.FC = () => {
             >
               <option value="">All Statuses</option>
               <option value="draft">Draft</option>
+              <option value="scheduled">Scheduled</option>
               <option value="pending">Pending</option>
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
@@ -255,27 +283,16 @@ export const Documents: React.FC = () => {
         </Modal>
 
         {/* Delete Confirmation Modal */}
-        <Modal
+        <ConfirmModal
           isOpen={!!documentToDelete}
           onClose={() => setDocumentToDelete(null)}
+          onConfirm={handleDelete}
           title="Delete Document"
-        >
-          <p className="text-base-content/80 mb-6">
-            Are you sure you want to delete this document? This action cannot be undone.
-          </p>
-          <div className="flex gap-3 justify-end">
-            <Button variant="outline" onClick={() => setDocumentToDelete(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              onClick={handleDelete}
-              loading={deleteMutation.isPending}
-            >
-              Delete
-            </Button>
-          </div>
-        </Modal>
+          message="Are you sure you want to delete this document? This action cannot be undone."
+          confirmText="Delete"
+          variant="danger"
+          isLoading={deleteMutation.isPending}
+        />
 
         {/* Document Detail View Modal */}
         <Modal
@@ -309,8 +326,32 @@ export const Documents: React.FC = () => {
                 <div className="text-sm font-semibold text-base-content/60 mb-1">
                   Status
                 </div>
-                <div>{getStatusBadge(selectedDocument.status)}</div>
+                <div>{getStatusBadge(selectedDocument.status, selectedDocument.scheduled_send_at)}</div>
               </div>
+
+              {selectedDocument.status === 'scheduled' && selectedDocument.scheduled_send_at && (
+                <div className="p-3 bg-primary/10 border border-primary/20 rounded-lg">
+                  <div className="flex gap-2">
+                    <svg className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div>
+                      <div className="text-sm font-medium text-primary">Scheduled to send</div>
+                      <div className="text-sm text-base-content/70">
+                        {new Date(selectedDocument.scheduled_send_at).toLocaleString(undefined, {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                        {selectedDocument.scheduled_timezone && ` (${selectedDocument.scheduled_timezone})`}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -377,6 +418,18 @@ export const Documents: React.FC = () => {
                     fullWidth
                   >
                     Prepare Document
+                  </Button>
+                )}
+                {selectedDocument.status === 'scheduled' && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setSelectedDocument(null);
+                      navigate(`/documents/${selectedDocument.id}/prepare`);
+                    }}
+                    fullWidth
+                  >
+                    Manage Schedule
                   </Button>
                 )}
                 <Button

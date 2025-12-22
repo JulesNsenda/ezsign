@@ -22,6 +22,10 @@ export interface AuthResponse {
   user: User;
   accessToken: string;
   refreshToken: string;
+  // 2FA fields
+  twoFactorRequired?: boolean;
+  twoFactorToken?: string;
+  userId?: string;
 }
 
 export interface ApiError {
@@ -36,9 +40,9 @@ export interface ApiResponse<T = any> {
   error?: ApiError;
 }
 
-export type DocumentStatus = 'draft' | 'pending' | 'completed' | 'cancelled';
+export type DocumentStatus = 'draft' | 'scheduled' | 'pending' | 'completed' | 'cancelled';
 export type WorkflowType = 'single' | 'sequential' | 'parallel';
-export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio' | 'dropdown';
+export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio' | 'dropdown' | 'textarea';
 export type SignatureType = 'drawn' | 'typed' | 'uploaded';
 
 export interface RadioOption {
@@ -59,6 +63,16 @@ export interface DropdownFieldProperties {
   options: RadioOption[];
   selectedValue?: string;
   placeholder?: string;
+  fontSize?: number;
+  textColor?: string;
+  backgroundColor?: string;
+  borderColor?: string;
+}
+
+export interface TextareaFieldProperties {
+  placeholder?: string;
+  rows?: number;
+  maxLength?: number;
   fontSize?: number;
   textColor?: string;
   backgroundColor?: string;
@@ -89,6 +103,9 @@ export interface Document {
   optimized_at?: string;
   optimization_savings?: number;
   optimization_percentage?: number;
+  // Scheduling fields
+  scheduled_send_at?: string;
+  scheduled_timezone?: string;
 }
 
 export interface Field {

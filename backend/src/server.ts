@@ -4,9 +4,11 @@ import path from 'path';
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 import express, { Request, Response, NextFunction } from 'express';
+import { createServer } from 'http';
 import { Pool } from 'pg';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import { socketService } from '@/services/socketService';
 import { createAuthRouter } from '@/routes/auth';
 import { createDocumentRouter } from '@/routes/documentRoutes';
 import { createTeamsRouter } from '@/routes/teams';
@@ -16,6 +18,7 @@ import { createSigningRouter, createDocumentSigningRouter } from '@/routes/signi
 import { createWebhookRouter } from '@/routes/webhooks';
 import { createPdfRouter } from '@/routes/pdfRoutes';
 import { createHealthRoutes } from '@/routes/health';
+import { createTwoFactorRouter } from '@/routes/twoFactor';
 import { HealthService } from '@/services/healthService';
 import { errorHandler } from '@/middleware/errorHandler';
 import { apiLimiter } from '@/middleware/rateLimiter';
@@ -23,6 +26,7 @@ import { correlationIdMiddleware } from '@/middleware/correlationId';
 import { createWebhookWorker } from '@/workers/webhookWorker';
 import { createPdfWorker } from '@/workers/pdfWorker';
 import { createCleanupWorker, createCleanupQueue, scheduleCleanupJobs } from '@/workers/cleanupWorker';
+import { createScheduledSendWorker } from '@/workers/scheduledSendWorker';
 import { getRedisConnection } from '@/config/queue';
 import logger from '@/services/loggerService';
 
@@ -68,6 +72,10 @@ logger.info('PDF worker initialized');
 const cleanupWorker = createCleanupWorker(pool);
 const cleanupQueue = createCleanupQueue();
 logger.info('Cleanup worker initialized');
+
+// Initialize scheduled send worker for delayed document sending
+const scheduledSendWorker = createScheduledSendWorker(pool);
+logger.info('Scheduled send worker initialized');
 
 // Schedule cleanup jobs (async, don't await - let server start)
 scheduleCleanupJobs(cleanupQueue).catch((error) => {
@@ -138,6 +146,7 @@ app.use('/health', createHealthRoutes(healthService));
 
 // API routes
 app.use('/api/auth', createAuthRouter(pool));
+app.use('/api/auth/2fa', createTwoFactorRouter(pool)); // Two-factor authentication
 app.use('/api/documents', createDocumentRouter(pool));
 app.use('/api/documents', createDocumentSigningRouter(pool)); // Signing operations on documents
 app.use('/api/teams', createTeamsRouter(pool));
@@ -176,19 +185,33 @@ app.use((req: Request, res: Response) => {
 // Error handling middleware (must be last)
 app.use(errorHandler);
 
+// Create HTTP server
+const httpServer = createServer(app);
+
+// Initialize Socket.IO
+socketService.initialize(httpServer, pool);
+
 // Start server
-const server = app.listen(PORT, () => {
+const server = httpServer.listen(PORT, () => {
   logger.info('Server started', {
     port: PORT,
     environment: NODE_ENV,
     healthCheck: `http://localhost:${PORT}/health`,
     apiDocs: `http://localhost:${PORT}/api/docs`,
+    websocket: `ws://localhost:${PORT}`,
   });
 });
 
 // Graceful shutdown handler
 const gracefulShutdown = async (signal: string) => {
   logger.info(`${signal} received: initiating graceful shutdown`);
+
+  // Close Socket.IO connections
+  const io = socketService.getIO();
+  if (io) {
+    io.close();
+    logger.info('Socket.IO server closed');
+  }
 
   server.close(async () => {
     logger.info('HTTP server closed');
@@ -203,6 +226,9 @@ const gracefulShutdown = async (signal: string) => {
       await cleanupWorker.close();
       await cleanupQueue.close();
       logger.info('Cleanup worker and queue closed');
+
+      await scheduledSendWorker.close();
+      logger.info('Scheduled send worker closed');
 
       await healthRedis.quit();
       logger.info('Health Redis connection closed');

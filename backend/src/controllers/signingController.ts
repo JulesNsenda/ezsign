@@ -7,6 +7,7 @@ import { Field } from '@/models/Field';
 import { EmailService } from '@/services/emailService';
 import { PdfService } from '@/services/pdfService';
 import { StorageService } from '@/services/storageService';
+import { socketService } from '@/services/socketService';
 import logger from '@/services/loggerService';
 
 export class SigningController {
@@ -129,6 +130,14 @@ export class SigningController {
         'UPDATE documents SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
         ['pending', documentId]
       );
+
+      // Emit WebSocket event for document status change
+      socketService.emitDocumentUpdate({
+        documentId,
+        status: 'pending',
+        updatedAt: new Date().toISOString(),
+        updatedBy: userId,
+      });
 
       // Get user info for sender name
       const userResult = await this.pool.query(
@@ -373,6 +382,30 @@ export class SigningController {
           [signer.id]
         );
 
+        // Get document owner for WebSocket emission
+        const ownerResult = await client.query(
+          'SELECT user_id FROM documents WHERE id = $1',
+          [signer.document_id]
+        );
+        const documentOwnerId = ownerResult.rows[0]?.user_id;
+
+        // Emit WebSocket event for signer status change
+        socketService.emitSignerUpdate({
+          documentId: signer.document_id,
+          signerId: signer.id,
+          signerEmail: signer.email,
+          status: 'signed',
+          signedAt: new Date().toISOString(),
+        });
+
+        // Also emit document update to notify owner
+        socketService.emitDocumentUpdate({
+          documentId: signer.document_id,
+          status: 'signing_progress',
+          updatedAt: new Date().toISOString(),
+          ownerId: documentOwnerId,
+        });
+
         // Check if all signers have signed (document completion)
         const allSignersResult = await client.query(
           'SELECT * FROM signers WHERE document_id = $1',
@@ -401,7 +434,12 @@ export class SigningController {
             [signer.document_id]
           );
 
-          logger.debug('Found signatures to apply', { documentId: signer.document_id, count: allSignaturesResult.rows.length });
+          logger.info('Found signatures to apply', {
+            documentId: signer.document_id,
+            count: allSignaturesResult.rows.length,
+            signerIds: allSignaturesResult.rows.map(r => r.signer_id),
+            fieldIds: allSignaturesResult.rows.map(r => r.field_id),
+          });
 
           // Apply signatures to PDF
           try {
@@ -422,6 +460,7 @@ export class SigningController {
             const checkboxFields: any[] = [];
             const radioFields: any[] = [];
             const dropdownFields: any[] = [];
+            const textareaFields: any[] = [];
 
             for (const row of allSignaturesResult.rows) {
               const pageNumber = parseInt(row.page);
@@ -487,6 +526,24 @@ export class SigningController {
                   break;
                 }
 
+                case 'textarea': {
+                  // Textarea field - use text_value as multi-line text
+                  const properties = row.properties || {};
+                  textareaFields.push({
+                    ...baseField,
+                    text: row.text_value || '',
+                    settings: {
+                      fontSize: properties.fontSize || 12,
+                      textColor: properties.textColor || '#000000',
+                      backgroundColor: properties.backgroundColor || '#FFFFFF',
+                      borderColor: properties.borderColor || '#000000',
+                      lineHeight: 1.2,
+                    },
+                  });
+                  logger.debug('Processing textarea field', { fieldId: row.field_id, textLength: row.text_value?.length });
+                  break;
+                }
+
                 case 'text': {
                   // Text field - use text_value
                   const properties = row.properties || {};
@@ -516,10 +573,17 @@ export class SigningController {
 
                 case 'checkbox': {
                   // Checkbox field - use text_value to determine checked state
+                  const properties = row.properties || {};
                   checkboxFields.push({
                     ...baseField,
                     checked: row.text_value === 'checked',
-                    checkColor: '#000000',
+                    options: {
+                      checkColor: properties.checkColor || '#000000',
+                      borderColor: properties.borderColor || '#000000',
+                      backgroundColor: properties.backgroundColor || '#FFFFFF',
+                      borderWidth: properties.borderWidth || 1,
+                      style: properties.style || 'checkmark',
+                    },
                   });
                   logger.debug('Processing checkbox field', { fieldId: row.field_id, checked: row.text_value === 'checked' });
                   break;
@@ -554,6 +618,7 @@ export class SigningController {
               checkboxCount: checkboxFields.length,
               radioCount: radioFields.length,
               dropdownCount: dropdownFields.length,
+              textareaCount: textareaFields.length,
             });
 
             // Apply all fields to the PDF
@@ -566,6 +631,7 @@ export class SigningController {
                 checkboxFields: checkboxFields.length > 0 ? checkboxFields : undefined,
                 radioFields: radioFields.length > 0 ? radioFields : undefined,
                 dropdownFields: dropdownFields.length > 0 ? dropdownFields : undefined,
+                textareaFields: textareaFields.length > 0 ? textareaFields : undefined,
               }
             );
 
@@ -590,6 +656,14 @@ export class SigningController {
             'UPDATE documents SET status = $1, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
             ['completed', signer.document_id]
           );
+
+          // Emit WebSocket event for document completion
+          socketService.emitDocumentUpdate({
+            documentId: signer.document_id,
+            status: 'completed',
+            updatedAt: new Date().toISOString(),
+            ownerId: document.user_id,
+          });
 
           // Send completion notification to document owner
           const ownerResult = await client.query(

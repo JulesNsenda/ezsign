@@ -62,6 +62,19 @@ export const passwordChangeLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for 2FA verification attempts
+ * 5 attempts per 5 minutes per IP
+ */
+export const twoFactorLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 5,
+  message: 'Too many verification attempts, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // Don't count successful verifications
+});
+
+/**
  * Create a custom rate limiter with specific options
  */
 export const createRateLimiter = (options: Partial<Options>) => {

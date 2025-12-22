@@ -3,17 +3,16 @@ import { Pool } from 'pg';
 import { TemplateController } from '@/controllers/templateController';
 import { authenticate } from '@/middleware/auth';
 import { TemplateService } from '@/services/templateService';
-import { StorageService } from '@/services/storageService';
-import { LocalStorageAdapter } from '@/adapters/LocalStorageAdapter';
+import { createStorageService } from '@/services/storageService';
+import { createStorageAdapter } from '@/config/storage';
 import { PdfService } from '@/services/pdfService';
 
 export const createTemplateRouter = (pool: Pool): Router => {
   const router = Router();
 
   // Initialize services
-  const storagePath = process.env.FILE_STORAGE_PATH || './storage';
-  const storageAdapter = new LocalStorageAdapter(storagePath);
-  const storageService = new StorageService(storageAdapter);
+  const storageAdapter = createStorageAdapter();
+  const storageService = createStorageService(storageAdapter);
   const pdfService = new PdfService();
   const templateService = new TemplateService(pool, storageService, pdfService);
   const templateController = new TemplateController(templateService);

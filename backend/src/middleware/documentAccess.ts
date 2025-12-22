@@ -1,10 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { DocumentService } from '@/services/documentService';
-import { LocalStorageAdapter } from '@/adapters/LocalStorageAdapter';
+import { createStorageAdapter } from '@/config/storage';
 import { createStorageService } from '@/services/storageService';
 import logger from '@/services/loggerService';
-import path from 'path';
 
 /**
  * Middleware to check if user can access a document
@@ -12,8 +11,7 @@ import path from 'path';
  */
 export const createDocumentAccessMiddleware = (pool: Pool) => {
   // Initialize services
-  const storagePath = process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
-  const storageAdapter = new LocalStorageAdapter(storagePath);
+  const storageAdapter = createStorageAdapter();
   const storageService = createStorageService(storageAdapter);
   const documentService = new DocumentService(pool, storageService);
 

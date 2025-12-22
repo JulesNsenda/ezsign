@@ -1,10 +1,21 @@
 <!doctype html>
-<html lang="en" data-theme="ezsign">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EzSign - Document Signing Platform</title>
+    <!-- Theme flash prevention - must run before any CSS -->
+    <script>
+      (function() {
+        const stored = localStorage.getItem('ezsign-theme');
+        let theme = stored || 'system';
+        if (theme === 'system') {
+          theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -2,8 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { pdfQueueService } from '@/services/pdfQueueService';
 import { DocumentService } from '@/services/documentService';
-import { StorageService } from '@/services/storageService';
-import { LocalStorageAdapter } from '@/adapters/LocalStorageAdapter';
+import { StorageService, createStorageService } from '@/services/storageService';
+import { createStorageAdapter, getStorageConfig } from '@/config/storage';
 import path from 'path';
 
 /**
@@ -18,9 +18,11 @@ export class PdfController {
 
   constructor(pool: Pool) {
     this.pool = pool;
-    this.storagePath = process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
-    const storageAdapter = new LocalStorageAdapter(this.storagePath);
-    this.storageService = new StorageService(storageAdapter);
+    const storageConfig = getStorageConfig();
+    // For local storage, use the configured path; for S3, use temp directory for local processing
+    this.storagePath = storageConfig.local?.basePath || process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
+    const storageAdapter = createStorageAdapter(storageConfig);
+    this.storageService = createStorageService(storageAdapter);
     this.documentService = new DocumentService(pool, this.storageService);
   }
 

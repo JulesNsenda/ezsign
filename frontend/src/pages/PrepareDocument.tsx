@@ -10,11 +10,13 @@ import DroppablePdfContainer from '@/components/DroppablePdfContainer';
 import FieldProperties from '@/components/FieldProperties';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
-import { useDocument } from '@/hooks/useDocuments';
+import ConfirmModal from '@/components/ConfirmModal';
+import { useDocument, useScheduleDocument, useCancelSchedule } from '@/hooks/useDocuments';
 import { useFields, useCreateField, useUpdateField, useDeleteField } from '@/hooks/useFields';
 import { useSigners, useCreateSigner, useDeleteSigner, useSendDocument } from '@/hooks/useSigners';
 import { useCreateTemplate } from '@/hooks/useTemplates';
 import { useToast } from '@/hooks/useToast';
+import ScheduleSendModal from '@/components/ScheduleSendModal';
 import type { Field, FieldType, Signer } from '@/types';
 
 /**
@@ -38,7 +40,21 @@ export const PrepareDocument: React.FC = () => {
   const [templateName, setTemplateName] = useState('');
   const [templateDescription, setTemplateDescription] = useState('');
   const [zoom, setZoom] = useState(1);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isLoading?: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    isLoading: false,
+  });
   const [showMobileFieldPalette, setShowMobileFieldPalette] = useState(false);
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
   // Standard PDF page width in points (A4 = 595, Letter = 612)
@@ -56,6 +72,8 @@ export const PrepareDocument: React.FC = () => {
   const deleteSignerMutation = useDeleteSigner();
   const sendDocumentMutation = useSendDocument();
   const createTemplateMutation = useCreateTemplate();
+  const scheduleDocumentMutation = useScheduleDocument();
+  const cancelScheduleMutation = useCancelSchedule();
 
   // Configure drag sensors to allow clicks before drag activation
   const sensors = useSensors(
@@ -217,6 +235,10 @@ export const PrepareDocument: React.FC = () => {
           return { width: 20, height: 20 }; // min: 15x15
         case 'radio':
           return { width: 150, height: 80 }; // space for options
+        case 'textarea':
+          return { width: 200, height: 80 }; // min: 150x60
+        case 'dropdown':
+          return { width: 150, height: 30 }; // min: 100x25
         default:
           return { width: 150, height: 50 };
       }
@@ -274,8 +296,9 @@ export const PrepareDocument: React.FC = () => {
     }
   };
 
-  const handleDeleteField = useCallback(async (fieldId: string) => {
+  const executeDeleteField = useCallback(async (fieldId: string) => {
     if (!id) return;
+    setConfirmModal(prev => ({ ...prev, isLoading: true }));
     try {
       await deleteFieldMutation.mutateAsync({ documentId: id, fieldId });
       refetchFields();
@@ -284,8 +307,20 @@ export const PrepareDocument: React.FC = () => {
     } catch (error: any) {
       const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to delete field';
       toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to delete field');
+    } finally {
+      setConfirmModal(prev => ({ ...prev, isOpen: false, isLoading: false }));
     }
   }, [id, deleteFieldMutation, refetchFields, toast]);
+
+  const handleDeleteField = useCallback((fieldId: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Field',
+      message: 'Are you sure you want to delete this field?',
+      onConfirm: () => executeDeleteField(fieldId),
+      isLoading: false,
+    });
+  }, [executeDeleteField]);
 
   // Stable callback for selecting a field
   const handleSelectField = useCallback((fieldId: string) => {
@@ -374,8 +409,9 @@ export const PrepareDocument: React.FC = () => {
     }
   };
 
-  const handleDeleteSigner = async (signerId: string) => {
+  const executeDeleteSigner = async (signerId: string) => {
     if (!id) return;
+    setConfirmModal(prev => ({ ...prev, isLoading: true }));
     try {
       await deleteSignerMutation.mutateAsync({ documentId: id, signerId });
       refetchSigners();
@@ -383,7 +419,19 @@ export const PrepareDocument: React.FC = () => {
     } catch (error: any) {
       const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to remove signer';
       toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to remove signer');
+    } finally {
+      setConfirmModal(prev => ({ ...prev, isOpen: false, isLoading: false }));
     }
+  };
+
+  const handleDeleteSigner = (signerId: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Remove Signer',
+      message: 'Are you sure you want to remove this signer? Any fields assigned to them will become unassigned.',
+      onConfirm: () => executeDeleteSigner(signerId),
+      isLoading: false,
+    });
   };
 
   const handleSaveAsTemplate = async () => {
@@ -441,6 +489,53 @@ export const PrepareDocument: React.FC = () => {
     }
   };
 
+  const handleScheduleDocument = async (sendAt: string, timezone: string) => {
+    if (!id) return;
+    if (fields.length === 0) {
+      throw new Error('Please add at least one field');
+    }
+    if (signers.length === 0) {
+      throw new Error('Please add at least one signer');
+    }
+
+    // Check if all fields are assigned to signers
+    const unassignedFields = fields.filter(f => !f.signer_email);
+    if (unassignedFields.length > 0) {
+      throw new Error(`${unassignedFields.length} field(s) are not assigned to a signer. Please assign all fields before scheduling.`);
+    }
+
+    await scheduleDocumentMutation.mutateAsync({
+      id,
+      data: { sendAt, timezone },
+    });
+    toast.success('Document scheduled for sending');
+    navigate('/documents');
+  };
+
+  const handleCancelSchedule = async () => {
+    if (!id) return;
+    setConfirmModal(prev => ({ ...prev, isLoading: true }));
+    try {
+      await cancelScheduleMutation.mutateAsync(id);
+      toast.success('Scheduled send cancelled');
+      setConfirmModal(prev => ({ ...prev, isOpen: false, isLoading: false }));
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to cancel schedule';
+      toast.error(typeof errorMessage === 'string' ? errorMessage : 'Failed to cancel schedule');
+      setConfirmModal(prev => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const confirmCancelSchedule = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Cancel Scheduled Send',
+      message: 'Are you sure you want to cancel the scheduled send? The document will return to draft status.',
+      onConfirm: handleCancelSchedule,
+      isLoading: false,
+    });
+  };
+
   // Backend uses 0-indexed pages, frontend uses 1-indexed (must be before early return)
   const currentPageFields = useMemo(() =>
     fields.filter((f) => f.page === currentPage - 1),
@@ -483,27 +578,70 @@ export const PrepareDocument: React.FC = () => {
                   onClick={() => navigate('/documents')}
                   className="flex-1 sm:flex-none"
                 >
-                  Cancel
+                  {doc.status === 'scheduled' ? 'Back' : 'Cancel'}
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsTemplateModalOpen(true)}
-                  disabled={fields.length === 0}
-                  className="flex-1 sm:flex-none hidden sm:inline-flex"
-                >
-                  Save Template
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleSendDocument}
-                  loading={sendDocumentMutation.isPending}
-                  disabled={fields.length === 0 || signers.length === 0}
-                  className="flex-1 sm:flex-none"
-                >
-                  Send for Signing
-                </Button>
+                {doc.status === 'draft' && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsTemplateModalOpen(true)}
+                      disabled={fields.length === 0}
+                      className="flex-1 sm:flex-none hidden sm:inline-flex"
+                    >
+                      Save Template
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setIsScheduleModalOpen(true)}
+                      className="flex-1 sm:flex-none"
+                      icon={
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      }
+                    >
+                      Schedule
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleSendDocument}
+                      loading={sendDocumentMutation.isPending}
+                      disabled={fields.length === 0 || signers.length === 0}
+                      className="flex-1 sm:flex-none"
+                    >
+                      Send Now
+                    </Button>
+                  </>
+                )}
+                {doc.status === 'scheduled' && (
+                  <>
+                    <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-sm">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>
+                        Scheduled: {doc.scheduled_send_at && new Date(doc.scheduled_send_at).toLocaleString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={confirmCancelSchedule}
+                      loading={cancelScheduleMutation.isPending}
+                      className="flex-1 sm:flex-none"
+                    >
+                      Cancel Schedule
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -790,7 +928,7 @@ export const PrepareDocument: React.FC = () => {
             setTemplateDescription('');
           }}
           title="Save as Template"
-          width="95%"
+          width="450px"
         >
           <div className="flex flex-col gap-5">
             <div>
@@ -931,6 +1069,26 @@ export const PrepareDocument: React.FC = () => {
             </div>
           </div>
         </Modal>
+
+        {/* Confirm Modal for destructive actions */}
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          onConfirm={confirmModal.onConfirm}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          confirmText={confirmModal.title.includes('Cancel') ? 'Cancel Schedule' : 'Delete'}
+          variant="danger"
+          isLoading={confirmModal.isLoading}
+        />
+
+        {/* Schedule Send Modal */}
+        <ScheduleSendModal
+          isOpen={isScheduleModalOpen}
+          onClose={() => setIsScheduleModalOpen(false)}
+          onSchedule={handleScheduleDocument}
+          documentTitle={doc.title}
+        />
       </div>
     </Layout>
   );

@@ -8,6 +8,7 @@ import FieldPalette from '@/components/FieldPalette';
 import DraggableField from '@/components/DraggableField';
 import FieldProperties from '@/components/FieldProperties';
 import Button from '@/components/Button';
+import ConfirmModal from '@/components/ConfirmModal';
 import { useTemplate, useUpdateTemplate } from '@/hooks/useTemplates';
 import { useFields, useCreateField, useUpdateField, useDeleteField } from '@/hooks/useFields';
 import { useToast } from '@/hooks/useToast';
@@ -31,6 +32,19 @@ export const TemplateEditor: React.FC = () => {
   const [templateName, setTemplateName] = useState('');
   const [templateDescription, setTemplateDescription] = useState('');
   const [isEditingInfo, setIsEditingInfo] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isLoading?: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    isLoading: false,
+  });
 
   const { data: template } = useTemplate(id!);
   const { data: fields = [], refetch: refetchFields } = useFields(id!);
@@ -110,8 +124,9 @@ export const TemplateEditor: React.FC = () => {
     await handleUpdateFieldProperty(fieldId, { width, height });
   };
 
-  const handleDeleteField = async (fieldId: string) => {
+  const executeDeleteField = async (fieldId: string) => {
     if (!id) return;
+    setConfirmModal(prev => ({ ...prev, isLoading: true }));
     try {
       await deleteFieldMutation.mutateAsync({ documentId: id, fieldId });
       refetchFields();
@@ -120,7 +135,19 @@ export const TemplateEditor: React.FC = () => {
       toast.success('Field deleted');
     } catch (error: any) {
       toast.error(error.response?.data?.error?.message || 'Failed to delete field');
+    } finally {
+      setConfirmModal(prev => ({ ...prev, isOpen: false, isLoading: false }));
     }
+  };
+
+  const handleDeleteField = (fieldId: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Field',
+      message: 'Are you sure you want to delete this field?',
+      onConfirm: () => executeDeleteField(fieldId),
+      isLoading: false,
+    });
   };
 
   const handleUpdateTemplateInfo = async () => {
@@ -347,6 +374,18 @@ export const TemplateEditor: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Confirm Modal for destructive actions */}
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          onConfirm={confirmModal.onConfirm}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          confirmText="Delete"
+          variant="danger"
+          isLoading={confirmModal.isLoading}
+        />
       </div>
     </Layout>
   );
