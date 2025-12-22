@@ -4,11 +4,14 @@ import Button from '@/components/Button';
 import Modal from '@/components/Modal';
 import ConfirmModal from '@/components/ConfirmModal';
 import Card from '@/components/Card';
+import TwoFactorSetup from '@/components/TwoFactorSetup';
+import BackupCodesDisplay from '@/components/BackupCodesDisplay';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/useToast';
 import apiClient from '@/api/client';
+import { twoFactorService, type TwoFactorStatus } from '@/services/twoFactorService';
 
 interface ApiKey {
   id: string;
@@ -62,6 +65,14 @@ export const Settings: React.FC = () => {
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookEvents, setWebhookEvents] = useState<string[]>([]);
 
+  // 2FA
+  const [is2FASetupModalOpen, setIs2FASetupModalOpen] = useState(false);
+  const [is2FADisableModalOpen, setIs2FADisableModalOpen] = useState(false);
+  const [is2FABackupCodesModalOpen, setIs2FABackupCodesModalOpen] = useState(false);
+  const [disableCode, setDisableCode] = useState('');
+  const [regenerateCode, setRegenerateCode] = useState('');
+  const [newBackupCodes, setNewBackupCodes] = useState<string[]>([]);
+
   // Confirm Modal
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -100,6 +111,38 @@ export const Settings: React.FC = () => {
       return response.data.teams || [];
     },
     enabled: activeTab === 'teams',
+  });
+
+  const { data: twoFactorStatus, refetch: refetch2FAStatus } = useQuery<TwoFactorStatus>({
+    queryKey: ['2fa-status'],
+    queryFn: () => twoFactorService.getStatus(),
+    enabled: activeTab === 'security',
+  });
+
+  const disable2FAMutation = useMutation({
+    mutationFn: (code: string) => twoFactorService.disable(code),
+    onSuccess: () => {
+      toast.success('Two-factor authentication disabled');
+      setIs2FADisableModalOpen(false);
+      setDisableCode('');
+      refetch2FAStatus();
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error?.message || 'Failed to disable 2FA');
+    },
+  });
+
+  const regenerateBackupCodesMutation = useMutation({
+    mutationFn: (code: string) => twoFactorService.regenerateBackupCodes(code),
+    onSuccess: (codes) => {
+      setNewBackupCodes(codes);
+      setRegenerateCode('');
+      refetch2FAStatus();
+      toast.success('Backup codes regenerated');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error?.message || 'Failed to regenerate backup codes');
+    },
   });
 
   const changePasswordMutation = useMutation({
@@ -457,16 +500,58 @@ export const Settings: React.FC = () => {
             </Card>
 
             <Card title="Two-Factor Authentication">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div>
-                  <h3 className="font-semibold text-neutral mb-1">2FA Status</h3>
-                  <p className="text-sm text-base-content/60">
-                    <span className="text-warning font-medium">Not Enabled</span> - Add an extra layer of security
-                  </p>
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-semibold text-neutral mb-1">2FA Status</h3>
+                    {twoFactorStatus?.isEnabled ? (
+                      <p className="text-sm text-base-content/60">
+                        <span className="text-success font-medium">Enabled</span> - Your account is protected with 2FA
+                        {twoFactorStatus.enabledAt && (
+                          <span className="block text-xs mt-1">
+                            Enabled on {new Date(twoFactorStatus.enabledAt).toLocaleDateString()}
+                          </span>
+                        )}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-base-content/60">
+                        <span className="text-warning font-medium">Not Enabled</span> - Add an extra layer of security
+                      </p>
+                    )}
+                  </div>
+                  {twoFactorStatus?.isEnabled ? (
+                    <Button
+                      variant="danger"
+                      onClick={() => setIs2FADisableModalOpen(true)}
+                    >
+                      Disable 2FA
+                    </Button>
+                  ) : (
+                    <Button onClick={() => setIs2FASetupModalOpen(true)}>
+                      Enable 2FA
+                    </Button>
+                  )}
                 </div>
-                <Button variant="outline" disabled>
-                  Enable 2FA (Coming Soon)
-                </Button>
+
+                {twoFactorStatus?.isEnabled && (
+                  <div className="border-t border-base-300 pt-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div>
+                        <h4 className="font-medium text-neutral mb-1">Backup Codes</h4>
+                        <p className="text-sm text-base-content/60">
+                          {twoFactorStatus.backupCodesRemaining} of 10 backup codes remaining
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIs2FABackupCodesModalOpen(true)}
+                      >
+                        Regenerate Codes
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </Card>
 
@@ -953,6 +1038,155 @@ export const Settings: React.FC = () => {
           confirmText="Delete"
           variant="danger"
         />
+
+        {/* 2FA Setup Modal */}
+        <Modal
+          isOpen={is2FASetupModalOpen}
+          onClose={() => setIs2FASetupModalOpen(false)}
+          title="Set Up Two-Factor Authentication"
+          width="500px"
+        >
+          <TwoFactorSetup
+            onComplete={() => {
+              setIs2FASetupModalOpen(false);
+              refetch2FAStatus();
+            }}
+            onCancel={() => setIs2FASetupModalOpen(false)}
+          />
+        </Modal>
+
+        {/* 2FA Disable Modal */}
+        <Modal
+          isOpen={is2FADisableModalOpen}
+          onClose={() => {
+            setIs2FADisableModalOpen(false);
+            setDisableCode('');
+          }}
+          title="Disable Two-Factor Authentication"
+        >
+          <div className="flex flex-col gap-4">
+            <div className="p-4 bg-warning/10 border border-warning/30 rounded-xl">
+              <div className="flex gap-3">
+                <svg className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div>
+                  <p className="font-semibold text-neutral mb-1">Warning</p>
+                  <p className="text-sm text-base-content/70">
+                    Disabling 2FA will make your account less secure. You'll need to enter your current 2FA code to proceed.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-neutral mb-2">
+                Verification Code
+              </label>
+              <input
+                type="text"
+                value={disableCode}
+                onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="000000"
+                className="input-docuseal text-center text-xl tracking-wider font-mono"
+                maxLength={6}
+              />
+            </div>
+            <div className="flex gap-3 justify-end pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIs2FADisableModalOpen(false);
+                  setDisableCode('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => disable2FAMutation.mutate(disableCode)}
+                loading={disable2FAMutation.isPending}
+                disabled={disableCode.length !== 6}
+              >
+                Disable 2FA
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Backup Codes Regeneration Modal */}
+        <Modal
+          isOpen={is2FABackupCodesModalOpen}
+          onClose={() => {
+            setIs2FABackupCodesModalOpen(false);
+            setRegenerateCode('');
+            setNewBackupCodes([]);
+          }}
+          title={newBackupCodes.length > 0 ? 'New Backup Codes' : 'Regenerate Backup Codes'}
+          width="500px"
+        >
+          {newBackupCodes.length > 0 ? (
+            <div className="flex flex-col gap-4">
+              <BackupCodesDisplay codes={newBackupCodes} />
+              <div className="flex justify-end">
+                <Button
+                  onClick={() => {
+                    setIs2FABackupCodesModalOpen(false);
+                    setNewBackupCodes([]);
+                  }}
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="p-4 bg-warning/10 border border-warning/30 rounded-xl">
+                <div className="flex gap-3">
+                  <svg className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div>
+                    <p className="font-semibold text-neutral mb-1">Warning</p>
+                    <p className="text-sm text-base-content/70">
+                      This will invalidate all your existing backup codes. Make sure to save the new codes.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-neutral mb-2">
+                  Enter your current 2FA code to regenerate
+                </label>
+                <input
+                  type="text"
+                  value={regenerateCode}
+                  onChange={(e) => setRegenerateCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="000000"
+                  className="input-docuseal text-center text-xl tracking-wider font-mono"
+                  maxLength={6}
+                />
+              </div>
+              <div className="flex gap-3 justify-end pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIs2FABackupCodesModalOpen(false);
+                    setRegenerateCode('');
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => regenerateBackupCodesMutation.mutate(regenerateCode)}
+                  loading={regenerateBackupCodesMutation.isPending}
+                  disabled={regenerateCode.length !== 6}
+                >
+                  Regenerate
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
       </div>
     </Layout>
   );

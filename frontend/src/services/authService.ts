@@ -26,6 +26,11 @@ export interface ResetPasswordData {
   password: string;
 }
 
+export interface TwoFactorLoginData {
+  twoFactorToken: string;
+  code: string;
+}
+
 export const authService = {
   /**
    * Register a new user
@@ -47,12 +52,33 @@ export const authService = {
 
   /**
    * Login user
+   * Returns the response - if twoFactorRequired is true, caller must handle 2FA flow
    */
   async login(data: LoginData): Promise<AuthResponse> {
     const response = await apiClient.post<AuthResponse>('/auth/login', data);
+    const { accessToken, refreshToken, twoFactorRequired } = response.data;
+
+    // Only store tokens if 2FA is not required
+    if (!twoFactorRequired) {
+      if (accessToken) {
+        localStorage.setItem('access_token', accessToken);
+      }
+      if (refreshToken) {
+        localStorage.setItem('refresh_token', refreshToken);
+      }
+    }
+
+    return response.data;
+  },
+
+  /**
+   * Complete login with 2FA verification
+   */
+  async verify2fa(data: TwoFactorLoginData): Promise<AuthResponse> {
+    const response = await apiClient.post<AuthResponse>('/auth/verify-2fa', data);
     const { accessToken, refreshToken } = response.data;
 
-    // Store tokens in localStorage
+    // Store tokens after successful 2FA
     if (accessToken) {
       localStorage.setItem('access_token', accessToken);
     }

@@ -16,6 +16,7 @@ import { createSigningRouter, createDocumentSigningRouter } from '@/routes/signi
 import { createWebhookRouter } from '@/routes/webhooks';
 import { createPdfRouter } from '@/routes/pdfRoutes';
 import { createHealthRoutes } from '@/routes/health';
+import { createTwoFactorRouter } from '@/routes/twoFactor';
 import { HealthService } from '@/services/healthService';
 import { errorHandler } from '@/middleware/errorHandler';
 import { apiLimiter } from '@/middleware/rateLimiter';
@@ -138,6 +139,7 @@ app.use('/health', createHealthRoutes(healthService));
 
 // API routes
 app.use('/api/auth', createAuthRouter(pool));
+app.use('/api/auth/2fa', createTwoFactorRouter(pool)); // Two-factor authentication
 app.use('/api/documents', createDocumentRouter(pool));
 app.use('/api/documents', createDocumentSigningRouter(pool)); // Signing operations on documents
 app.use('/api/teams', createTeamsRouter(pool));
