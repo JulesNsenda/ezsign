@@ -4,6 +4,7 @@ import Layout from '@/components/Layout';
 import Table, { type TableColumn } from '@/components/Table';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
+import ConfirmModal from '@/components/ConfirmModal';
 import DocumentThumbnail from '@/components/DocumentThumbnail';
 import { useDocuments, useDeleteDocument, useDownloadDocument } from '@/hooks/useDocuments';
 import { useToast } from '@/hooks/useToast';
@@ -255,27 +256,16 @@ export const Documents: React.FC = () => {
         </Modal>
 
         {/* Delete Confirmation Modal */}
-        <Modal
+        <ConfirmModal
           isOpen={!!documentToDelete}
           onClose={() => setDocumentToDelete(null)}
+          onConfirm={handleDelete}
           title="Delete Document"
-        >
-          <p className="text-base-content/80 mb-6">
-            Are you sure you want to delete this document? This action cannot be undone.
-          </p>
-          <div className="flex gap-3 justify-end">
-            <Button variant="outline" onClick={() => setDocumentToDelete(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              onClick={handleDelete}
-              loading={deleteMutation.isPending}
-            >
-              Delete
-            </Button>
-          </div>
-        </Modal>
+          message="Are you sure you want to delete this document? This action cannot be undone."
+          confirmText="Delete"
+          variant="danger"
+          isLoading={deleteMutation.isPending}
+        />
 
         {/* Document Detail View Modal */}
         <Modal
