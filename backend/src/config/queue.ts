@@ -42,6 +42,9 @@ export const defaultWorkerOptions: Omit<WorkerOptions, 'connection'> = {
     max: 10,
     duration: 1000,
   },
+  // Allow workers to complete current jobs during graceful shutdown
+  // drainDelay waits for this many ms before considering the worker drained
+  drainDelay: 5000,
 };
 
 /**

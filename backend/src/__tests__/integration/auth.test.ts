@@ -3,6 +3,32 @@ import { AuthController } from '@/controllers/authController';
 import { tokenService } from '@/services/tokenService';
 import { User } from '@/models/User';
 
+// Mock tokenBlacklistService to avoid Redis connections in tests
+jest.mock('@/services/tokenBlacklistService', () => ({
+  tokenBlacklistService: {
+    blacklistToken: jest.fn().mockResolvedValue(undefined),
+    isBlacklisted: jest.fn().mockResolvedValue(false),
+    blacklistAllUserTokens: jest.fn().mockResolvedValue(undefined),
+    isUserSessionRevoked: jest.fn().mockResolvedValue(false),
+    close: jest.fn().mockResolvedValue(undefined),
+  },
+}));
+
+// Mock TwoFactorService to avoid database calls
+jest.mock('@/services/twoFactorService', () => {
+  return {
+    TwoFactorService: jest.fn().mockImplementation(() => {
+      return {
+        isEnabled: jest.fn().mockResolvedValue(false),
+        getStatus: jest.fn().mockResolvedValue({ enabled: false }),
+        setup: jest.fn(),
+        verify: jest.fn().mockResolvedValue(true),
+        verifyBackupCode: jest.fn().mockResolvedValue(true),
+      };
+    }),
+  };
+});
+
 /**
  * Integration tests for authentication flow
  * These tests verify the complete authentication workflow
@@ -26,6 +52,15 @@ describe('Authentication Integration Tests', () => {
 
   beforeEach(() => {
     authController = new AuthController(pool);
+
+    // Mock the twoFactorService instance to avoid database calls
+    (authController as any).twoFactorService = {
+      isEnabled: jest.fn().mockResolvedValue(false),
+      getStatus: jest.fn().mockResolvedValue({ enabled: false }),
+      setup: jest.fn(),
+      verify: jest.fn().mockResolvedValue(true),
+      verifyBackupCode: jest.fn().mockResolvedValue(true),
+    };
 
     // Setup request/response mocks
     mockRequest = {
@@ -102,7 +137,7 @@ describe('Authentication Integration Tests', () => {
 
       const hashedPassword = await User.hashPassword(credentials.password);
 
-      // Mock database response
+      // Mock database response for findByEmail
       (pool.query as jest.Mock).mockResolvedValueOnce({
         rows: [
           {

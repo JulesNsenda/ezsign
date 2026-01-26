@@ -7,6 +7,28 @@ import { tokenService } from '@/services/tokenService';
 // Mock dependencies
 jest.mock('@/services/userService');
 jest.mock('@/services/tokenService');
+jest.mock('@/services/tokenBlacklistService', () => ({
+  tokenBlacklistService: {
+    blacklistToken: jest.fn().mockResolvedValue(undefined),
+    isBlacklisted: jest.fn().mockResolvedValue(false),
+    blacklistAllUserTokens: jest.fn().mockResolvedValue(undefined),
+    isUserSessionRevoked: jest.fn().mockResolvedValue(false),
+    close: jest.fn().mockResolvedValue(undefined),
+  },
+}));
+jest.mock('@/services/twoFactorService', () => {
+  return {
+    TwoFactorService: jest.fn().mockImplementation(() => {
+      return {
+        isEnabled: jest.fn().mockResolvedValue(false),
+        getStatus: jest.fn().mockResolvedValue({ enabled: false }),
+        setup: jest.fn(),
+        verify: jest.fn().mockResolvedValue(true),
+        verifyBackupCode: jest.fn().mockResolvedValue(true),
+      };
+    }),
+  };
+});
 
 describe('AuthController', () => {
   let authController: AuthController;
@@ -28,6 +50,15 @@ describe('AuthController', () => {
 
     authController = new AuthController(mockPool);
     (authController as any).userService = mockUserService;
+
+    // Mock the twoFactorService instance to avoid database calls
+    (authController as any).twoFactorService = {
+      isEnabled: jest.fn().mockResolvedValue(false),
+      getStatus: jest.fn().mockResolvedValue({ enabled: false }),
+      setup: jest.fn(),
+      verify: jest.fn().mockResolvedValue(true),
+      verifyBackupCode: jest.fn().mockResolvedValue(true),
+    };
 
     // Setup response mock
     responseJson = jest.fn();

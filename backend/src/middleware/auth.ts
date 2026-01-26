@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { tokenService } from '@/services/tokenService';
+import { tokenBlacklistService } from '@/services/tokenBlacklistService';
 import { UserRole } from '@/models/User';
 import logger from '@/services/loggerService';
 
@@ -54,6 +55,34 @@ export const authenticate = async (
 
     // Verify and decode the token
     const decoded = tokenService.verifyAccessToken(token);
+
+    // Check if token is blacklisted (by jti or user-wide revocation)
+    // Only check if the token has a jti (backward compatibility with old tokens)
+    if (decoded.jti) {
+      const isRevoked = await tokenBlacklistService.isBlacklisted(decoded.jti);
+      if (isRevoked) {
+        logger.debug('Token has been revoked', { jti: decoded.jti, correlationId: req.correlationId });
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'Token has been revoked',
+        });
+        return;
+      }
+
+      // Check if all user tokens were revoked after this token was issued
+      const isSessionRevoked = await tokenBlacklistService.isUserSessionRevoked(
+        decoded.userId,
+        decoded.iat
+      );
+      if (isSessionRevoked) {
+        logger.debug('User session has been revoked', { userId: decoded.userId, correlationId: req.correlationId });
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'Session has been revoked. Please log in again.',
+        });
+        return;
+      }
+    }
 
     // Attach user data to request
     req.user = {

@@ -28,6 +28,9 @@ import { createPdfWorker } from '@/workers/pdfWorker';
 import { createCleanupWorker, createCleanupQueue, scheduleCleanupJobs } from '@/workers/cleanupWorker';
 import { createScheduledSendWorker } from '@/workers/scheduledSendWorker';
 import { getRedisConnection } from '@/config/queue';
+import { shutdownManager } from '@/services/shutdownManager';
+import { tokenBlacklistService } from '@/services/tokenBlacklistService';
+import { closeRateLimitRedis } from '@/middleware/rateLimiter';
 import logger from '@/services/loggerService';
 
 // Environment variables
@@ -202,50 +205,98 @@ const server = httpServer.listen(PORT, () => {
   });
 });
 
-// Graceful shutdown handler
-const gracefulShutdown = async (signal: string) => {
-  logger.info(`${signal} received: initiating graceful shutdown`);
+// Register resources for graceful shutdown
+// Resources are closed in reverse order of registration (LIFO)
+// Use priority to control order within same registration level
 
-  // Close Socket.IO connections
-  const io = socketService.getIO();
-  if (io) {
-    io.close();
-    logger.info('Socket.IO server closed');
-  }
-
-  server.close(async () => {
-    logger.info('HTTP server closed');
-
-    try {
-      await webhookWorker.close();
-      logger.info('Webhook worker closed');
-
-      await pdfWorker.close();
-      logger.info('PDF worker closed');
-
-      await cleanupWorker.close();
-      await cleanupQueue.close();
-      logger.info('Cleanup worker and queue closed');
-
-      await scheduledSendWorker.close();
-      logger.info('Scheduled send worker closed');
-
-      await healthRedis.quit();
-      logger.info('Health Redis connection closed');
-
-      pool.end(() => {
-        logger.info('Database pool closed');
-        logger.info('Graceful shutdown complete');
-        process.exit(0);
+// Priority 100: HTTP server and WebSocket (stop accepting new connections first)
+shutdownManager.register({
+  name: 'HTTP Server',
+  priority: 100,
+  close: () =>
+    new Promise<void>((resolve, reject) => {
+      server.close((err) => {
+        if (err) reject(err);
+        else resolve();
       });
-    } catch (error) {
-      logger.error('Error during shutdown', { error: (error as Error).message });
-      process.exit(1);
-    }
-  });
-};
+    }),
+});
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+shutdownManager.register({
+  name: 'Socket.IO',
+  priority: 100,
+  close: async () => {
+    const io = socketService.getIO();
+    if (io) {
+      io.close();
+    }
+  },
+});
+
+// Priority 50: Background workers (let them finish current jobs)
+shutdownManager.register({
+  name: 'Webhook Worker',
+  priority: 50,
+  close: () => webhookWorker.close(),
+});
+
+shutdownManager.register({
+  name: 'PDF Worker',
+  priority: 50,
+  close: () => pdfWorker.close(),
+});
+
+shutdownManager.register({
+  name: 'Cleanup Worker',
+  priority: 50,
+  close: () => cleanupWorker.close(),
+});
+
+shutdownManager.register({
+  name: 'Cleanup Queue',
+  priority: 50,
+  close: () => cleanupQueue.close(),
+});
+
+shutdownManager.register({
+  name: 'Scheduled Send Worker',
+  priority: 50,
+  close: () => scheduledSendWorker.close(),
+});
+
+// Priority 25: Application services
+shutdownManager.register({
+  name: 'Token Blacklist Service',
+  priority: 25,
+  close: () => tokenBlacklistService.close(),
+});
+
+shutdownManager.register({
+  name: 'Rate Limit Redis',
+  priority: 25,
+  close: () => closeRateLimitRedis(),
+});
+
+// Priority 10: Redis connections
+shutdownManager.register({
+  name: 'Health Redis',
+  priority: 10,
+  close: async () => {
+    await healthRedis.quit();
+  },
+});
+
+// Priority 0: Database (close last)
+shutdownManager.register({
+  name: 'Database Pool',
+  priority: 0,
+  close: () =>
+    new Promise<void>((resolve) => {
+      pool.end(() => resolve());
+    }),
+});
+
+// Install signal handlers for graceful shutdown
+shutdownManager.installSignalHandlers();
 
 export default app;
