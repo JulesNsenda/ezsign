@@ -280,7 +280,7 @@ export class DocumentController {
       }
 
       const { id } = req.params;
-      const { title, status } = req.body;
+      const { title, status, expires_at, reminder_settings } = req.body;
 
       if (!id) {
         res.status(400).json({
@@ -291,10 +291,10 @@ export class DocumentController {
       }
 
       // Validate at least one field is provided
-      if (title === undefined && status === undefined) {
+      if (title === undefined && status === undefined && expires_at === undefined && reminder_settings === undefined) {
         res.status(400).json({
           error: 'Bad Request',
-          message: 'At least one field (title or status) must be provided',
+          message: 'At least one field must be provided',
         });
         return;
       }
@@ -317,12 +317,58 @@ export class DocumentController {
         return;
       }
 
+      // Validate expires_at if provided (must be a valid date string or null)
+      let parsedExpiresAt: Date | null | undefined;
+      if (expires_at !== undefined) {
+        if (expires_at === null) {
+          parsedExpiresAt = null;
+        } else {
+          const expiresDate = new Date(expires_at);
+          if (isNaN(expiresDate.getTime())) {
+            res.status(400).json({
+              error: 'Bad Request',
+              message: 'expires_at must be a valid date',
+            });
+            return;
+          }
+          parsedExpiresAt = expiresDate;
+        }
+      }
+
+      // Validate reminder_settings if provided
+      if (reminder_settings !== undefined && reminder_settings !== null) {
+        if (typeof reminder_settings !== 'object') {
+          res.status(400).json({
+            error: 'Bad Request',
+            message: 'reminder_settings must be an object',
+          });
+          return;
+        }
+        if (typeof reminder_settings.enabled !== 'boolean') {
+          res.status(400).json({
+            error: 'Bad Request',
+            message: 'reminder_settings.enabled must be a boolean',
+          });
+          return;
+        }
+        if (!Array.isArray(reminder_settings.intervals) ||
+            !reminder_settings.intervals.every((i: unknown) => typeof i === 'number' && i > 0)) {
+          res.status(400).json({
+            error: 'Bad Request',
+            message: 'reminder_settings.intervals must be an array of positive numbers',
+          });
+          return;
+        }
+      }
+
       const document = await this.documentService.updateDocument(
         id,
         req.user.userId,
         {
           title: title?.trim(),
           status,
+          expires_at: parsedExpiresAt,
+          reminder_settings,
         }
       );
 

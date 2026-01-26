@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from 'pg';
-import { Document, DocumentData, DocumentStatus } from '@/models/Document';
+import { Document, DocumentData, DocumentStatus, ReminderSettings } from '@/models/Document';
 import { StorageService } from '@/services/storageService';
 import { CleanupService } from '@/services/cleanupService';
 import { pdfService } from '@/services/pdfService';
@@ -18,6 +18,8 @@ export interface CreateDocumentData {
 export interface UpdateDocumentData {
   title?: string;
   status?: DocumentStatus;
+  expires_at?: Date | null;
+  reminder_settings?: ReminderSettings;
 }
 
 export interface DocumentListOptions {
@@ -221,6 +223,16 @@ export class DocumentService {
       values.push(data.status);
     }
 
+    if (data.expires_at !== undefined) {
+      fields.push(`expires_at = $${paramCount++}`);
+      values.push(data.expires_at);
+    }
+
+    if (data.reminder_settings !== undefined) {
+      fields.push(`reminder_settings = $${paramCount++}`);
+      values.push(JSON.stringify(data.reminder_settings));
+    }
+
     if (fields.length === 0) {
       return this.findById(id, userId);
     }
@@ -229,11 +241,13 @@ export class DocumentService {
 
     const query = `
       UPDATE documents
-      SET ${fields.join(', ')}
+      SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP
       WHERE id = $${paramCount} AND user_id = $${paramCount + 1}
       RETURNING id, user_id, team_id, title, original_filename,
                 file_path, file_size, mime_type, page_count, status,
-                workflow_type, created_at, updated_at
+                workflow_type, completed_at, created_at, updated_at,
+                thumbnail_path, thumbnail_generated_at, is_optimized,
+                original_file_size, optimized_at, expires_at, reminder_settings
     `;
 
     const result = await this.pool.query<DocumentData>(query, values);

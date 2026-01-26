@@ -8,6 +8,7 @@ import { EmailService } from '@/services/emailService';
 import { PdfService } from '@/services/pdfService';
 import { StorageService } from '@/services/storageService';
 import { socketService } from '@/services/socketService';
+import { ReminderService } from '@/services/reminderService';
 import logger from '@/services/loggerService';
 
 export class SigningController {
@@ -15,17 +16,20 @@ export class SigningController {
   private emailService: EmailService;
   private _pdfService: PdfService;
   private _storageService: StorageService;
+  private reminderService?: ReminderService;
 
   constructor(
     pool: Pool,
     emailService: EmailService,
     pdfService: PdfService,
-    storageService: StorageService
+    storageService: StorageService,
+    reminderService?: ReminderService
   ) {
     this.pool = pool;
     this.emailService = emailService;
     this._pdfService = pdfService;
     this._storageService = storageService;
+    this.reminderService = reminderService;
   }
 
   /**
@@ -172,6 +176,25 @@ export class SigningController {
             senderName,
             signingUrl: this.emailService.generateSigningUrl(signer.access_token),
             message,
+          });
+        }
+      }
+
+      // Schedule deadline reminders if document has an expiration date
+      if (this.reminderService && document.expires_at) {
+        try {
+          const reminders = await this.reminderService.scheduleRemindersForDocument(documentId);
+          logger.info('Scheduled deadline reminders for document', {
+            documentId,
+            reminderCount: reminders.length,
+            correlationId: req.correlationId,
+          });
+        } catch (error) {
+          // Log but don't fail the send operation if reminder scheduling fails
+          logger.warn('Failed to schedule deadline reminders', {
+            documentId,
+            error: (error as Error).message,
+            correlationId: req.correlationId,
           });
         }
       }
@@ -405,6 +428,24 @@ export class SigningController {
           updatedAt: new Date().toISOString(),
           ownerId: documentOwnerId,
         });
+
+        // Cancel any pending reminders for this signer (they have signed)
+        if (this.reminderService) {
+          try {
+            const cancelledCount = await this.reminderService.cancelRemindersForSigner(signer.id);
+            if (cancelledCount > 0) {
+              logger.debug('Cancelled reminders for signer', {
+                signerId: signer.id,
+                cancelledCount,
+              });
+            }
+          } catch (error) {
+            logger.warn('Failed to cancel signer reminders', {
+              signerId: signer.id,
+              error: (error as Error).message,
+            });
+          }
+        }
 
         // Check if all signers have signed (document completion)
         const allSignersResult = await client.query(
@@ -681,6 +722,24 @@ export class SigningController {
               downloadUrl: this.emailService.generateDownloadUrl(document.id),
             });
           }
+
+          // Cancel all remaining reminders for the completed document
+          if (this.reminderService) {
+            try {
+              const cancelledCount = await this.reminderService.cancelRemindersForDocument(signer.document_id);
+              if (cancelledCount > 0) {
+                logger.info('Cancelled remaining reminders for completed document', {
+                  documentId: signer.document_id,
+                  cancelledCount,
+                });
+              }
+            } catch (error) {
+              logger.warn('Failed to cancel document reminders on completion', {
+                documentId: signer.document_id,
+                error: (error as Error).message,
+              });
+            }
+          }
         } else {
           // Check if next signer should be notified (sequential workflow)
           const docResult = await client.query(
@@ -885,6 +944,8 @@ export class SigningController {
       completed_at: row.completed_at,
       created_at: row.created_at,
       updated_at: row.updated_at,
+      expires_at: row.expires_at,
+      reminder_settings: row.reminder_settings,
     };
   }
 

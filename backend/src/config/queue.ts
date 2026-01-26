@@ -56,6 +56,7 @@ export enum QueueName {
   WEBHOOK_DELIVERY = 'webhook-delivery',
   CLEANUP = 'cleanup',
   SCHEDULED_SEND = 'scheduled-send',
+  DEADLINE_REMINDERS = 'deadline-reminders',
 }
 
 /**

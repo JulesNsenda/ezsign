@@ -28,6 +28,7 @@ import { createWebhookWorker } from '@/workers/webhookWorker';
 import { createPdfWorker } from '@/workers/pdfWorker';
 import { createCleanupWorker, createCleanupQueue, scheduleCleanupJobs } from '@/workers/cleanupWorker';
 import { createScheduledSendWorker } from '@/workers/scheduledSendWorker';
+import { createReminderWorker } from '@/workers/reminderWorker';
 import { getRedisConnection } from '@/config/queue';
 import { shutdownManager } from '@/services/shutdownManager';
 import { tokenBlacklistService } from '@/services/tokenBlacklistService';
@@ -80,6 +81,10 @@ logger.info('Cleanup worker initialized');
 // Initialize scheduled send worker for delayed document sending
 const scheduledSendWorker = createScheduledSendWorker(pool);
 logger.info('Scheduled send worker initialized');
+
+// Initialize reminder worker for deadline reminders
+const reminderWorker = createReminderWorker(pool);
+logger.info('Reminder worker initialized');
 
 // Schedule cleanup jobs (async, don't await - let server start)
 scheduleCleanupJobs(cleanupQueue).catch((error) => {
@@ -265,6 +270,12 @@ shutdownManager.register({
   name: 'Scheduled Send Worker',
   priority: 50,
   close: () => scheduledSendWorker.close(),
+});
+
+shutdownManager.register({
+  name: 'Reminder Worker',
+  priority: 50,
+  close: () => reminderWorker.close(),
 });
 
 // Priority 25: Application services
