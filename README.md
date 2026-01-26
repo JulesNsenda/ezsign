@@ -491,10 +491,12 @@ See [Deployment Guide](docs/deployment.md) for detailed instructions on deployin
 - All passwords are hashed using bcrypt
 - API keys are hashed before storage
 - Signing links use cryptographically secure tokens
-- Rate limiting on all API endpoints
+- **Token revocation system** - Redis-based blacklist for proper logout and session management
+- **Tiered rate limiting** - Redis-backed distributed rate limits (100/500/1000 requests per 15min for anonymous/authenticated/API key)
 - CORS protection
 - Input validation and sanitization
 - Webhook payload signatures (HMAC-SHA256)
+- **Graceful shutdown** - Proper cleanup with timeout protection for background jobs
 
 ## 🐛 Known Issues
 
@@ -574,12 +576,12 @@ See our [GitHub Issues](https://github.com/JulesNsenda/ezsign/issues) for comple
 The following features are planned or partially implemented. **Contributions welcome!**
 
 ### Authentication & Security
-- [ ] **Two-Factor Authentication (2FA)** - UI placeholder exists, backend needed
+- [x] **Two-Factor Authentication (2FA)** - TOTP-based 2FA with backup codes (v1.1.0)
 - [ ] **Email Verification Flow** - Backend endpoint exists, frontend page needed
 - [ ] **SSO Integration** (SAML, OAuth2)
 - [ ] **Advanced password policies**
-- [ ] **Session management improvements**
-- [ ] **Token blacklisting for logout**
+- [x] **Session management improvements** - Logout-all endpoint, token revocation on password change (v1.2.0)
+- [x] **Token blacklisting for logout** - Redis-based token revocation system (v1.2.0)
 
 ### Document Management
 - [ ] **Bulk Document Operations** - Send, delete, download multiple documents
@@ -614,7 +616,8 @@ The following features are planned or partially implemented. **Contributions wel
 
 ### API & Developer Experience
 - [ ] **Interactive API Documentation** - Replace placeholder with Swagger UI
-- [ ] **API Rate Limit Feedback** - Show rate limit status in UI
+- [x] **API Rate Limit Feedback** - Rate limit headers in responses (v1.2.0)
+- [x] **Tiered Rate Limits** - Different limits for anonymous/authenticated/API key users (v1.2.0)
 - [ ] **API Versioning** - Implement `/api/v1/` prefix
 - [ ] **GraphQL API** - Alternative to REST
 - [ ] **SDK Libraries** - JavaScript, Python, Go, PHP clients
