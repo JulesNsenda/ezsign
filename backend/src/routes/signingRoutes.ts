@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { Pool } from 'pg';
 import { SigningController } from '@/controllers/signingController';
 import { authenticate } from '@/middleware/auth';
+import { embedSecurity } from '@/middleware/embedSecurity';
 import { EmailService, EmailConfig } from '@/services/emailService';
 import { PdfService } from '@/services/pdfService';
 import { createStorageService } from '@/services/storageService';
 import { createStorageAdapter } from '@/config/storage';
+import { createEmailLogService } from '@/services/emailLogService';
 
 export const createSigningRouter = (pool: Pool): Router => {
   const router = Router();
@@ -30,14 +32,18 @@ export const createSigningRouter = (pool: Pool): Router => {
   };
 
   const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
-  const emailService = new EmailService(emailConfig, baseUrl);
+
+  // Initialize email log service and email service with logging
+  const emailLogService = createEmailLogService(pool);
+  const emailService = new EmailService(emailConfig, baseUrl, emailLogService);
 
   const signingController = new SigningController(pool, emailService, pdfService, storageService);
 
   // Public routes (no authentication required)
-  router.get('/:token', signingController.getDocumentBySigningToken);
-  router.get('/:token/download', signingController.downloadDocumentByToken);
-  router.post('/:token/sign', signingController.submitSignature);
+  // Apply embed security middleware for iframe embedding support
+  router.get('/:token', embedSecurity, signingController.getDocumentBySigningToken);
+  router.get('/:token/download', embedSecurity, signingController.downloadDocumentByToken);
+  router.post('/:token/sign', embedSecurity, signingController.submitSignature);
 
   return router;
 };
@@ -65,7 +71,10 @@ export const createDocumentSigningRouter = (pool: Pool): Router => {
   };
 
   const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
-  const emailService = new EmailService(emailConfig, baseUrl);
+
+  // Initialize email log service and email service with logging
+  const emailLogService = createEmailLogService(pool);
+  const emailService = new EmailService(emailConfig, baseUrl, emailLogService);
 
   const signingController = new SigningController(pool, emailService, pdfService, storageService);
 

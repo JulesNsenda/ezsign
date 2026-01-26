@@ -1,5 +1,6 @@
 import nodemailer, { Transporter } from 'nodemailer';
 import logger from '@/services/loggerService';
+import { EmailLogService, EmailType } from '@/services/emailLogService';
 
 export interface EmailConfig {
   host: string;
@@ -12,6 +13,12 @@ export interface EmailConfig {
   from: string;
 }
 
+export interface EmailContext {
+  documentId?: string;
+  signerId?: string;
+  userId?: string;
+}
+
 export interface SigningRequestEmailData {
   recipientEmail: string;
   recipientName: string;
@@ -20,6 +27,10 @@ export interface SigningRequestEmailData {
   signingUrl: string;
   message?: string;
   isReminder?: boolean;
+  // Context for email logging
+  documentId?: string;
+  signerId?: string;
+  userId?: string;
 }
 
 export interface CompletionEmailData {
@@ -28,6 +39,9 @@ export interface CompletionEmailData {
   documentTitle: string;
   completedAt: Date;
   downloadUrl?: string;
+  // Context for email logging
+  documentId?: string;
+  userId?: string;
 }
 
 export interface ReminderEmailData {
@@ -37,6 +51,10 @@ export interface ReminderEmailData {
   senderName: string;
   signingUrl: string;
   daysWaiting: number;
+  // Context for email logging
+  documentId?: string;
+  signerId?: string;
+  userId?: string;
 }
 
 export interface PasswordChangeEmailData {
@@ -45,14 +63,17 @@ export interface PasswordChangeEmailData {
   changedAt: Date;
   ipAddress?: string;
   resetPasswordUrl?: string;
+  // Context for email logging
+  userId?: string;
 }
 
 export class EmailService {
   private transporter: Transporter;
   private fromEmail: string;
   private baseUrl: string;
+  private emailLogService?: EmailLogService;
 
-  constructor(config: EmailConfig, baseUrl: string) {
+  constructor(config: EmailConfig, baseUrl: string, emailLogService?: EmailLogService) {
     this.transporter = nodemailer.createTransport({
       host: config.host,
       port: config.port,
@@ -66,6 +87,82 @@ export class EmailService {
     });
     this.fromEmail = config.from;
     this.baseUrl = baseUrl;
+    this.emailLogService = emailLogService;
+  }
+
+  /**
+   * Set the email log service (for dependency injection after construction)
+   */
+  setEmailLogService(service: EmailLogService): void {
+    this.emailLogService = service;
+  }
+
+  /**
+   * Internal helper to send email with logging
+   */
+  private async sendWithLogging(
+    recipientEmail: string,
+    subject: string,
+    emailType: EmailType,
+    html: string,
+    text: string,
+    context: EmailContext = {}
+  ): Promise<void> {
+    let logId: string | undefined;
+
+    // Create log entry if service is available
+    if (this.emailLogService) {
+      try {
+        const log = await this.emailLogService.createLog({
+          documentId: context.documentId,
+          signerId: context.signerId,
+          userId: context.userId,
+          recipientEmail,
+          emailType,
+          subject,
+          metadata: { context },
+        });
+        logId = log.id;
+      } catch (error) {
+        logger.warn('Failed to create email log', { error: (error as Error).message });
+      }
+    }
+
+    try {
+      const result = await this.transporter.sendMail({
+        from: this.fromEmail,
+        to: recipientEmail,
+        subject,
+        text,
+        html,
+      });
+
+      // Mark as sent with message ID
+      if (logId && this.emailLogService) {
+        await this.emailLogService.markAsSent(logId, result.messageId);
+      }
+
+      logger.debug('Email sent successfully', {
+        to: recipientEmail,
+        subject,
+        emailType,
+        messageId: result.messageId,
+      });
+    } catch (error) {
+      // Mark as failed
+      if (logId && this.emailLogService) {
+        await this.emailLogService.markAsFailed(logId, (error as Error).message);
+      }
+
+      logger.error('Failed to send email', {
+        to: recipientEmail,
+        subject,
+        emailType,
+        error: (error as Error).message,
+      });
+
+      throw error;
+    }
   }
 
   /**
@@ -78,13 +175,20 @@ export class EmailService {
     const html = this.generateSigningRequestHtml(data);
     const text = this.generateSigningRequestText(data);
 
-    await this.transporter.sendMail({
-      from: this.fromEmail,
-      to: data.recipientEmail,
+    const emailType: EmailType = data.isReminder ? 'reminder' : 'signing_request';
+
+    await this.sendWithLogging(
+      data.recipientEmail,
       subject,
-      text,
+      emailType,
       html,
-    });
+      text,
+      {
+        documentId: data.documentId,
+        signerId: data.signerId,
+        userId: data.userId,
+      }
+    );
   }
 
   /**
@@ -96,13 +200,17 @@ export class EmailService {
     const html = this.generateCompletionHtml(data);
     const text = this.generateCompletionText(data);
 
-    await this.transporter.sendMail({
-      from: this.fromEmail,
-      to: data.recipientEmail,
+    await this.sendWithLogging(
+      data.recipientEmail,
       subject,
-      text,
+      'completion',
       html,
-    });
+      text,
+      {
+        documentId: data.documentId,
+        userId: data.userId,
+      }
+    );
   }
 
   /**
@@ -114,13 +222,18 @@ export class EmailService {
     const html = this.generateReminderHtml(data);
     const text = this.generateReminderText(data);
 
-    await this.transporter.sendMail({
-      from: this.fromEmail,
-      to: data.recipientEmail,
+    await this.sendWithLogging(
+      data.recipientEmail,
       subject,
-      text,
+      'reminder',
       html,
-    });
+      text,
+      {
+        documentId: data.documentId,
+        signerId: data.signerId,
+        userId: data.userId,
+      }
+    );
   }
 
   /**
@@ -134,13 +247,16 @@ export class EmailService {
     const html = this.generatePasswordChangeHtml(data);
     const text = this.generatePasswordChangeText(data);
 
-    await this.transporter.sendMail({
-      from: this.fromEmail,
-      to: data.recipientEmail,
+    await this.sendWithLogging(
+      data.recipientEmail,
       subject,
-      text,
+      'password_change',
       html,
-    });
+      text,
+      {
+        userId: data.userId,
+      }
+    );
   }
 
   /**
@@ -522,6 +638,7 @@ If you have any concerns, please contact support.
     recipientEmail: string;
     recipientName: string;
     verificationToken: string;
+    userId?: string;
   }): Promise<void> {
     const verificationUrl = `${this.baseUrl}/verify-email?token=${data.verificationToken}`;
     const subject = 'Verify your email address - EzSign';
@@ -529,13 +646,16 @@ If you have any concerns, please contact support.
     const html = this.generateEmailVerificationHtml(data.recipientName, verificationUrl);
     const text = this.generateEmailVerificationText(data.recipientName, verificationUrl);
 
-    await this.transporter.sendMail({
-      from: this.fromEmail,
-      to: data.recipientEmail,
+    await this.sendWithLogging(
+      data.recipientEmail,
       subject,
-      text,
+      'verification',
       html,
-    });
+      text,
+      {
+        userId: data.userId,
+      }
+    );
   }
 
   /**
