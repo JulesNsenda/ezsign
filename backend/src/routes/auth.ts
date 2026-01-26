@@ -40,8 +40,11 @@ export const createAuthRouter = (pool: Pool): Router => {
   // Verify 2FA during login
   router.post('/verify-2fa', twoFactorLimiter, authController.verify2fa);
 
-  // Logout
+  // Logout (optionally with token in header to blacklist)
   router.post('/logout', authController.logout);
+
+  // Logout from all devices (requires authentication)
+  router.post('/logout-all', authenticate, authController.logoutAll);
 
   // Forgot password
   router.post('/forgot-password', authController.forgotPassword);

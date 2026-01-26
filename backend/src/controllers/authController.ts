@@ -4,6 +4,7 @@ import { UserService } from '@/services/userService';
 import { EmailService } from '@/services/emailService';
 import { TwoFactorService } from '@/services/twoFactorService';
 import { tokenService } from '@/services/tokenService';
+import { tokenBlacklistService } from '@/services/tokenBlacklistService';
 import logger from '@/services/loggerService';
 
 // Temporary token storage for 2FA login flow (in production, use Redis)
@@ -405,20 +406,32 @@ export class AuthController {
    * Logout user
    * POST /api/auth/logout
    *
-   * Note: With JWT, logout is primarily handled on the client side by removing tokens.
-   * This endpoint is provided for consistency and can be extended with token blacklisting
-   * in the future if needed (using Redis to store invalidated tokens).
+   * Blacklists the current access token so it can no longer be used.
    */
   logout = async (req: Request, res: Response): Promise<void> => {
     try {
-      // In a stateless JWT system, logout is handled client-side
-      // The client should delete the access and refresh tokens
+      const token = tokenService.extractTokenFromHeader(req.headers.authorization);
 
-      // Optional: If implementing token blacklisting, add the token to a blacklist here
-      // const token = tokenService.extractTokenFromHeader(req.headers.authorization);
-      // if (token) {
-      //   await redisClient.set(`blacklist:${token}`, '1', 'EX', tokenExpiry);
-      // }
+      if (token) {
+        // Decode the token to get jti and expiry
+        const decoded = tokenService.decodeToken(token);
+
+        if (decoded && decoded.jti) {
+          // Calculate remaining TTL for the token
+          const now = Math.floor(Date.now() / 1000);
+          const expiresIn = decoded.exp - now;
+
+          if (expiresIn > 0) {
+            // Blacklist the token for its remaining lifetime
+            await tokenBlacklistService.blacklistToken(decoded.jti, expiresIn);
+            logger.info('Token blacklisted on logout', {
+              userId: decoded.userId,
+              jti: decoded.jti,
+              correlationId: req.correlationId,
+            });
+          }
+        }
+      }
 
       res.status(200).json({
         message: 'Logout successful',
@@ -428,6 +441,46 @@ export class AuthController {
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to logout',
+      });
+    }
+  };
+
+  /**
+   * Logout user from all devices/sessions
+   * POST /api/auth/logout-all
+   *
+   * Revokes all tokens for the authenticated user by setting a revocation timestamp.
+   * Any token issued before this timestamp will be considered invalid.
+   * Requires authentication.
+   */
+  logoutAll = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = (req as any).user?.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'Authentication required',
+        });
+        return;
+      }
+
+      // Revoke all tokens for this user
+      await tokenBlacklistService.blacklistAllUserTokens(userId);
+
+      logger.info('All user tokens revoked', {
+        userId,
+        correlationId: req.correlationId,
+      });
+
+      res.status(200).json({
+        message: 'Successfully logged out from all devices',
+      });
+    } catch (error) {
+      logger.error('Logout all error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
+      res.status(500).json({
+        error: 'Internal Server Error',
+        message: 'Failed to logout from all devices',
       });
     }
   };
@@ -735,6 +788,14 @@ export class AuthController {
 
       // Update password in database
       await this.userService.updatePassword(userId, newPassword);
+
+      // Revoke all existing tokens for security
+      // This forces all other sessions to log in again with the new password
+      await tokenBlacklistService.blacklistAllUserTokens(userId);
+      logger.info('All user tokens revoked after password change', {
+        userId,
+        correlationId: req.correlationId,
+      });
 
       // Generate new access and refresh tokens
       const tokens = tokenService.generateTokenPair({

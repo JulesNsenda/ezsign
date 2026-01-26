@@ -1,4 +1,5 @@
 import * as jwt from 'jsonwebtoken';
+import * as crypto from 'crypto';
 import { UserRole } from '@/models/User';
 
 export interface JwtPayload {
@@ -13,6 +14,7 @@ export interface TokenPair {
 }
 
 export interface DecodedToken extends JwtPayload {
+  jti: string;
   iat: number;
   exp: number;
 }
@@ -35,25 +37,40 @@ export class TokenService {
   }
 
   /**
+   * Generate a unique JWT ID (jti)
+   */
+  private generateJti(): string {
+    return crypto.randomUUID();
+  }
+
+  /**
    * Generate an access token
    */
   generateAccessToken(payload: JwtPayload): string {
-    return jwt.sign(payload, this.jwtSecret, {
-      expiresIn: this.accessTokenExpiry,
-      issuer: 'ezsign',
-      audience: 'ezsign-api',
-    });
+    return jwt.sign(
+      { ...payload, jti: this.generateJti() },
+      this.jwtSecret,
+      {
+        expiresIn: this.accessTokenExpiry,
+        issuer: 'ezsign',
+        audience: 'ezsign-api',
+      }
+    );
   }
 
   /**
    * Generate a refresh token
    */
   generateRefreshToken(payload: JwtPayload): string {
-    return jwt.sign(payload, this.jwtRefreshSecret, {
-      expiresIn: this.refreshTokenExpiry,
-      issuer: 'ezsign',
-      audience: 'ezsign-api',
-    });
+    return jwt.sign(
+      { ...payload, jti: this.generateJti() },
+      this.jwtRefreshSecret,
+      {
+        expiresIn: this.refreshTokenExpiry,
+        issuer: 'ezsign',
+        audience: 'ezsign-api',
+      }
+    );
   }
 
   /**
