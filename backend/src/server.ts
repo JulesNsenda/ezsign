@@ -19,6 +19,7 @@ import { createWebhookRouter } from '@/routes/webhooks';
 import { createPdfRouter } from '@/routes/pdfRoutes';
 import { createHealthRoutes } from '@/routes/health';
 import { createTwoFactorRouter } from '@/routes/twoFactor';
+import { createEmailLogRouter, createEmailWebhookRouter } from '@/routes/emailLogRoutes';
 import { HealthService } from '@/services/healthService';
 import { errorHandler } from '@/middleware/errorHandler';
 import { apiLimiter } from '@/middleware/rateLimiter';
@@ -156,8 +157,10 @@ app.use('/api/teams', createTeamsRouter(pool));
 app.use('/api/api-keys', createApiKeysRouter(pool));
 app.use('/api/templates', createTemplateRouter(pool));
 app.use('/api/webhooks', createWebhookRouter(pool));
+app.use('/api/webhooks', createEmailWebhookRouter(pool)); // Email delivery webhooks
 app.use('/api/pdf', createPdfRouter(pool)); // PDF processing endpoints
 app.use('/api/signing', createSigningRouter(pool)); // Public signing links
+app.use('/api/admin/emails', createEmailLogRouter(pool)); // Email logs (admin)
 
 // API documentation placeholder
 app.get('/api/docs', (_req: Request, res: Response) => {

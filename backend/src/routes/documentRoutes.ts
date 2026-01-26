@@ -4,6 +4,7 @@ import { DocumentController } from '@/controllers/documentController';
 import { FieldController } from '@/controllers/fieldController';
 import { SignerController } from '@/controllers/signerController';
 import { ScheduleController } from '@/controllers/scheduleController';
+import { EmailLogController } from '@/controllers/emailLogController';
 import { authenticate } from '@/middleware/auth';
 import { createDocumentAccessMiddleware } from '@/middleware/documentAccess';
 import { FieldService } from '@/services/fieldService';
@@ -14,6 +15,7 @@ import { EmailService, EmailConfig } from '@/services/emailService';
 import { createStorageService } from '@/services/storageService';
 import { createStorageAdapter } from '@/config/storage';
 import { createScheduledSendService } from '@/services/scheduledSendService';
+import { createEmailLogService } from '@/services/emailLogService';
 
 export const createDocumentRouter = (pool: Pool): Router => {
   const router = Router();
@@ -45,10 +47,16 @@ export const createDocumentRouter = (pool: Pool): Router => {
   };
 
   const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
-  const emailService = new EmailService(emailConfig, baseUrl);
+
+  // Initialize email log service and email service with logging
+  const emailLogService = createEmailLogService(pool);
+  const emailService = new EmailService(emailConfig, baseUrl, emailLogService);
 
   const fieldController = new FieldController(fieldService, signerService);
   const signerController = new SignerController(signerService, pool, documentService, emailService);
+
+  // Initialize email log controller
+  const emailLogController = new EmailLogController(pool);
 
   // Initialize scheduled send service and controller
   const scheduledSendService = createScheduledSendService(pool);
@@ -107,6 +115,10 @@ export const createDocumentRouter = (pool: Pool): Router => {
   router.delete('/:id/signers/:signerId', checkDocumentAccess, signerController.deleteSigner);
   router.post('/:id/signers/:signerId/assign-fields', checkDocumentAccess, signerController.assignFields);
   router.post('/:id/signers/:signerId/resend', checkDocumentAccess, signerController.resendSigningEmail);
+
+  // Email log routes
+  router.get('/:id/emails', checkDocumentAccess, emailLogController.getDocumentEmails);
+  router.get('/:id/emails/stats', checkDocumentAccess, emailLogController.getDocumentEmailStats);
 
   return router;
 };

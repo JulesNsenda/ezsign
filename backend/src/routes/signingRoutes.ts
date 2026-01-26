@@ -7,6 +7,7 @@ import { EmailService, EmailConfig } from '@/services/emailService';
 import { PdfService } from '@/services/pdfService';
 import { createStorageService } from '@/services/storageService';
 import { createStorageAdapter } from '@/config/storage';
+import { createEmailLogService } from '@/services/emailLogService';
 
 export const createSigningRouter = (pool: Pool): Router => {
   const router = Router();
@@ -31,7 +32,10 @@ export const createSigningRouter = (pool: Pool): Router => {
   };
 
   const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
-  const emailService = new EmailService(emailConfig, baseUrl);
+
+  // Initialize email log service and email service with logging
+  const emailLogService = createEmailLogService(pool);
+  const emailService = new EmailService(emailConfig, baseUrl, emailLogService);
 
   const signingController = new SigningController(pool, emailService, pdfService, storageService);
 
@@ -67,7 +71,10 @@ export const createDocumentSigningRouter = (pool: Pool): Router => {
   };
 
   const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
-  const emailService = new EmailService(emailConfig, baseUrl);
+
+  // Initialize email log service and email service with logging
+  const emailLogService = createEmailLogService(pool);
+  const emailService = new EmailService(emailConfig, baseUrl, emailLogService);
 
   const signingController = new SigningController(pool, emailService, pdfService, storageService);
 
