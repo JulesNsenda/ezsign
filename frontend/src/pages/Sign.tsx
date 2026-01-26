@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import PdfViewer from '@/components/PdfViewer';
 import SignaturePad from '@/components/SignaturePad';
@@ -14,6 +14,14 @@ import { useSigningSession, useSubmitSignatures } from '@/hooks/useSignature';
 import { useToast } from '@/hooks/useToast';
 import signatureService, { type SignatureData } from '@/services/signatureService';
 import type { SignatureType, RadioOption } from '@/types';
+import {
+  parseEmbedConfig,
+  createEventEmitter,
+  createCommandListener,
+  applyEmbedTheme,
+  type EmbedConfig,
+  type EzSignCommand,
+} from '@/services/embedMessaging';
 
 /**
  * Signing page for signers to review and sign documents
@@ -29,9 +37,99 @@ export const Sign: React.FC = () => {
   const [pdfUrl, setPdfUrl] = useState<string>('');
   const [isCompleted, setIsCompleted] = useState(false);
   const [collectedSignatures, setCollectedSignatures] = useState<SignatureData[]>([]);
+  const [totalPages] = useState(1); // Will be updated by PdfViewer if available
+
+  // Parse embed configuration from URL
+  const embedConfig = useMemo<EmbedConfig>(() => parseEmbedConfig(), []);
+  const isEmbedded = embedConfig.isEmbedded;
+
+  // Create event emitter for PostMessage communication
+  const eventEmitterRef = useRef<ReturnType<typeof createEventEmitter> | null>(null);
 
   const { data: session, isLoading, error } = useSigningSession(token!);
   const submitSignaturesMutation = useSubmitSignatures();
+
+  // Initialize event emitter when session is loaded
+  useEffect(() => {
+    if (session && isEmbedded) {
+      eventEmitterRef.current = createEventEmitter(
+        session.document.id,
+        embedConfig.allowedOrigin
+      );
+    }
+  }, [session, isEmbedded, embedConfig.allowedOrigin]);
+
+  // Apply embed theme customization
+  useEffect(() => {
+    if (isEmbedded) {
+      applyEmbedTheme(embedConfig);
+    }
+  }, [isEmbedded, embedConfig]);
+
+  // Handle scroll to field command
+  const scrollToFieldById = useCallback((fieldId: string) => {
+    // This will be called by the command handler
+    // Find field in unsignedFields and navigate to it
+    const fieldElement = document.querySelector(`[data-field-id="${fieldId}"]`);
+    if (fieldElement) {
+      fieldElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, []);
+
+  // Set up command listener for embedded mode
+  useEffect(() => {
+    if (!isEmbedded) return;
+
+    const handleCommand = (command: EzSignCommand) => {
+      switch (command.type) {
+        case 'ezsign:getStatus':
+          eventEmitterRef.current?.emitReady(
+            session?.signer.id,
+            session?.signer.email
+          );
+          break;
+        case 'ezsign:scrollToField':
+          if (command.payload?.fieldId) {
+            scrollToFieldById(command.payload.fieldId);
+          }
+          break;
+        case 'ezsign:setTheme':
+          if (command.payload?.theme) {
+            document.documentElement.setAttribute('data-theme', command.payload.theme);
+          }
+          if (command.payload?.primaryColor) {
+            document.documentElement.style.setProperty('--embed-primary', command.payload.primaryColor);
+          }
+          break;
+      }
+    };
+
+    const cleanup = createCommandListener(embedConfig.allowedOrigin, handleCommand);
+    return cleanup;
+  }, [isEmbedded, embedConfig.allowedOrigin, session, scrollToFieldById]);
+
+  // Emit ready event when session is loaded
+  useEffect(() => {
+    if (session && isEmbedded && eventEmitterRef.current) {
+      eventEmitterRef.current.emitReady(session.signer.id, session.signer.email);
+    }
+  }, [session, isEmbedded]);
+
+  // Emit page change events
+  useEffect(() => {
+    if (isEmbedded && eventEmitterRef.current) {
+      eventEmitterRef.current.emitPageChange(currentPage + 1, totalPages);
+    }
+  }, [currentPage, totalPages, isEmbedded]);
+
+  // Emit progress updates
+  useEffect(() => {
+    if (isEmbedded && eventEmitterRef.current && session) {
+      const total = session.fields?.length || 0;
+      const completed = (session.signatures?.length || 0) + collectedSignatures.length;
+      eventEmitterRef.current.emitProgress(completed, total);
+    }
+  }, [session, collectedSignatures, isEmbedded]);
 
   // Load PDF URL - MUST be before any conditional returns
   useEffect(() => {
@@ -125,6 +223,25 @@ export const Sign: React.FC = () => {
   }
 
   if (isCompleted || session.signer.status === 'signed') {
+    // For embedded mode, show minimal success state
+    if (isEmbedded) {
+      return (
+        <div className="min-h-screen bg-base-200 flex items-center justify-center p-4">
+          <div className="text-center animate-fade-in">
+            <div className="w-16 h-16 mx-auto mb-4 bg-success/10 rounded-full flex items-center justify-center">
+              <svg className="w-8 h-8 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h1 className="text-xl font-bold text-neutral mb-2">Successfully Signed!</h1>
+            <p className="text-sm text-base-content/60">
+              Document signed. You may close this window.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-base-200 flex items-center justify-center p-4">
         <div className="card-docuseal max-w-xl text-center animate-fade-in">
@@ -393,8 +510,19 @@ export const Sign: React.FC = () => {
     try {
       await submitSignaturesMutation.mutateAsync({ token, signatures: collectedSignatures });
       setIsCompleted(true);
+
+      // Emit signed event for embedded mode
+      if (isEmbedded && eventEmitterRef.current && session) {
+        eventEmitterRef.current.emitSigned(session.signer.id);
+      }
     } catch (err: any) {
-      showError(err.response?.data?.error?.message || 'Failed to submit signatures');
+      const errorMessage = err.response?.data?.error?.message || 'Failed to submit signatures';
+      showError(errorMessage);
+
+      // Emit error event for embedded mode
+      if (isEmbedded && eventEmitterRef.current) {
+        eventEmitterRef.current.emitError(errorMessage, 'SUBMIT_ERROR');
+      }
     }
   };
 
@@ -483,40 +611,64 @@ export const Sign: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-base-200">
-      {/* Header */}
-      <div className="bg-base-100 border-b border-base-300 shadow-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-            <div className="flex-1">
-              <h1 className="text-xl sm:text-2xl font-bold text-neutral mb-1">
-                {session.document.title}
-              </h1>
-              <div className="flex items-center gap-2 text-sm text-base-content/60">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                <span>{session.signer.name}</span>
+    <div className={`min-h-screen bg-base-200 ${isEmbedded ? 'embedded-mode' : ''}`}>
+      {/* Header - Hidden in embedded mode */}
+      {!isEmbedded && (
+        <div className="bg-base-100 border-b border-base-300 shadow-sm sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div className="flex-1">
+                <h1 className="text-xl sm:text-2xl font-bold text-neutral mb-1">
+                  {session.document.title}
+                </h1>
+                <div className="flex items-center gap-2 text-sm text-base-content/60">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span>{session.signer.name}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-sm text-base-content/60">
+                  <span className="font-semibold text-neutral">{totalSigned}</span> of{' '}
+                  <span className="font-semibold text-neutral">{fields.length}</span> signed
+                </div>
+                <div className="w-32 h-2 bg-base-300 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-success to-success/80 transition-all duration-500"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="text-sm text-base-content/60">
-                <span className="font-semibold text-neutral">{totalSigned}</span> of{' '}
-                <span className="font-semibold text-neutral">{fields.length}</span> signed
-              </div>
-              <div className="w-32 h-2 bg-base-300 rounded-full overflow-hidden">
+          </div>
+        </div>
+      )}
+
+      {/* Compact header for embedded mode */}
+      {isEmbedded && !embedConfig.hideProgress && (
+        <div className="bg-base-100 border-b border-base-300 px-3 py-2 sticky top-0 z-10">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-neutral truncate max-w-[50%]">
+              {session.document.title}
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-base-content/60">
+                {totalSigned}/{fields.length}
+              </span>
+              <div className="w-16 h-1.5 bg-base-300 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-success to-success/80 transition-all duration-500"
+                  className="h-full bg-success transition-all duration-500"
                   style={{ width: `${progress}%` }}
                 />
               </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Main Content */}
-      <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+      <div className={isEmbedded ? 'p-2 sm:p-3' : 'p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto'}>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
           {/* PDF Viewer */}
           <div className="lg:col-span-2 order-2 lg:order-1">

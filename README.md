@@ -443,6 +443,7 @@ See `.env.example` files for complete configuration options.
 ## 📚 Documentation
 
 - [API Documentation](http://localhost:3001/api/docs) - Interactive OpenAPI/Swagger documentation
+- [Embedded Signing Guide](docs/EMBED_INTEGRATION.md) - iFrame integration for partners
 - [Contributing Guidelines](CONTRIBUTING.md) - How to contribute to the project
 - [Deployment Guide](docs/deployment.md) - Production deployment instructions
 - [User Guide](docs/user-guide.md) - End-user documentation
@@ -497,6 +498,7 @@ See [Deployment Guide](docs/deployment.md) for detailed instructions on deployin
 - Input validation and sanitization
 - Webhook payload signatures (HMAC-SHA256)
 - **Graceful shutdown** - Proper cleanup with timeout protection for background jobs
+- **Embedded signing security** - CSP frame-ancestors and origin validation for iframe embedding
 
 ## 🐛 Known Issues
 
