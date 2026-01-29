@@ -57,6 +57,31 @@ vi.mock('@/hooks/useToast', () => ({
   })),
 }));
 
+// Mock socket-related hooks
+vi.mock('@/hooks/useDocumentUpdates', () => ({
+  useDocumentUpdates: vi.fn(() => {}),
+}));
+
+vi.mock('@/contexts/SocketContext', () => ({
+  useSocket: vi.fn(() => ({
+    isConnected: false,
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+  })),
+  SocketProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+// Mock ThemeContext
+vi.mock('@/contexts/ThemeContext', () => ({
+  useTheme: vi.fn(() => ({
+    theme: 'light',
+    resolvedTheme: 'light',
+    setTheme: vi.fn(),
+    toggleTheme: vi.fn(),
+  })),
+  ThemeProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: false },
@@ -114,6 +139,7 @@ describe('Documents Page', () => {
     const searchInput = screen.getByPlaceholderText('Search documents by title...');
 
     fireEvent.change(searchInput, { target: { value: 'Test' } });
-    expect(screen.getByText('Clear Filters')).toBeInTheDocument();
+    // Button text is "Clear" not "Clear Filters"
+    expect(screen.getByText('Clear')).toBeInTheDocument();
   });
 });

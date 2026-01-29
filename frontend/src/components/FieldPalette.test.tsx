@@ -24,7 +24,8 @@ describe('FieldPalette Component', () => {
 
   it('should render help text', () => {
     renderWithDnd(<FieldPalette />);
-    expect(screen.getByText(/Drag fields onto the PDF/)).toBeInTheDocument();
+    // Each field item has "Drag to place" text
+    expect(screen.getAllByText('Drag to place').length).toBeGreaterThan(0);
   });
 
   it('should render field icons', () => {

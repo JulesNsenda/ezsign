@@ -13,6 +13,8 @@ describe('Field Model', () => {
     required: true,
     signer_email: 'test@example.com',
     properties: null,
+    visibility_rules: null,
+    calculation: null,
     created_at: new Date(),
   };
 

@@ -1,6 +1,25 @@
 import { SignerController } from './signerController';
 import { Signer } from '@/models/Signer';
 
+// Mock the BrandingService module - mock all dependencies used by signerController
+jest.mock('@/services/brandingService', () => ({
+  BrandingService: jest.fn().mockImplementation(() => ({
+    getBrandingByTeamId: jest.fn().mockResolvedValue(null),
+  })),
+}));
+
+jest.mock('@/services/loggerService', () => {
+  return {
+    __esModule: true,
+    default: {
+      info: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+    },
+  };
+});
+
 describe('SignerController - resendSigningEmail', () => {
   let controller: SignerController;
   let mockPool: any;

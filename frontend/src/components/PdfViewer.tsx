@@ -70,7 +70,8 @@ const PdfViewerComponent: React.FC<PdfViewerProps> = ({
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       {/* Page Navigation - only show if not hidden and multiple pages */}
       {!hideNavigation && numPages > 1 && (
-        <div
+        <nav
+          aria-label="PDF page navigation"
           style={{
             display: 'flex',
             gap: '1rem',
@@ -86,10 +87,11 @@ const PdfViewerComponent: React.FC<PdfViewerProps> = ({
             variant="secondary"
             onClick={goToPrevPage}
             disabled={currentPage <= 1}
+            aria-label="Go to previous page"
           >
-            ← Previous
+            <span aria-hidden="true">←</span> Previous
           </Button>
-          <span style={{ fontSize: '0.875rem', color: '#666' }}>
+          <span style={{ fontSize: '0.875rem', color: '#666' }} aria-live="polite" aria-atomic="true">
             Page {currentPage} of {numPages}
           </span>
           <Button
@@ -97,16 +99,20 @@ const PdfViewerComponent: React.FC<PdfViewerProps> = ({
             variant="secondary"
             onClick={goToNextPage}
             disabled={currentPage >= numPages}
+            aria-label="Go to next page"
           >
-            Next →
+            Next <span aria-hidden="true">→</span>
           </Button>
-        </div>
+        </nav>
       )}
 
       {/* PDF Document */}
       <div style={{ position: 'relative', backgroundColor: hideNavigation ? 'transparent' : '#e9ecef', padding: hideNavigation ? 0 : '1rem' }}>
         {isLoading && (
           <div
+            role="status"
+            aria-live="polite"
+            aria-label="Loading PDF document"
             style={{
               position: 'absolute',
               top: '50%',
@@ -122,6 +128,8 @@ const PdfViewerComponent: React.FC<PdfViewerProps> = ({
         )}
         {error && (
           <div
+            role="alert"
+            aria-live="assertive"
             style={{
               padding: '2rem',
               backgroundColor: '#f8d7da',

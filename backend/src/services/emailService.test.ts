@@ -45,8 +45,8 @@ describe('EmailService', () => {
         port: mockConfig.port,
         secure: mockConfig.secure,
         auth: {
-          user: mockConfig.auth.user,
-          pass: mockConfig.auth.pass,
+          user: mockConfig.auth!.user,
+          pass: mockConfig.auth!.pass,
         },
       });
     });
