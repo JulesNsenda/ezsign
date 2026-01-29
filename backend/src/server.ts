@@ -20,6 +20,11 @@ import { createPdfRouter } from '@/routes/pdfRoutes';
 import { createHealthRoutes } from '@/routes/health';
 import { createTwoFactorRouter } from '@/routes/twoFactor';
 import { createEmailLogRouter, createEmailWebhookRouter } from '@/routes/emailLogRoutes';
+import { createAdminDlqRouter } from '@/routes/adminDlqRoutes';
+import { createAdminStatsRouter } from '@/routes/adminStatsRoutes';
+import { createBrandingRouter, createPublicBrandingRouter } from '@/routes/brandingRoutes';
+import utilityRoutes from '@/routes/utilityRoutes';
+import { getStorageService } from '@/config/storage';
 import { HealthService } from '@/services/healthService';
 import { errorHandler } from '@/middleware/errorHandler';
 import { apiLimiter } from '@/middleware/rateLimiter';
@@ -28,10 +33,13 @@ import { createWebhookWorker } from '@/workers/webhookWorker';
 import { createPdfWorker } from '@/workers/pdfWorker';
 import { createCleanupWorker, createCleanupQueue, scheduleCleanupJobs } from '@/workers/cleanupWorker';
 import { createScheduledSendWorker } from '@/workers/scheduledSendWorker';
+import { createReminderWorker } from '@/workers/reminderWorker';
 import { getRedisConnection } from '@/config/queue';
 import { shutdownManager } from '@/services/shutdownManager';
 import { tokenBlacklistService } from '@/services/tokenBlacklistService';
 import { closeRateLimitRedis } from '@/middleware/rateLimiter';
+import { createMonitoredPool, logQueryStatsSummary } from '@/services/databaseService';
+import { initializeFieldTableService } from '@/services/fieldTableService';
 import logger from '@/services/loggerService';
 
 // Environment variables
@@ -50,8 +58,12 @@ const dbConfig = {
   connectionTimeoutMillis: 2000,
 };
 
-// Initialize database connection pool
-const pool = new Pool(dbConfig);
+// Initialize database connection pool with monitoring
+const rawPool = new Pool(dbConfig);
+const pool = createMonitoredPool(rawPool);
+
+// Initialize field table service
+initializeFieldTableService(pool);
 
 // Test database connection
 pool.connect((err, _client, release) => {
@@ -80,6 +92,10 @@ logger.info('Cleanup worker initialized');
 // Initialize scheduled send worker for delayed document sending
 const scheduledSendWorker = createScheduledSendWorker(pool);
 logger.info('Scheduled send worker initialized');
+
+// Initialize reminder worker for deadline reminders
+const reminderWorker = createReminderWorker(pool);
+logger.info('Reminder worker initialized');
 
 // Schedule cleanup jobs (async, don't await - let server start)
 scheduleCleanupJobs(cleanupQueue).catch((error) => {
@@ -154,6 +170,8 @@ app.use('/api/auth/2fa', createTwoFactorRouter(pool)); // Two-factor authenticat
 app.use('/api/documents', createDocumentRouter(pool));
 app.use('/api/documents', createDocumentSigningRouter(pool)); // Signing operations on documents
 app.use('/api/teams', createTeamsRouter(pool));
+app.use('/api/teams/:teamId/branding', createBrandingRouter(pool, getStorageService())); // Team branding settings
+app.use('/api/branding', createPublicBrandingRouter(pool, getStorageService())); // Public branding endpoints
 app.use('/api/api-keys', createApiKeysRouter(pool));
 app.use('/api/templates', createTemplateRouter(pool));
 app.use('/api/webhooks', createWebhookRouter(pool));
@@ -161,6 +179,9 @@ app.use('/api/webhooks', createEmailWebhookRouter(pool)); // Email delivery webh
 app.use('/api/pdf', createPdfRouter(pool)); // PDF processing endpoints
 app.use('/api/signing', createSigningRouter(pool)); // Public signing links
 app.use('/api/admin/emails', createEmailLogRouter(pool)); // Email logs (admin)
+app.use('/api/admin/dlq', createAdminDlqRouter(pool)); // Dead Letter Queue (admin)
+app.use('/api/admin/stats', createAdminStatsRouter(pool)); // Query performance stats (admin)
+app.use('/api/util', utilityRoutes); // Utility endpoints (public)
 
 // API documentation placeholder
 app.get('/api/docs', (_req: Request, res: Response) => {
@@ -171,6 +192,7 @@ app.get('/api/docs', (_req: Request, res: Response) => {
       auth: '/api/auth',
       documents: '/api/documents',
       teams: '/api/teams',
+      branding: '/api/teams/:teamId/branding',
       apiKeys: '/api/api-keys',
       templates: '/api/templates',
       webhooks: '/api/webhooks',
@@ -267,6 +289,12 @@ shutdownManager.register({
   close: () => scheduledSendWorker.close(),
 });
 
+shutdownManager.register({
+  name: 'Reminder Worker',
+  priority: 50,
+  close: () => reminderWorker.close(),
+});
+
 // Priority 25: Application services
 shutdownManager.register({
   name: 'Token Blacklist Service',
@@ -301,5 +329,20 @@ shutdownManager.register({
 
 // Install signal handlers for graceful shutdown
 shutdownManager.installSignalHandlers();
+
+// Log query stats periodically (every 5 minutes in production)
+const QUERY_STATS_INTERVAL = NODE_ENV === 'production' ? 5 * 60 * 1000 : 60 * 1000;
+const queryStatsInterval = setInterval(() => {
+  logQueryStatsSummary();
+}, QUERY_STATS_INTERVAL);
+
+// Register query stats timer for cleanup
+shutdownManager.register({
+  name: 'Query Stats Timer',
+  priority: 90,
+  close: async () => {
+    clearInterval(queryStatsInterval);
+  },
+});
 
 export default app;

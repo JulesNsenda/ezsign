@@ -1,6 +1,6 @@
 import { Job } from 'bullmq';
 import { Pool } from 'pg';
-import { createWorker, QueueName } from '@/config/queue';
+import { createWorker, QueueName, shouldMoveToDeadLetterQueue, moveToDeadLetterQueue } from '@/config/queue';
 import { WebhookDeliveryService } from '@/services/webhookDeliveryService';
 import logger from '@/services/loggerService';
 
@@ -18,8 +18,10 @@ export interface WebhookJobData {
 export class WebhookWorker {
   private worker;
   private webhookDeliveryService: WebhookDeliveryService;
+  private pool: Pool;
 
   constructor(pool: Pool) {
+    this.pool = pool;
     this.webhookDeliveryService = new WebhookDeliveryService(pool);
 
     this.worker = createWorker<WebhookJobData>(
@@ -65,9 +67,26 @@ export class WebhookWorker {
       logger.debug('Webhook delivery job completed successfully', { jobId: job.id });
     });
 
-    this.worker.on('failed', (job: Job<WebhookJobData> | undefined, error: Error) => {
+    this.worker.on('failed', async (job: Job<WebhookJobData> | undefined, error: Error) => {
       if (job) {
-        logger.error('Webhook delivery job failed', { jobId: job.id, error: error.message });
+        logger.error('Webhook delivery job failed', {
+          jobId: job.id,
+          attemptsMade: job.attemptsMade,
+          error: error.message,
+        });
+
+        // Move to Dead Letter Queue after all retries exhausted
+        if (shouldMoveToDeadLetterQueue(job)) {
+          try {
+            await moveToDeadLetterQueue(this.pool, job, error, QueueName.WEBHOOK_DELIVERY);
+            logger.info('Webhook job moved to Dead Letter Queue', { jobId: job.id });
+          } catch (dlqError) {
+            logger.error('Failed to move webhook job to DLQ', {
+              jobId: job.id,
+              error: (dlqError as Error).message,
+            });
+          }
+        }
       } else {
         logger.error('Webhook delivery job failed (job undefined)', { error: error.message });
       }
@@ -75,6 +94,13 @@ export class WebhookWorker {
 
     this.worker.on('error', (error: Error) => {
       logger.error('Webhook worker error', { error: error.message, stack: error.stack });
+    });
+
+    this.worker.on('stalled', (jobId: string) => {
+      logger.warn('Webhook job stalled (timeout exceeded)', {
+        jobId,
+        queueName: QueueName.WEBHOOK_DELIVERY,
+      });
     });
 
     this.worker.on('active', (job: Job<WebhookJobData>) => {

@@ -1,5 +1,12 @@
 import { Pool } from 'pg';
-import { ApiKey, ApiKeyData, CreateApiKeyData, UpdateApiKeyData } from '@/models/ApiKey';
+import {
+  ApiKey,
+  ApiKeyData,
+  CreateApiKeyData,
+  UpdateApiKeyData,
+  ALL_SCOPES,
+  ApiKeyScope,
+} from '@/models/ApiKey';
 
 export class ApiKeyService {
   private pool: Pool;
@@ -18,13 +25,16 @@ export class ApiKeyService {
   }> {
     const { key, hash } = ApiKey.generateKeyPair();
 
+    // Use provided scopes or default to all scopes
+    const scopes: ApiKeyScope[] = data.scopes || ALL_SCOPES;
+
     const query = `
-      INSERT INTO api_keys (user_id, key_hash, name, expires_at)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, user_id, key_hash, name, last_used_at, expires_at, created_at
+      INSERT INTO api_keys (user_id, key_hash, name, scopes, expires_at)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, user_id, key_hash, name, scopes, last_used_at, expires_at, created_at
     `;
 
-    const values = [data.user_id, hash, data.name, data.expires_at || null];
+    const values = [data.user_id, hash, data.name, scopes, data.expires_at || null];
 
     const result = await this.pool.query<ApiKeyData>(query, values);
     const row = result.rows[0];
@@ -44,7 +54,7 @@ export class ApiKeyService {
    */
   async findByHash(hash: string): Promise<ApiKey | null> {
     const query = `
-      SELECT id, user_id, key_hash, name, last_used_at, expires_at, created_at
+      SELECT id, user_id, key_hash, name, scopes, last_used_at, expires_at, created_at
       FROM api_keys
       WHERE key_hash = $1
     `;
@@ -94,7 +104,7 @@ export class ApiKeyService {
    */
   async findById(id: string): Promise<ApiKey | null> {
     const query = `
-      SELECT id, user_id, key_hash, name, last_used_at, expires_at, created_at
+      SELECT id, user_id, key_hash, name, scopes, last_used_at, expires_at, created_at
       FROM api_keys
       WHERE id = $1
     `;
@@ -114,7 +124,7 @@ export class ApiKeyService {
    */
   async findByUserId(userId: string): Promise<ApiKey[]> {
     const query = `
-      SELECT id, user_id, key_hash, name, last_used_at, expires_at, created_at
+      SELECT id, user_id, key_hash, name, scopes, last_used_at, expires_at, created_at
       FROM api_keys
       WHERE user_id = $1
       ORDER BY created_at DESC
@@ -130,12 +140,17 @@ export class ApiKeyService {
    */
   async updateApiKey(id: string, data: UpdateApiKeyData): Promise<ApiKey | null> {
     const fields: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = [];
     let paramCount = 1;
 
     if (data.name !== undefined) {
       fields.push(`name = $${paramCount++}`);
       values.push(data.name);
+    }
+
+    if (data.scopes !== undefined) {
+      fields.push(`scopes = $${paramCount++}`);
+      values.push(data.scopes);
     }
 
     if (data.expires_at !== undefined) {
@@ -153,7 +168,7 @@ export class ApiKeyService {
       UPDATE api_keys
       SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP
       WHERE id = $${paramCount}
-      RETURNING id, user_id, key_hash, name, last_used_at, expires_at, created_at
+      RETURNING id, user_id, key_hash, name, scopes, last_used_at, expires_at, created_at
     `;
 
     const result = await this.pool.query<ApiKeyData>(query, values);

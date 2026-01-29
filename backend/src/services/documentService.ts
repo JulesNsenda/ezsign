@@ -1,10 +1,16 @@
 import { Pool, PoolClient } from 'pg';
-import { Document, DocumentData, DocumentStatus } from '@/models/Document';
+import { Document, DocumentData, DocumentStatus, ReminderSettings } from '@/models/Document';
 import { StorageService } from '@/services/storageService';
 import { CleanupService } from '@/services/cleanupService';
 import { pdfService } from '@/services/pdfService';
 import { WebhookService } from '@/services/webhookService';
 import { WebhookPayloadService } from '@/services/webhookPayloadService';
+import {
+  decodeCursor,
+  encodeCursor,
+  buildKeysetConditions,
+  validatePaginationParams,
+} from '@/utils/pagination';
 import logger from '@/services/loggerService';
 
 export interface CreateDocumentData {
@@ -18,6 +24,8 @@ export interface CreateDocumentData {
 export interface UpdateDocumentData {
   title?: string;
   status?: DocumentStatus;
+  expires_at?: Date | null;
+  reminder_settings?: ReminderSettings;
 }
 
 export interface DocumentListOptions {
@@ -36,6 +44,30 @@ export interface PaginatedDocuments {
   page: number;
   limit: number;
   totalPages: number;
+}
+
+/**
+ * Keyset pagination options for documents
+ */
+export interface DocumentKeysetOptions {
+  userId: string;
+  teamId?: string;
+  status?: DocumentStatus;
+  limit?: number;
+  cursor?: string;
+  sortBy?: 'created_at' | 'updated_at' | 'title';
+  sortOrder?: 'asc' | 'desc';
+  includeTotal?: boolean;
+}
+
+/**
+ * Keyset paginated documents result
+ */
+export interface KeysetPaginatedDocuments {
+  documents: Document[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  total?: number;
 }
 
 export class DocumentService {
@@ -200,6 +232,123 @@ export class DocumentService {
   }
 
   /**
+   * Find documents with keyset pagination (cursor-based)
+   * More efficient than OFFSET for large datasets
+   */
+  async findDocumentsKeyset(
+    options: DocumentKeysetOptions
+  ): Promise<KeysetPaginatedDocuments> {
+    const limit = validatePaginationParams(options.limit, 100, 20);
+    const sortBy = options.sortBy || 'created_at';
+    const sortOrder = options.sortOrder || 'desc';
+
+    // Build base WHERE conditions
+    const conditions: string[] = ['user_id = $1'];
+    const values: (string | number | Date | null)[] = [options.userId];
+    let paramCount = 2;
+
+    if (options.teamId) {
+      conditions.push(`team_id = $${paramCount++}`);
+      values.push(options.teamId);
+    }
+
+    if (options.status) {
+      conditions.push(`status = $${paramCount++}`);
+      values.push(options.status);
+    }
+
+    // Handle cursor for keyset pagination
+    if (options.cursor) {
+      const cursorData = decodeCursor(options.cursor);
+      if (cursorData) {
+        const keysetConditions = buildKeysetConditions(
+          sortBy,
+          sortOrder,
+          cursorData,
+          paramCount
+        );
+        conditions.push(keysetConditions.conditions);
+        values.push(...keysetConditions.values);
+        paramCount += keysetConditions.values.length;
+      }
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    // Fetch one extra to determine if there are more results
+    const fetchLimit = limit + 1;
+
+    const query = `
+      SELECT id, user_id, team_id, title, original_filename,
+             file_path, file_size, mime_type, page_count, status,
+             workflow_type, created_at, updated_at
+      FROM documents
+      WHERE ${whereClause}
+      ORDER BY ${sortBy} ${sortOrder.toUpperCase()}, id ${sortOrder.toUpperCase()}
+      LIMIT $${paramCount}
+    `;
+
+    values.push(fetchLimit);
+
+    const result = await this.pool.query<DocumentData>(query, values);
+
+    // Check if there are more results
+    const hasMore = result.rows.length > limit;
+    const documentRows = hasMore ? result.rows.slice(0, limit) : result.rows;
+    const documents = documentRows.map((row) => new Document(row));
+
+    // Generate next cursor from last item
+    let nextCursor: string | null = null;
+    if (hasMore && documents.length > 0) {
+      const lastDoc = documents[documents.length - 1];
+      if (lastDoc) {
+        const cursorValue = sortBy === 'title'
+          ? lastDoc.title
+          : sortBy === 'updated_at'
+          ? lastDoc.updated_at
+          : lastDoc.created_at;
+
+        nextCursor = encodeCursor({
+          value: cursorValue,
+          id: lastDoc.id,
+        });
+      }
+    }
+
+    // Optionally get total count (expensive for large datasets)
+    let total: number | undefined;
+    if (options.includeTotal) {
+      const countConditions = ['user_id = $1'];
+      const countValues: (string | number | Date | null)[] = [options.userId];
+      let countParamIndex = 2;
+
+      if (options.teamId) {
+        countConditions.push(`team_id = $${countParamIndex++}`);
+        countValues.push(options.teamId);
+      }
+      if (options.status) {
+        countConditions.push(`status = $${countParamIndex++}`);
+        countValues.push(options.status);
+      }
+
+      const countQuery = `
+        SELECT COUNT(*) as total
+        FROM documents
+        WHERE ${countConditions.join(' AND ')}
+      `;
+      const countResult = await this.pool.query(countQuery, countValues);
+      total = parseInt(countResult.rows[0]?.total || '0', 10);
+    }
+
+    return {
+      documents,
+      nextCursor,
+      hasMore,
+      total,
+    };
+  }
+
+  /**
    * Update a document
    */
   async updateDocument(
@@ -221,6 +370,16 @@ export class DocumentService {
       values.push(data.status);
     }
 
+    if (data.expires_at !== undefined) {
+      fields.push(`expires_at = $${paramCount++}`);
+      values.push(data.expires_at);
+    }
+
+    if (data.reminder_settings !== undefined) {
+      fields.push(`reminder_settings = $${paramCount++}`);
+      values.push(JSON.stringify(data.reminder_settings));
+    }
+
     if (fields.length === 0) {
       return this.findById(id, userId);
     }
@@ -229,11 +388,13 @@ export class DocumentService {
 
     const query = `
       UPDATE documents
-      SET ${fields.join(', ')}
+      SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP
       WHERE id = $${paramCount} AND user_id = $${paramCount + 1}
       RETURNING id, user_id, team_id, title, original_filename,
                 file_path, file_size, mime_type, page_count, status,
-                workflow_type, created_at, updated_at
+                workflow_type, completed_at, created_at, updated_at,
+                thumbnail_path, thumbnail_generated_at, is_optimized,
+                original_file_size, optimized_at, expires_at, reminder_settings
     `;
 
     const result = await this.pool.query<DocumentData>(query, values);

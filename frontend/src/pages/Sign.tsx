@@ -8,12 +8,15 @@ import TextFieldInput from '@/components/TextFieldInput';
 import TextareaFieldInput from '@/components/TextareaFieldInput';
 import DateFieldInput from '@/components/DateFieldInput';
 import CheckboxFieldInput from '@/components/CheckboxFieldInput';
+import CalculatedFieldInput from '@/components/CalculatedFieldInput';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import { useSigningSession, useSubmitSignatures } from '@/hooks/useSignature';
+import { usePublicBranding } from '@/hooks/useBranding';
 import { useToast } from '@/hooks/useToast';
 import signatureService, { type SignatureData } from '@/services/signatureService';
-import type { SignatureType, RadioOption } from '@/types';
+import { brandingService } from '@/services/brandingService';
+import type { SignatureType, RadioOption, ValidationConfig, CalculationConfig, Field } from '@/types';
 import {
   parseEmbedConfig,
   createEventEmitter,
@@ -48,6 +51,34 @@ export const Sign: React.FC = () => {
 
   const { data: session, isLoading, error } = useSigningSession(token!);
   const submitSignaturesMutation = useSubmitSignatures();
+
+  // Fetch team branding if document has a team
+  const teamId = session?.document?.team_id;
+  const { data: brandingData } = usePublicBranding(teamId || undefined);
+  const branding = brandingData?.branding;
+
+  // Apply branding colors as CSS custom properties
+  useEffect(() => {
+    if (branding && !isEmbedded) {
+      // Only apply branding if not in embedded mode (embedded mode has its own theme)
+      document.documentElement.style.setProperty('--branding-primary', branding.primary_color);
+      document.documentElement.style.setProperty('--branding-secondary', branding.secondary_color);
+      if (branding.accent_color) {
+        document.documentElement.style.setProperty('--branding-accent', branding.accent_color);
+      }
+    }
+    return () => {
+      // Cleanup
+      document.documentElement.style.removeProperty('--branding-primary');
+      document.documentElement.style.removeProperty('--branding-secondary');
+      document.documentElement.style.removeProperty('--branding-accent');
+    };
+  }, [branding, isEmbedded]);
+
+  // Get branding display values
+  const displayName = branding?.company_name || 'EzSign';
+  const logoUrl = teamId && branding?.logo_url ? brandingService.getLogoUrl(teamId) : null;
+  const showPoweredBy = branding?.show_powered_by ?? true;
 
   // Initialize event emitter when session is loaded
   useEffect(() => {
@@ -191,6 +222,31 @@ export const Sign: React.FC = () => {
   const requiredProgress = requiredFields.length > 0
     ? Math.round((completedRequiredFields.length / requiredFields.length) * 100)
     : 100;
+
+  // Create a map of field values for calculated fields
+  const fieldValuesMap = useMemo(() => {
+    const valuesMap = new Map<string, string | number | boolean | null>();
+
+    // Add values from already saved signatures
+    for (const sig of signatures) {
+      if (sig.text_value !== undefined && sig.text_value !== null) {
+        valuesMap.set(sig.field_id, sig.text_value);
+      } else if (sig.checkbox_value !== undefined) {
+        valuesMap.set(sig.field_id, sig.checkbox_value);
+      }
+    }
+
+    // Add values from collected signatures (not yet submitted)
+    for (const sig of collectedSignatures) {
+      if (sig.text_value !== undefined && sig.text_value !== null) {
+        valuesMap.set(sig.field_id, sig.text_value);
+      } else if (sig.checkbox_value !== undefined) {
+        valuesMap.set(sig.field_id, sig.checkbox_value);
+      }
+    }
+
+    return valuesMap;
+  }, [signatures, collectedSignatures]);
 
   // NOW we can do conditional returns after all hooks are called
   if (isLoading) {
@@ -477,6 +533,26 @@ export const Sign: React.FC = () => {
     }
   };
 
+  const handleCalculatedInput = (value: string | number | null) => {
+    if (!currentField) return;
+
+    const stringValue = value !== null && value !== undefined ? String(value) : '';
+
+    const newSignature: SignatureData = {
+      field_id: currentField.id,
+      signature_type: 'typed' as SignatureType,
+      signature_data: `calculated:${stringValue}`,
+      text_value: stringValue,
+    };
+
+    setCollectedSignatures([...collectedSignatures, newSignature]);
+    setIsSignatureModalOpen(false);
+
+    if (currentFieldIndex < unsignedFields.length - 1) {
+      setTimeout(() => handleNextField(), 300);
+    }
+  };
+
   // Helper to navigate to a specific field by ID
   const navigateToFieldById = (fieldId: string) => {
     const fieldIndex = unsignedFields.findIndex((f) => f.id === fieldId);
@@ -530,6 +606,19 @@ export const Sign: React.FC = () => {
   const renderFieldInput = () => {
     if (!currentField) return null;
 
+    // Handle calculated fields - show read-only calculated value
+    if (currentField.calculation) {
+      return (
+        <CalculatedFieldInput
+          calculation={currentField.calculation as CalculationConfig}
+          fields={fields as Field[]}
+          fieldValues={fieldValuesMap}
+          onSave={handleCalculatedInput}
+          onClose={() => setIsSignatureModalOpen(false)}
+        />
+      );
+    }
+
     switch (currentField.type) {
       case 'signature':
       case 'initials':
@@ -545,8 +634,9 @@ export const Sign: React.FC = () => {
           <TextFieldInput
             onSave={handleTextInput}
             onCancel={() => setIsSignatureModalOpen(false)}
-            placeholder="Enter text..."
+            placeholder={currentField.properties?.placeholder as string || 'Enter text...'}
             maxLength={currentField.properties?.maxLength as number || 255}
+            validation={currentField.properties?.validation as ValidationConfig | undefined}
           />
         );
 
@@ -598,6 +688,7 @@ export const Sign: React.FC = () => {
             rows={currentField.properties?.rows as number || 4}
             onSave={handleTextareaInput}
             onCancel={() => setIsSignatureModalOpen(false)}
+            validation={currentField.properties?.validation as ValidationConfig | undefined}
           />
         );
 
@@ -616,6 +707,34 @@ export const Sign: React.FC = () => {
       {!isEmbedded && (
         <div className="bg-base-100 border-b border-base-300 shadow-sm sticky top-0 z-10">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            {/* Branding header with logo */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt={displayName}
+                    className="h-8 object-contain"
+                  />
+                ) : (
+                  <div
+                    className="px-3 py-1 rounded font-bold text-white text-sm"
+                    style={{ backgroundColor: branding?.primary_color || '#4F46E5' }}
+                  >
+                    {displayName}
+                  </div>
+                )}
+                {branding?.tagline && (
+                  <span className="text-sm text-base-content/50 hidden sm:inline">{branding.tagline}</span>
+                )}
+              </div>
+              {showPoweredBy && !branding?.hide_ezsign_branding && (
+                <span className="text-xs text-base-content/40">
+                  Powered by {displayName}
+                </span>
+              )}
+            </div>
+
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <div className="flex-1">
                 <h1 className="text-xl sm:text-2xl font-bold text-neutral mb-1">
@@ -635,8 +754,11 @@ export const Sign: React.FC = () => {
                 </div>
                 <div className="w-32 h-2 bg-base-300 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-success to-success/80 transition-all duration-500"
-                    style={{ width: `${progress}%` }}
+                    className="h-full transition-all duration-500"
+                    style={{
+                      width: `${progress}%`,
+                      backgroundColor: branding?.secondary_color || '#10B981',
+                    }}
                   />
                 </div>
               </div>
@@ -1060,6 +1182,54 @@ export const Sign: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Footer with branding links - Hidden in embedded mode */}
+      {!isEmbedded && (branding?.support_url || branding?.privacy_url || branding?.terms_url || branding?.support_email) && (
+        <footer className="bg-base-100 border-t border-base-300 py-4 mt-auto">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-wrap justify-center gap-4 text-sm text-base-content/60">
+              {branding.support_url && (
+                <a
+                  href={branding.support_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-base-content transition-colors"
+                >
+                  Help & Support
+                </a>
+              )}
+              {branding.support_email && (
+                <a
+                  href={`mailto:${branding.support_email}`}
+                  className="hover:text-base-content transition-colors"
+                >
+                  Contact: {branding.support_email}
+                </a>
+              )}
+              {branding.privacy_url && (
+                <a
+                  href={branding.privacy_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-base-content transition-colors"
+                >
+                  Privacy Policy
+                </a>
+              )}
+              {branding.terms_url && (
+                <a
+                  href={branding.terms_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-base-content transition-colors"
+                >
+                  Terms of Service
+                </a>
+              )}
+            </div>
+          </div>
+        </footer>
+      )}
 
       {/* Field Input Modal */}
       <Modal

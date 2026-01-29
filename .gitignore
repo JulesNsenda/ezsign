@@ -65,6 +65,9 @@ uploads/
 storage/
 files/
 
+# Test storage files
+backend/storage-test/
+
 # Docker
 .dockerignore
 

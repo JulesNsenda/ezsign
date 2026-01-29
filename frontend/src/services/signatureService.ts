@@ -11,6 +11,7 @@ export interface SigningSessionData {
     id: string;
     title: string;
     page_count: number;
+    team_id?: string | null;
   };
   signer: Signer;
   fields: Field[];
@@ -22,6 +23,7 @@ export interface SignatureData {
   signature_type: 'drawn' | 'typed' | 'uploaded';
   signature_data: string;
   text_value?: string;
+  checkbox_value?: boolean;
   font_family?: string;
 }
 

@@ -1,8 +1,10 @@
 import { Job, Worker } from 'bullmq';
 import { Pool } from 'pg';
-import { createWorker, QueueName } from '@/config/queue';
+import { createWorker, QueueName, shouldMoveToDeadLetterQueue, moveToDeadLetterQueue } from '@/config/queue';
 import { Signer, SignerData } from '@/models/Signer';
-import { EmailService, EmailConfig } from '@/services/emailService';
+import { Branding } from '@/models/Branding';
+import { EmailService, EmailConfig, EmailBranding } from '@/services/emailService';
+import { BrandingService } from '@/services/brandingService';
 import { ScheduledSendJobData } from '@/services/scheduledSendService';
 import { socketService } from '@/services/socketService';
 import logger from '@/services/loggerService';
@@ -15,9 +17,12 @@ export class ScheduledSendWorker {
   private worker: Worker<ScheduledSendJobData>;
   private pool: Pool;
   private emailService: EmailService;
+  private brandingService: BrandingService;
+  private baseUrl: string;
 
   constructor(pool: Pool) {
     this.pool = pool;
+    this.brandingService = new BrandingService(pool);
 
     // Initialize email service
     const emailUser = process.env.EMAIL_SMTP_USER || '';
@@ -29,8 +34,8 @@ export class ScheduledSendWorker {
       auth: emailUser && emailPass ? { user: emailUser, pass: emailPass } : undefined,
       from: process.env.EMAIL_FROM || 'noreply@ezsign.com',
     };
-    const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
-    this.emailService = new EmailService(emailConfig, baseUrl);
+    this.baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
+    this.emailService = new EmailService(emailConfig, this.baseUrl);
 
     this.worker = createWorker<ScheduledSendJobData>(
       QueueName.SCHEDULED_SEND,
@@ -141,16 +146,19 @@ export class ScheduledSendWorker {
 
       const workflowType = docRow.workflow_type || 'parallel';
 
+      // Fetch branding for email customization
+      const emailBranding = await this.getEmailBranding(docRow.team_id);
+
       if (workflowType === 'sequential') {
         // For sequential workflow, only send to first pending signer
         const firstSigner = signers.find((s) => s.status === 'pending' && s.signing_order === 0) || signers[0];
         if (firstSigner) {
-          await this.sendSigningEmail(firstSigner, docRow.title, senderName);
+          await this.sendSigningEmail(firstSigner, docRow.title, senderName, emailBranding);
         }
       } else {
         // For parallel workflow, send to all signers
         await Promise.all(
-          signers.map((signer) => this.sendSigningEmail(signer, docRow.title, senderName))
+          signers.map((signer) => this.sendSigningEmail(signer, docRow.title, senderName, emailBranding))
         );
       }
 
@@ -185,12 +193,55 @@ export class ScheduledSendWorker {
   }
 
   /**
+   * Convert Branding model to EmailBranding interface
+   */
+  private convertToEmailBranding(branding: Branding): EmailBranding {
+    return {
+      companyName: branding.company_name,
+      logoUrl: branding.getLogoUrl(this.baseUrl),
+      primaryColor: branding.primary_color,
+      secondaryColor: branding.secondary_color,
+      footerText: branding.email_footer_text,
+      supportEmail: branding.support_email,
+      supportUrl: branding.support_url,
+      privacyUrl: branding.privacy_url,
+      termsUrl: branding.terms_url,
+      showPoweredBy: branding.show_powered_by,
+      hideEzsignBranding: branding.hide_ezsign_branding,
+    };
+  }
+
+  /**
+   * Get email branding for a document based on its team_id
+   */
+  private async getEmailBranding(teamId: string | null | undefined): Promise<EmailBranding | undefined> {
+    if (!teamId) {
+      return undefined;
+    }
+
+    try {
+      const branding = await this.brandingService.getByTeamId(teamId);
+      if (branding) {
+        return this.convertToEmailBranding(branding);
+      }
+    } catch (error) {
+      logger.warn('Failed to fetch branding for scheduled send email', {
+        teamId,
+        error: (error as Error).message,
+      });
+    }
+
+    return undefined;
+  }
+
+  /**
    * Send signing email to a signer
    */
   private async sendSigningEmail(
     signer: Signer,
     documentTitle: string,
-    senderName: string
+    senderName: string,
+    branding?: EmailBranding
   ): Promise<void> {
     try {
       await this.emailService.sendSigningRequest({
@@ -198,7 +249,8 @@ export class ScheduledSendWorker {
         recipientName: signer.name || signer.email,
         documentTitle,
         senderName,
-        signingUrl: `${process.env.APP_URL || 'http://localhost:3000'}/sign/${signer.access_token}`,
+        signingUrl: `${this.baseUrl}/sign/${signer.access_token}`,
+        branding,
       });
 
       // Update signer to show email was sent
@@ -233,16 +285,37 @@ export class ScheduledSendWorker {
       });
     });
 
-    this.worker.on('failed', (job: Job<ScheduledSendJobData> | undefined, error: Error) => {
+    this.worker.on('failed', async (job: Job<ScheduledSendJobData> | undefined, error: Error) => {
       if (job) {
         logger.error('Scheduled send job failed', {
           jobId: job.id,
           documentId: job.data.documentId,
+          attemptsMade: job.attemptsMade,
           error: error.message,
         });
+
+        // Move to Dead Letter Queue after all retries exhausted
+        if (shouldMoveToDeadLetterQueue(job)) {
+          try {
+            await moveToDeadLetterQueue(this.pool, job, error, QueueName.SCHEDULED_SEND);
+            logger.info('Scheduled send job moved to Dead Letter Queue', { jobId: job.id });
+          } catch (dlqError) {
+            logger.error('Failed to move scheduled send job to DLQ', {
+              jobId: job.id,
+              error: (dlqError as Error).message,
+            });
+          }
+        }
       } else {
         logger.error('Scheduled send job failed (job undefined)', { error: error.message });
       }
+    });
+
+    this.worker.on('stalled', (jobId: string) => {
+      logger.warn('Scheduled send job stalled (timeout exceeded)', {
+        jobId,
+        queueName: QueueName.SCHEDULED_SEND,
+      });
     });
 
     this.worker.on('error', (error: Error) => {

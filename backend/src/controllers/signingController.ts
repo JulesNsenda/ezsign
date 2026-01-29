@@ -4,10 +4,13 @@ import { Document } from '@/models/Document';
 import { Signer } from '@/models/Signer';
 import { Signature } from '@/models/Signature';
 import { Field } from '@/models/Field';
-import { EmailService } from '@/services/emailService';
+import { Branding } from '@/models/Branding';
+import { EmailService, EmailBranding } from '@/services/emailService';
 import { PdfService } from '@/services/pdfService';
 import { StorageService } from '@/services/storageService';
+import { BrandingService } from '@/services/brandingService';
 import { socketService } from '@/services/socketService';
+import { ReminderService } from '@/services/reminderService';
 import logger from '@/services/loggerService';
 
 export class SigningController {
@@ -15,17 +18,65 @@ export class SigningController {
   private emailService: EmailService;
   private _pdfService: PdfService;
   private _storageService: StorageService;
+  private brandingService: BrandingService;
+  private reminderService?: ReminderService;
 
   constructor(
     pool: Pool,
     emailService: EmailService,
     pdfService: PdfService,
-    storageService: StorageService
+    storageService: StorageService,
+    reminderService?: ReminderService
   ) {
     this.pool = pool;
     this.emailService = emailService;
     this._pdfService = pdfService;
     this._storageService = storageService;
+    this.brandingService = new BrandingService(pool);
+    this.reminderService = reminderService;
+  }
+
+  /**
+   * Convert Branding model to EmailBranding interface
+   */
+  private convertToEmailBranding(branding: Branding, baseUrl: string): EmailBranding {
+    return {
+      companyName: branding.company_name,
+      logoUrl: branding.getLogoUrl(baseUrl),
+      primaryColor: branding.primary_color,
+      secondaryColor: branding.secondary_color,
+      footerText: branding.email_footer_text,
+      supportEmail: branding.support_email,
+      supportUrl: branding.support_url,
+      privacyUrl: branding.privacy_url,
+      termsUrl: branding.terms_url,
+      showPoweredBy: branding.show_powered_by,
+      hideEzsignBranding: branding.hide_ezsign_branding,
+    };
+  }
+
+  /**
+   * Get email branding for a document based on its team_id
+   */
+  private async getEmailBranding(teamId: string | null | undefined): Promise<EmailBranding | undefined> {
+    if (!teamId) {
+      return undefined;
+    }
+
+    try {
+      const branding = await this.brandingService.getByTeamId(teamId);
+      if (branding) {
+        const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
+        return this.convertToEmailBranding(branding, baseUrl);
+      }
+    } catch (error) {
+      logger.warn('Failed to fetch branding for email', {
+        teamId,
+        error: (error as Error).message,
+      });
+    }
+
+    return undefined;
   }
 
   /**
@@ -146,6 +197,9 @@ export class SigningController {
       );
       const senderName = userResult.rows[0]?.email || 'Someone';
 
+      // Fetch branding for email customization
+      const emailBranding = await this.getEmailBranding(document.team_id);
+
       // Send signing requests to all signers (or first signer if sequential)
       const signers = signersResult.rows.map((row) => new Signer(this.mapRowToSignerData(row)));
 
@@ -160,6 +214,7 @@ export class SigningController {
             senderName,
             signingUrl: this.emailService.generateSigningUrl(firstSigner.access_token),
             message,
+            branding: emailBranding,
           });
         }
       } else {
@@ -172,6 +227,26 @@ export class SigningController {
             senderName,
             signingUrl: this.emailService.generateSigningUrl(signer.access_token),
             message,
+            branding: emailBranding,
+          });
+        }
+      }
+
+      // Schedule deadline reminders if document has an expiration date
+      if (this.reminderService && document.expires_at) {
+        try {
+          const reminders = await this.reminderService.scheduleRemindersForDocument(documentId);
+          logger.info('Scheduled deadline reminders for document', {
+            documentId,
+            reminderCount: reminders.length,
+            correlationId: req.correlationId,
+          });
+        } catch (error) {
+          // Log but don't fail the send operation if reminder scheduling fails
+          logger.warn('Failed to schedule deadline reminders', {
+            documentId,
+            error: (error as Error).message,
+            correlationId: req.correlationId,
           });
         }
       }
@@ -405,6 +480,24 @@ export class SigningController {
           updatedAt: new Date().toISOString(),
           ownerId: documentOwnerId,
         });
+
+        // Cancel any pending reminders for this signer (they have signed)
+        if (this.reminderService) {
+          try {
+            const cancelledCount = await this.reminderService.cancelRemindersForSigner(signer.id);
+            if (cancelledCount > 0) {
+              logger.debug('Cancelled reminders for signer', {
+                signerId: signer.id,
+                cancelledCount,
+              });
+            }
+          } catch (error) {
+            logger.warn('Failed to cancel signer reminders', {
+              signerId: signer.id,
+              error: (error as Error).message,
+            });
+          }
+        }
 
         // Check if all signers have signed (document completion)
         const allSignersResult = await client.query(
@@ -673,13 +766,34 @@ export class SigningController {
 
           if (ownerResult.rows.length > 0) {
             const owner = ownerResult.rows[0];
+            // Fetch branding for email customization
+            const completionBranding = await this.getEmailBranding(document.team_id);
             await this.emailService.sendCompletionNotification({
               recipientEmail: owner.email,
               recipientName: owner.email,
               documentTitle: document.title,
               completedAt: new Date(),
               downloadUrl: this.emailService.generateDownloadUrl(document.id),
+              branding: completionBranding,
             });
+          }
+
+          // Cancel all remaining reminders for the completed document
+          if (this.reminderService) {
+            try {
+              const cancelledCount = await this.reminderService.cancelRemindersForDocument(signer.document_id);
+              if (cancelledCount > 0) {
+                logger.info('Cancelled remaining reminders for completed document', {
+                  documentId: signer.document_id,
+                  cancelledCount,
+                });
+              }
+            } catch (error) {
+              logger.warn('Failed to cancel document reminders on completion', {
+                documentId: signer.document_id,
+                error: (error as Error).message,
+              });
+            }
           }
         } else {
           // Check if next signer should be notified (sequential workflow)
@@ -706,12 +820,16 @@ export class SigningController {
               );
               const senderName = userResult.rows[0]?.email || 'Someone';
 
+              // Fetch branding for email customization
+              const nextSignerBranding = await this.getEmailBranding(document.team_id);
+
               await this.emailService.sendSigningRequest({
                 recipientEmail: nextSigner.email,
                 recipientName: nextSigner.name,
                 documentTitle: document.title,
                 senderName,
                 signingUrl: this.emailService.generateSigningUrl(nextSigner.access_token),
+                branding: nextSignerBranding,
               });
             }
           }
@@ -885,6 +1003,8 @@ export class SigningController {
       completed_at: row.completed_at,
       created_at: row.created_at,
       updated_at: row.updated_at,
+      expires_at: row.expires_at,
+      reminder_settings: row.reminder_settings,
     };
   }
 

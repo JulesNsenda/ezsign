@@ -1,14 +1,19 @@
 import React from 'react';
-import type { Field, RadioOption } from '@/types';
+import type { Field, RadioOption, FieldGroup, ValidationConfig, CalculationConfig } from '@/types';
 import Button from './Button';
 import RadioOptionsEditor from './RadioOptionsEditor';
+import PatternSelector from './PatternSelector';
+import CalculationEditor from './CalculationEditor';
 
 export interface FieldPropertiesProps {
   field: Field | null;
+  fields?: Field[];
   signers: Array<{ id: string; email: string; name: string }>;
+  groups?: FieldGroup[];
   onUpdate: (updates: Partial<Field>) => void;
   onDelete: () => void;
   onClose: () => void;
+  onGroupChange?: (fieldId: string, groupId: string | null) => void;
 }
 
 /**
@@ -16,10 +21,13 @@ export interface FieldPropertiesProps {
  */
 const FieldProperties: React.FC<FieldPropertiesProps> = ({
   field,
+  fields = [],
   signers,
+  groups = [],
   onUpdate,
   onDelete,
   onClose,
+  onGroupChange,
 }) => {
   if (!field) {
     return (
@@ -134,6 +142,75 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
             </div>
           </label>
         </div>
+
+        {/* Text Field Options */}
+        {field.type === 'text' && (
+          <>
+            <div className="border-t border-base-300 pt-4">
+              <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
+                Placeholder Text
+              </label>
+              <input
+                type="text"
+                value={(field.properties?.placeholder as string) || ''}
+                onChange={(e) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      placeholder: e.target.value,
+                    },
+                  })
+                }
+                placeholder="Enter text here..."
+                className="input-docuseal text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
+                Max Characters
+              </label>
+              <input
+                type="number"
+                value={(field.properties?.maxLength as number) || 255}
+                onChange={(e) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      maxLength: Number(e.target.value),
+                    },
+                  })
+                }
+                min={1}
+                max={1000}
+                className="input-docuseal text-sm"
+              />
+            </div>
+
+            <div className="border-t border-base-300 pt-4">
+              <PatternSelector
+                value={field.properties?.validation as ValidationConfig | undefined}
+                onChange={(validation) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      validation,
+                    },
+                  })
+                }
+                fieldType="text"
+              />
+            </div>
+
+            {/* Calculation Configuration */}
+            <CalculationEditor
+              calculation={field.calculation as CalculationConfig | null}
+              fields={fields}
+              currentFieldId={field.id}
+              onChange={(calculation) => onUpdate({ calculation })}
+            />
+          </>
+        )}
 
         {/* Checkbox Field Options */}
         {field.type === 'checkbox' && (
@@ -394,6 +471,21 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
                 className="input-docuseal text-sm"
               />
             </div>
+
+            <div className="border-t border-base-300 pt-4">
+              <PatternSelector
+                value={field.properties?.validation as ValidationConfig | undefined}
+                onChange={(validation) =>
+                  onUpdate({
+                    properties: {
+                      ...field.properties,
+                      validation,
+                    },
+                  })
+                }
+                fieldType="textarea"
+              />
+            </div>
           </>
         )}
 
@@ -423,6 +515,30 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
             </p>
           )}
         </div>
+
+        {/* Assign to Group */}
+        {groups.length > 0 && onGroupChange && (
+          <div>
+            <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
+              Field Group
+            </label>
+            <select
+              value={field.group_id || ''}
+              onChange={(e) => {
+                const value = e.target.value;
+                onGroupChange(field.id, value === '' ? null : value);
+              }}
+              className="input-docuseal text-sm"
+            >
+              <option value="">No group</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Delete Button */}
         <div className="mt-2 pt-4 border-t border-base-300">

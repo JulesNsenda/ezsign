@@ -2,7 +2,9 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { SignerService } from '../services/signerService.js';
 import { DocumentService } from '../services/documentService.js';
-import { EmailService } from '../services/emailService.js';
+import { EmailService, EmailBranding } from '../services/emailService.js';
+import { BrandingService } from '../services/brandingService.js';
+import { Branding } from '../models/Branding.js';
 import { CreateSignerData, UpdateSignerData } from '../models/Signer.js';
 import logger from '@/services/loggerService';
 
@@ -10,6 +12,7 @@ export class SignerController {
   private signerService: SignerService;
   // private documentService: DocumentService | null;  // Reserved for future use
   private emailService: EmailService | null;
+  private brandingService: BrandingService;
   private pool: Pool;
 
   constructor(
@@ -22,6 +25,50 @@ export class SignerController {
     this.pool = pool || (signerService as any).pool;
     // this.documentService = documentService || null;  // Reserved for future use
     this.emailService = emailService || null;
+    this.brandingService = new BrandingService(this.pool);
+  }
+
+  /**
+   * Convert Branding model to EmailBranding interface
+   */
+  private convertToEmailBranding(branding: Branding, baseUrl: string): EmailBranding {
+    return {
+      companyName: branding.company_name,
+      logoUrl: branding.getLogoUrl(baseUrl),
+      primaryColor: branding.primary_color,
+      secondaryColor: branding.secondary_color,
+      footerText: branding.email_footer_text,
+      supportEmail: branding.support_email,
+      supportUrl: branding.support_url,
+      privacyUrl: branding.privacy_url,
+      termsUrl: branding.terms_url,
+      showPoweredBy: branding.show_powered_by,
+      hideEzsignBranding: branding.hide_ezsign_branding,
+    };
+  }
+
+  /**
+   * Get email branding for a document based on its team_id
+   */
+  private async getEmailBranding(teamId: string | null | undefined): Promise<EmailBranding | undefined> {
+    if (!teamId) {
+      return undefined;
+    }
+
+    try {
+      const branding = await this.brandingService.getByTeamId(teamId);
+      if (branding) {
+        const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
+        return this.convertToEmailBranding(branding, baseUrl);
+      }
+    } catch (error) {
+      logger.warn('Failed to fetch branding for email', {
+        teamId,
+        error: (error as Error).message,
+      });
+    }
+
+    return undefined;
   }
 
   /**
@@ -361,6 +408,9 @@ export class SignerController {
       );
       const ownerEmail = ownerQuery.rows[0]?.email || 'Document Owner';
 
+      // Fetch branding for email customization
+      const emailBranding = await this.getEmailBranding(document.team_id);
+
       // Send email (if emailService is available)
       if (this.emailService) {
         await this.emailService.sendSigningRequest({
@@ -371,6 +421,7 @@ export class SignerController {
           signingUrl: this.emailService.generateSigningUrl(signer.access_token),
           message: customMessage,
           isReminder: true,
+          branding: emailBranding,
         });
       }
 

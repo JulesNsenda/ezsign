@@ -363,6 +363,7 @@ export const TemplateEditor: React.FC = () => {
             <div>
               <FieldProperties
                 field={selectedField}
+                fields={fields}
                 signers={[]}
                 onUpdate={(updates) => selectedFieldId && handleUpdateFieldProperty(selectedFieldId, updates)}
                 onDelete={() => selectedFieldId && handleDeleteField(selectedFieldId)}

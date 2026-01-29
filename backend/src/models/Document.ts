@@ -1,6 +1,11 @@
 export type DocumentStatus = 'draft' | 'scheduled' | 'pending' | 'completed' | 'cancelled';
 export type WorkflowType = 'single' | 'sequential' | 'parallel';
 
+export interface ReminderSettings {
+  enabled: boolean;
+  intervals: number[]; // Days before expiration (e.g., [1, 3, 7])
+}
+
 export interface DocumentData {
   id: string;
   user_id: string;
@@ -23,6 +28,9 @@ export interface DocumentData {
   is_optimized: boolean;
   original_file_size: number | null;
   optimized_at: Date | null;
+  // Expiration and reminder fields
+  expires_at: Date | null;
+  reminder_settings: ReminderSettings;
 }
 
 export interface CreateDocumentData {
@@ -34,6 +42,8 @@ export interface CreateDocumentData {
   file_size: number;
   mime_type: string;
   workflow_type?: WorkflowType;
+  expires_at?: Date | null;
+  reminder_settings?: ReminderSettings;
 }
 
 export interface UpdateDocumentData {
@@ -41,7 +51,14 @@ export interface UpdateDocumentData {
   status?: DocumentStatus;
   workflow_type?: WorkflowType;
   team_id?: string | null;
+  expires_at?: Date | null;
+  reminder_settings?: ReminderSettings;
 }
+
+const DEFAULT_REMINDER_SETTINGS: ReminderSettings = {
+  enabled: true,
+  intervals: [1, 3, 7],
+};
 
 export class Document {
   id: string;
@@ -65,6 +82,9 @@ export class Document {
   is_optimized: boolean;
   original_file_size: number | null;
   optimized_at: Date | null;
+  // Expiration and reminder fields
+  expires_at: Date | null;
+  reminder_settings: ReminderSettings;
 
   constructor(data: DocumentData) {
     this.id = data.id;
@@ -104,6 +124,9 @@ export class Document {
     this.is_optimized = data.is_optimized ?? false;
     this.original_file_size = data.original_file_size;
     this.optimized_at = data.optimized_at;
+    // Expiration and reminder fields
+    this.expires_at = data.expires_at;
+    this.reminder_settings = data.reminder_settings ?? DEFAULT_REMINDER_SETTINGS;
   }
 
   /**
@@ -286,6 +309,42 @@ export class Document {
   }
 
   /**
+   * Check if document has an expiration date
+   */
+  hasExpiration(): boolean {
+    return !!this.expires_at;
+  }
+
+  /**
+   * Check if document is expired
+   */
+  isExpired(): boolean {
+    if (!this.expires_at) {
+      return false;
+    }
+    return new Date() > this.expires_at;
+  }
+
+  /**
+   * Get days until expiration (negative if expired)
+   */
+  getDaysUntilExpiration(): number | null {
+    if (!this.expires_at) {
+      return null;
+    }
+    const now = new Date();
+    const diffMs = this.expires_at.getTime() - now.getTime();
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  }
+
+  /**
+   * Check if reminders are enabled for this document
+   */
+  hasRemindersEnabled(): boolean {
+    return this.reminder_settings?.enabled ?? true;
+  }
+
+  /**
    * Convert to JSON
    */
   toJSON(): DocumentData {
@@ -309,6 +368,8 @@ export class Document {
       is_optimized: this.is_optimized,
       original_file_size: this.original_file_size,
       optimized_at: this.optimized_at,
+      expires_at: this.expires_at,
+      reminder_settings: this.reminder_settings,
     };
   }
 
@@ -320,6 +381,8 @@ export class Document {
     has_thumbnail: boolean;
     optimization_savings?: number;
     optimization_percentage?: number;
+    is_expired?: boolean;
+    days_until_expiration?: number | null;
   } {
     const result: any = {
       id: this.id,
@@ -341,11 +404,18 @@ export class Document {
       is_optimized: this.is_optimized,
       original_file_size: this.original_file_size,
       optimized_at: this.optimized_at,
+      expires_at: this.expires_at,
+      reminder_settings: this.reminder_settings,
     };
 
     if (this.is_optimized) {
       result.optimization_savings = this.getOptimizationSavings();
       result.optimization_percentage = this.getOptimizationPercentage();
+    }
+
+    if (this.expires_at) {
+      result.is_expired = this.isExpired();
+      result.days_until_expiration = this.getDaysUntilExpiration();
     }
 
     return result;

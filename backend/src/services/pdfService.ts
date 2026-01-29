@@ -178,6 +178,56 @@ export interface TextareaField {
   };
 }
 
+export interface TableColumn {
+  /** Column ID */
+  id: string;
+  /** Column name/header */
+  name: string;
+  /** Column type */
+  type: 'text' | 'number' | 'date' | 'checkbox';
+  /** Column width in points */
+  width: number;
+}
+
+export interface TableRow {
+  /** Row values mapped by column ID */
+  values: Record<string, string | number | boolean | null>;
+}
+
+export interface TableField {
+  /** Page number (0-indexed) */
+  page: number;
+  /** X coordinate (from left) in points */
+  x: number;
+  /** Y coordinate (from bottom) in points */
+  y: number;
+  /** Width in points */
+  width: number;
+  /** Column definitions */
+  columns: TableColumn[];
+  /** Row data */
+  rows: TableRow[];
+  /** Table styling options */
+  settings?: {
+    /** Height of each row in points (default: 25) */
+    rowHeight?: number;
+    /** Font size in points (default: 10) */
+    fontSize?: number;
+    /** Whether to show header row (default: true) */
+    showHeader?: boolean;
+    /** Header background color as hex string (default: #F0F0F0) */
+    headerBackgroundColor?: string;
+    /** Header text color as hex string (default: #000000) */
+    headerTextColor?: string;
+    /** Border color as hex string (default: #000000) */
+    borderColor?: string;
+    /** Cell text color as hex string (default: #000000) */
+    textColor?: string;
+    /** Cell background color as hex string (default: #FFFFFF) */
+    backgroundColor?: string;
+  };
+}
+
 /**
  * PDF processing service using pdf-lib
  * Provides methods for reading, modifying, and generating PDFs
@@ -749,6 +799,204 @@ export class PdfService {
   }
 
   /**
+   * Add a table field to PDF
+   * Renders a table with header row and data rows
+   */
+  async addTable(pdfBuffer: Buffer, field: TableField): Promise<Buffer> {
+    const pdfDoc = await this.loadPdf(pdfBuffer);
+    const pages = pdfDoc.getPages();
+
+    if (field.page >= pages.length) {
+      throw new Error(`Page ${field.page} does not exist in PDF`);
+    }
+
+    const page = pages[field.page];
+    if (!page) {
+      throw new Error(`Page ${field.page} could not be retrieved`);
+    }
+
+    // Import font for text
+    const { StandardFonts } = await import('pdf-lib');
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    // Get settings with defaults
+    const rowHeight = field.settings?.rowHeight || 25;
+    const fontSize = field.settings?.fontSize || 10;
+    const showHeader = field.settings?.showHeader !== false;
+    const headerBgColorHex = field.settings?.headerBackgroundColor || '#F0F0F0';
+    const headerBgColor = this.hexToRgb(headerBgColorHex);
+    const headerTextColorHex = field.settings?.headerTextColor || '#000000';
+    const headerTextColor = this.hexToRgb(headerTextColorHex);
+    const borderColorHex = field.settings?.borderColor || '#000000';
+    const borderColor = this.hexToRgb(borderColorHex);
+    const textColorHex = field.settings?.textColor || '#000000';
+    const textColor = this.hexToRgb(textColorHex);
+    const bgColorHex = field.settings?.backgroundColor || '#FFFFFF';
+    const bgColor = this.hexToRgb(bgColorHex);
+
+    // Calculate column widths if not explicitly set
+    // Columns with width=0 will share remaining space equally
+    const totalExplicitWidth = field.columns.reduce((sum, col) => sum + (col.width || 0), 0);
+    const columnsWithoutWidth = field.columns.filter(col => !col.width || col.width === 0).length;
+    const remainingWidth = field.width - totalExplicitWidth;
+    const autoWidth = columnsWithoutWidth > 0 ? remainingWidth / columnsWithoutWidth : 0;
+
+    const columnWidths = field.columns.map(col => col.width > 0 ? col.width : autoWidth);
+
+    // Calculate total height
+    const headerHeight = showHeader ? rowHeight : 0;
+    const dataHeight = field.rows.length * rowHeight;
+    const totalHeight = headerHeight + dataHeight;
+
+    // Starting position (top of table in PDF coordinates - y is at bottom)
+    const tableTop = field.y + totalHeight;
+    let currentY = tableTop;
+    let currentX = field.x;
+
+    // Draw header row if enabled
+    if (showHeader) {
+      currentX = field.x;
+      currentY = tableTop - rowHeight;
+
+      for (let i = 0; i < field.columns.length; i++) {
+        const column = field.columns[i]!;
+        const colWidth = columnWidths[i]!;
+
+        // Header cell background
+        page.drawRectangle({
+          x: currentX,
+          y: currentY,
+          width: colWidth,
+          height: rowHeight,
+          color: rgb(headerBgColor.r, headerBgColor.g, headerBgColor.b),
+          borderColor: rgb(borderColor.r, borderColor.g, borderColor.b),
+          borderWidth: 0.5,
+        });
+
+        // Header text (bold, centered)
+        const textWidth = fontBold.widthOfTextAtSize(column.name, fontSize);
+        const textX = currentX + (colWidth - textWidth) / 2;
+        const textY = currentY + (rowHeight - fontSize) / 2;
+
+        // Truncate if too long
+        let displayText = column.name;
+        const maxTextWidth = colWidth - 6; // 3px padding on each side
+        while (fontBold.widthOfTextAtSize(displayText, fontSize) > maxTextWidth && displayText.length > 3) {
+          displayText = displayText.slice(0, -4) + '...';
+        }
+
+        page.drawText(displayText, {
+          x: Math.max(currentX + 3, textX),
+          y: textY,
+          size: fontSize,
+          font: fontBold,
+          color: rgb(headerTextColor.r, headerTextColor.g, headerTextColor.b),
+        });
+
+        currentX += colWidth;
+      }
+    }
+
+    // Draw data rows
+    const dataStartY = showHeader ? tableTop - rowHeight : tableTop;
+
+    for (let rowIndex = 0; rowIndex < field.rows.length; rowIndex++) {
+      const row = field.rows[rowIndex]!;
+      currentX = field.x;
+      currentY = dataStartY - (rowIndex + 1) * rowHeight;
+
+      for (let colIndex = 0; colIndex < field.columns.length; colIndex++) {
+        const column = field.columns[colIndex]!;
+        const colWidth = columnWidths[colIndex]!;
+        const cellValue = row.values[column.id];
+
+        // Cell background
+        page.drawRectangle({
+          x: currentX,
+          y: currentY,
+          width: colWidth,
+          height: rowHeight,
+          color: rgb(bgColor.r, bgColor.g, bgColor.b),
+          borderColor: rgb(borderColor.r, borderColor.g, borderColor.b),
+          borderWidth: 0.5,
+        });
+
+        // Cell content
+        if (cellValue !== null && cellValue !== undefined && cellValue !== '') {
+          if (column.type === 'checkbox') {
+            // Render checkbox
+            const checkboxSize = Math.min(rowHeight - 8, 14);
+            const checkboxX = currentX + (colWidth - checkboxSize) / 2;
+            const checkboxY = currentY + (rowHeight - checkboxSize) / 2;
+            const isChecked = cellValue === true || cellValue === 'true';
+
+            page.drawRectangle({
+              x: checkboxX,
+              y: checkboxY,
+              width: checkboxSize,
+              height: checkboxSize,
+              borderColor: rgb(borderColor.r, borderColor.g, borderColor.b),
+              borderWidth: 1,
+            });
+
+            if (isChecked) {
+              const padding = checkboxSize * 0.2;
+              const lineWidth = Math.max(1, checkboxSize * 0.1);
+              // Draw X mark
+              page.drawLine({
+                start: { x: checkboxX + padding, y: checkboxY + checkboxSize - padding },
+                end: { x: checkboxX + checkboxSize - padding, y: checkboxY + padding },
+                thickness: lineWidth,
+                color: rgb(borderColor.r, borderColor.g, borderColor.b),
+              });
+              page.drawLine({
+                start: { x: checkboxX + checkboxSize - padding, y: checkboxY + checkboxSize - padding },
+                end: { x: checkboxX + padding, y: checkboxY + padding },
+                thickness: lineWidth,
+                color: rgb(borderColor.r, borderColor.g, borderColor.b),
+              });
+            }
+          } else {
+            // Render text (left-aligned for text/date, right-aligned for numbers)
+            let displayText = String(cellValue);
+            const maxTextWidth = colWidth - 6;
+
+            while (font.widthOfTextAtSize(displayText, fontSize) > maxTextWidth && displayText.length > 3) {
+              displayText = displayText.slice(0, -4) + '...';
+            }
+
+            const actualTextWidth = font.widthOfTextAtSize(displayText, fontSize);
+            let textX: number;
+
+            if (column.type === 'number') {
+              // Right-align numbers
+              textX = currentX + colWidth - actualTextWidth - 3;
+            } else {
+              // Left-align text and dates
+              textX = currentX + 3;
+            }
+
+            const textY = currentY + (rowHeight - fontSize) / 2;
+
+            page.drawText(displayText, {
+              x: textX,
+              y: textY,
+              size: fontSize,
+              font,
+              color: rgb(textColor.r, textColor.g, textColor.b),
+            });
+          }
+        }
+
+        currentX += colWidth;
+      }
+    }
+
+    return Buffer.from(await pdfDoc.save());
+  }
+
+  /**
    * Add multiple fields to PDF in a single operation
    */
   async addMultipleFields(
@@ -761,6 +1009,7 @@ export class PdfService {
       radioFields?: RadioField[];
       dropdownFields?: DropdownField[];
       textareaFields?: TextareaField[];
+      tableFields?: TableField[];
     }
   ): Promise<Buffer> {
     let currentPdfBuffer = pdfBuffer;
@@ -811,6 +1060,13 @@ export class PdfService {
     if (fields.textareaFields) {
       for (const textareaField of fields.textareaFields) {
         currentPdfBuffer = await this.addTextarea(currentPdfBuffer, textareaField);
+      }
+    }
+
+    // Add table fields
+    if (fields.tableFields) {
+      for (const tableField of fields.tableFields) {
+        currentPdfBuffer = await this.addTable(currentPdfBuffer, tableField);
       }
     }
 

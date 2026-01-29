@@ -8,6 +8,7 @@ import { PdfService } from '@/services/pdfService';
 import { createStorageService } from '@/services/storageService';
 import { createStorageAdapter } from '@/config/storage';
 import { createEmailLogService } from '@/services/emailLogService';
+import { createReminderService } from '@/services/reminderService';
 
 export const createSigningRouter = (pool: Pool): Router => {
   const router = Router();
@@ -37,7 +38,10 @@ export const createSigningRouter = (pool: Pool): Router => {
   const emailLogService = createEmailLogService(pool);
   const emailService = new EmailService(emailConfig, baseUrl, emailLogService);
 
-  const signingController = new SigningController(pool, emailService, pdfService, storageService);
+  // Initialize reminder service for deadline reminders
+  const reminderService = createReminderService(pool);
+
+  const signingController = new SigningController(pool, emailService, pdfService, storageService, reminderService);
 
   // Public routes (no authentication required)
   // Apply embed security middleware for iframe embedding support
@@ -76,7 +80,10 @@ export const createDocumentSigningRouter = (pool: Pool): Router => {
   const emailLogService = createEmailLogService(pool);
   const emailService = new EmailService(emailConfig, baseUrl, emailLogService);
 
-  const signingController = new SigningController(pool, emailService, pdfService, storageService);
+  // Initialize reminder service for deadline reminders
+  const reminderService = createReminderService(pool);
+
+  const signingController = new SigningController(pool, emailService, pdfService, storageService, reminderService);
 
   // Protected routes (require authentication)
   router.use(authenticate);
