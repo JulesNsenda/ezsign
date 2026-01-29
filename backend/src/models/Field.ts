@@ -34,6 +34,59 @@ export interface VisibilityRules {
   conditions: VisibilityCondition[]; // List of conditions to evaluate
 }
 
+/**
+ * Preset validation pattern identifiers
+ */
+export type ValidationPatternPreset =
+  | 'email'           // Email address
+  | 'phone_us'        // US phone number
+  | 'phone_intl'      // International phone with country code
+  | 'sa_id'           // South African ID number
+  | 'ssn'             // US Social Security Number
+  | 'zip_us'          // US ZIP code (5 or 9 digit)
+  | 'postal_ca'       // Canadian postal code
+  | 'postal_uk'       // UK postal code
+  | 'number'          // Numeric only
+  | 'alpha'           // Alphabetic only
+  | 'alphanumeric'    // Letters and numbers only
+  | 'url'             // URL format
+  | 'date_iso'        // ISO date (YYYY-MM-DD)
+  | 'currency'        // Currency amount
+  | 'custom';         // Custom regex pattern
+
+/**
+ * Validation configuration for text/textarea fields
+ */
+export interface ValidationConfig {
+  pattern?: ValidationPatternPreset;  // Preset pattern name or 'custom'
+  customRegex?: string;               // Custom regex when pattern is 'custom'
+  message?: string;                   // Custom error message
+  mask?: string;                      // Input mask hint (e.g., '(###) ###-####')
+}
+
+/**
+ * Calculation formula types
+ */
+export type CalculationFormula =
+  | 'sum'       // Add numeric values from referenced fields
+  | 'concat'    // Join text values with optional separator
+  | 'today'     // Current date
+  | 'count'     // Count non-empty referenced fields
+  | 'average'   // Calculate average of numeric fields
+  | 'min'       // Minimum of numeric fields
+  | 'max';      // Maximum of numeric fields
+
+/**
+ * Calculation configuration for computed fields
+ */
+export interface CalculationConfig {
+  formula: CalculationFormula;        // Type of calculation
+  fields?: string[];                  // Field IDs to use in calculation
+  separator?: string;                 // Separator for concat formula (default: ' ')
+  format?: 'iso' | 'locale' | 'short';// Date format for today formula
+  precision?: number;                 // Decimal places for numeric results
+}
+
 export interface FieldProperties {
   // Text field properties
   placeholder?: string;
@@ -42,6 +95,9 @@ export interface FieldProperties {
   textColor?: string;
   textAlign?: 'left' | 'center' | 'right';
   maxLength?: number;
+
+  // Validation properties (text/textarea fields)
+  validation?: ValidationConfig;
 
   // Checkbox properties
   checked?: boolean;
@@ -90,6 +146,7 @@ export interface FieldData {
   signer_email: string | null;
   properties: FieldProperties | null;
   visibility_rules: VisibilityRules | null;
+  calculation: CalculationConfig | null;
   created_at: Date;
 }
 
@@ -105,6 +162,7 @@ export interface CreateFieldData {
   signer_email?: string | null;
   properties?: FieldProperties | null;
   visibility_rules?: VisibilityRules | null;
+  calculation?: CalculationConfig | null;
 }
 
 export interface UpdateFieldData {
@@ -118,6 +176,7 @@ export interface UpdateFieldData {
   signer_email?: string | null;
   properties?: FieldProperties | null;
   visibility_rules?: VisibilityRules | null;
+  calculation?: CalculationConfig | null;
 }
 
 export class Field {
@@ -133,6 +192,7 @@ export class Field {
   signer_email: string | null;
   properties: FieldProperties | null;
   visibility_rules: VisibilityRules | null;
+  calculation: CalculationConfig | null;
   created_at: Date;
 
   constructor(data: FieldData) {
@@ -148,6 +208,7 @@ export class Field {
     this.signer_email = data.signer_email;
     this.properties = data.properties;
     this.visibility_rules = data.visibility_rules;
+    this.calculation = data.calculation;
     this.created_at = data.created_at;
   }
 
@@ -205,6 +266,185 @@ export class Field {
    */
   isTextarea(): boolean {
     return this.type === 'textarea';
+  }
+
+  /**
+   * Check if field is a calculated field
+   */
+  isCalculated(): boolean {
+    return this.calculation !== null && this.calculation.formula !== undefined;
+  }
+
+  /**
+   * Evaluate the field's calculation based on other field values
+   * @param fieldValues Map of field ID to field value
+   * @returns The calculated value or null if calculation fails
+   */
+  evaluateCalculation(fieldValues: Map<string, string | number | boolean | null>): string | number | null {
+    if (!this.calculation) {
+      return null;
+    }
+
+    const { formula, fields, separator, format, precision } = this.calculation;
+
+    switch (formula) {
+      case 'sum': {
+        if (!fields || fields.length === 0) return 0;
+        let sum = 0;
+        for (const fieldId of fields) {
+          const value = fieldValues.get(fieldId);
+          if (value !== null && value !== undefined && value !== '') {
+            const num = typeof value === 'number' ? value : parseFloat(String(value));
+            if (!isNaN(num)) {
+              sum += num;
+            }
+          }
+        }
+        return precision !== undefined ? Number(sum.toFixed(precision)) : sum;
+      }
+
+      case 'average': {
+        if (!fields || fields.length === 0) return 0;
+        let sum = 0;
+        let count = 0;
+        for (const fieldId of fields) {
+          const value = fieldValues.get(fieldId);
+          if (value !== null && value !== undefined && value !== '') {
+            const num = typeof value === 'number' ? value : parseFloat(String(value));
+            if (!isNaN(num)) {
+              sum += num;
+              count++;
+            }
+          }
+        }
+        const avg = count > 0 ? sum / count : 0;
+        return precision !== undefined ? Number(avg.toFixed(precision)) : avg;
+      }
+
+      case 'min': {
+        if (!fields || fields.length === 0) return null;
+        let min: number | null = null;
+        for (const fieldId of fields) {
+          const value = fieldValues.get(fieldId);
+          if (value !== null && value !== undefined && value !== '') {
+            const num = typeof value === 'number' ? value : parseFloat(String(value));
+            if (!isNaN(num)) {
+              if (min === null || num < min) {
+                min = num;
+              }
+            }
+          }
+        }
+        return min !== null && precision !== undefined ? Number(min.toFixed(precision)) : min;
+      }
+
+      case 'max': {
+        if (!fields || fields.length === 0) return null;
+        let max: number | null = null;
+        for (const fieldId of fields) {
+          const value = fieldValues.get(fieldId);
+          if (value !== null && value !== undefined && value !== '') {
+            const num = typeof value === 'number' ? value : parseFloat(String(value));
+            if (!isNaN(num)) {
+              if (max === null || num > max) {
+                max = num;
+              }
+            }
+          }
+        }
+        return max !== null && precision !== undefined ? Number(max.toFixed(precision)) : max;
+      }
+
+      case 'count': {
+        if (!fields || fields.length === 0) return 0;
+        let count = 0;
+        for (const fieldId of fields) {
+          const value = fieldValues.get(fieldId);
+          if (value !== null && value !== undefined && value !== '') {
+            count++;
+          }
+        }
+        return count;
+      }
+
+      case 'concat': {
+        if (!fields || fields.length === 0) return '';
+        const sep = separator !== undefined ? separator : ' ';
+        const parts: string[] = [];
+        for (const fieldId of fields) {
+          const value = fieldValues.get(fieldId);
+          if (value !== null && value !== undefined && value !== '') {
+            parts.push(String(value));
+          }
+        }
+        return parts.join(sep);
+      }
+
+      case 'today': {
+        const date = new Date();
+        switch (format) {
+          case 'locale':
+            return date.toLocaleDateString();
+          case 'short':
+            return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+          case 'iso':
+          default:
+            return date.toISOString().split('T')[0] || '';
+        }
+      }
+
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Validate calculation configuration
+   */
+  validateCalculation(allFieldIds: string[]): { valid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    if (!this.calculation) {
+      return { valid: true, errors: [] };
+    }
+
+    const { formula, fields } = this.calculation;
+    const validFormulas: CalculationFormula[] = ['sum', 'concat', 'today', 'count', 'average', 'min', 'max'];
+
+    // Validate formula
+    if (!validFormulas.includes(formula)) {
+      errors.push(`Invalid calculation formula: ${formula}`);
+    }
+
+    // Validate fields for formulas that require them
+    const requiresFields: CalculationFormula[] = ['sum', 'concat', 'count', 'average', 'min', 'max'];
+    if (requiresFields.includes(formula)) {
+      if (!fields || fields.length === 0) {
+        errors.push(`Calculation formula "${formula}" requires at least one field`);
+      } else {
+        // Validate each referenced field exists
+        for (const fieldId of fields) {
+          if (!allFieldIds.includes(fieldId)) {
+            errors.push(`Calculation references unknown field: ${fieldId}`);
+          }
+          if (fieldId === this.id) {
+            errors.push('Calculation cannot reference itself');
+          }
+        }
+      }
+    }
+
+    // Validate precision
+    if (this.calculation.precision !== undefined) {
+      if (this.calculation.precision < 0 || this.calculation.precision > 10) {
+        errors.push('Calculation precision must be between 0 and 10');
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+    };
   }
 
   /**
@@ -392,10 +632,55 @@ export class Field {
       }
     }
 
+    // Validate validation config (text/textarea fields)
+    if ((this.isText() || this.isTextarea()) && props.validation) {
+      const validationErrors = this.validateValidationConfig(props.validation);
+      errors.push(...validationErrors);
+    }
+
     return {
       valid: errors.length === 0,
       errors,
     };
+  }
+
+  /**
+   * Validate the validation config
+   */
+  private validateValidationConfig(config: ValidationConfig): string[] {
+    const errors: string[] = [];
+    const validPresets: ValidationPatternPreset[] = [
+      'email', 'phone_us', 'phone_intl', 'sa_id', 'ssn',
+      'zip_us', 'postal_ca', 'postal_uk', 'number', 'alpha',
+      'alphanumeric', 'url', 'date_iso', 'currency', 'custom',
+    ];
+
+    if (config.pattern && !validPresets.includes(config.pattern)) {
+      errors.push(`Invalid validation pattern: ${config.pattern}`);
+    }
+
+    if (config.pattern === 'custom') {
+      if (!config.customRegex) {
+        errors.push('Custom validation pattern requires a customRegex');
+      } else {
+        // Validate that the regex is valid
+        try {
+          new RegExp(config.customRegex);
+        } catch {
+          errors.push('Invalid custom regex pattern');
+        }
+      }
+    }
+
+    if (config.message && config.message.length > 500) {
+      errors.push('Validation message too long (max 500 characters)');
+    }
+
+    if (config.mask && config.mask.length > 50) {
+      errors.push('Validation mask too long (max 50 characters)');
+    }
+
+    return errors;
   }
 
   /**
@@ -634,6 +919,114 @@ export class Field {
   }
 
   /**
+   * Validate a value against the field's validation pattern
+   * Returns { valid: true } or { valid: false, message: string }
+   */
+  validateValue(value: string | null | undefined): { valid: boolean; message?: string } {
+    // Skip validation for empty values if field is not required
+    if (value === null || value === undefined || value === '') {
+      if (this.required) {
+        return { valid: false, message: 'This field is required' };
+      }
+      return { valid: true };
+    }
+
+    // Only validate text and textarea fields
+    if (!this.isText() && !this.isTextarea()) {
+      return { valid: true };
+    }
+
+    // Check if validation is configured
+    const validation = this.properties?.validation;
+    if (!validation || !validation.pattern) {
+      return { valid: true };
+    }
+
+    // Get the regex pattern
+    const regex = this.getValidationRegex(validation);
+    if (!regex) {
+      return { valid: true };
+    }
+
+    // Test the value
+    if (!regex.test(value)) {
+      const message = validation.message || this.getDefaultValidationMessage(validation.pattern);
+      return { valid: false, message };
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * Get the regex for a validation config
+   */
+  private getValidationRegex(config: ValidationConfig): RegExp | null {
+    if (config.pattern === 'custom' && config.customRegex) {
+      try {
+        return new RegExp(config.customRegex);
+      } catch {
+        return null;
+      }
+    }
+
+    return Field.getPresetPatternRegex(config.pattern);
+  }
+
+  /**
+   * Get the regex for a preset pattern
+   */
+  static getPresetPatternRegex(pattern?: ValidationPatternPreset): RegExp | null {
+    if (!pattern) return null;
+
+    const patterns: Record<ValidationPatternPreset, RegExp> = {
+      email: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
+      phone_us: /^\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})$/,
+      phone_intl: /^\+?[1-9]\d{1,14}$/,
+      sa_id: /^[0-9]{13}$/,  // South African ID: 13 digits
+      ssn: /^(?!000|666|9\d{2})\d{3}-(?!00)\d{2}-(?!0000)\d{4}$/,
+      zip_us: /^\d{5}(-\d{4})?$/,
+      postal_ca: /^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/,
+      postal_uk: /^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$/i,
+      number: /^-?\d*\.?\d+$/,
+      alpha: /^[a-zA-Z\s]+$/,
+      alphanumeric: /^[a-zA-Z0-9\s]+$/,
+      url: /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/,
+      date_iso: /^\d{4}-\d{2}-\d{2}$/,
+      currency: /^-?\$?\d{1,3}(,\d{3})*(\.\d{2})?$/,
+      custom: /.*/,  // Custom patterns use customRegex
+    };
+
+    return patterns[pattern] || null;
+  }
+
+  /**
+   * Get default error message for a preset pattern
+   */
+  private getDefaultValidationMessage(pattern?: ValidationPatternPreset): string {
+    if (!pattern) return 'Invalid format';
+
+    const messages: Record<ValidationPatternPreset, string> = {
+      email: 'Please enter a valid email address',
+      phone_us: 'Please enter a valid US phone number (e.g., (555) 123-4567)',
+      phone_intl: 'Please enter a valid international phone number',
+      sa_id: 'Please enter a valid 13-digit South African ID number',
+      ssn: 'Please enter a valid Social Security Number (e.g., 123-45-6789)',
+      zip_us: 'Please enter a valid ZIP code (e.g., 12345 or 12345-6789)',
+      postal_ca: 'Please enter a valid Canadian postal code (e.g., A1B 2C3)',
+      postal_uk: 'Please enter a valid UK postal code',
+      number: 'Please enter a valid number',
+      alpha: 'Please enter letters only',
+      alphanumeric: 'Please enter letters and numbers only',
+      url: 'Please enter a valid URL',
+      date_iso: 'Please enter a date in YYYY-MM-DD format',
+      currency: 'Please enter a valid currency amount',
+      custom: 'Invalid format',
+    };
+
+    return messages[pattern] || 'Invalid format';
+  }
+
+  /**
    * Convert to JSON
    */
   toJSON(): FieldData {
@@ -650,6 +1043,7 @@ export class Field {
       signer_email: this.signer_email,
       properties: this.properties,
       visibility_rules: this.visibility_rules,
+      calculation: this.calculation,
       created_at: this.created_at,
     };
   }

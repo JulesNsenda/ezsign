@@ -6,6 +6,7 @@ import ConfirmModal from '@/components/ConfirmModal';
 import Card from '@/components/Card';
 import TwoFactorSetup from '@/components/TwoFactorSetup';
 import BackupCodesDisplay from '@/components/BackupCodesDisplay';
+import BrandingSettings from '@/components/BrandingSettings';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -78,9 +79,12 @@ export const Settings: React.FC = () => {
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'security' | 'apikeys' | 'webhooks' | 'teams'>(
+  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'security' | 'apikeys' | 'webhooks' | 'teams' | 'branding'>(
     'profile'
   );
+
+  // Branding
+  const [selectedBrandingTeamId, setSelectedBrandingTeamId] = useState<string | null>(null);
 
   // Profile
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -313,6 +317,7 @@ export const Settings: React.FC = () => {
     { id: 'apikeys', label: 'API Keys', icon: '🔑' },
     { id: 'webhooks', label: 'Webhooks', icon: '🔗' },
     { id: 'teams', label: 'Teams', icon: '👥' },
+    { id: 'branding', label: 'Branding', icon: '🎨' },
   ];
 
   return (
@@ -854,10 +859,68 @@ export const Settings: React.FC = () => {
                         <h3 className="font-semibold text-neutral">{team.name}</h3>
                         <p className="text-sm text-base-content/60 capitalize">Role: {team.role}</p>
                       </div>
+                      {(team.role === 'owner' || team.role === 'admin') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedBrandingTeamId(team.id);
+                            setActiveTab('branding');
+                          }}
+                        >
+                          Branding
+                        </Button>
+                      )}
                     </div>
                   </Card>
                 ))}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Branding Tab */}
+        {activeTab === 'branding' && (
+          <div>
+            {!selectedBrandingTeamId ? (
+              <Card>
+                <div className="text-center py-12">
+                  <svg className="w-16 h-16 mx-auto mb-4 text-base-content/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                  </svg>
+                  <h3 className="text-lg font-semibold text-neutral mb-2">Select a Team</h3>
+                  <p className="text-base-content/60 mb-4">
+                    Choose a team from the Teams tab to customize its branding
+                  </p>
+                  <Button variant="outline" onClick={() => setActiveTab('teams')}>
+                    Go to Teams
+                  </Button>
+                </div>
+              </Card>
+            ) : (
+              <>
+                <div className="mb-4">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedBrandingTeamId(null);
+                      setActiveTab('teams');
+                    }}
+                    icon={
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    }
+                  >
+                    Back to Teams
+                  </Button>
+                </div>
+                <BrandingSettings
+                  teamId={selectedBrandingTeamId}
+                  teamName={teams.find((t) => t.id === selectedBrandingTeamId)?.name || 'Team'}
+                />
+              </>
             )}
           </div>
         )}

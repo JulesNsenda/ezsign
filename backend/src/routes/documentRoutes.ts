@@ -6,6 +6,7 @@ import { FieldGroupController } from '@/controllers/fieldGroupController';
 import { SignerController } from '@/controllers/signerController';
 import { ScheduleController } from '@/controllers/scheduleController';
 import { EmailLogController } from '@/controllers/emailLogController';
+import * as fieldTableController from '@/controllers/fieldTableController';
 import { authenticate } from '@/middleware/auth';
 import { createDocumentAccessMiddleware } from '@/middleware/documentAccess';
 import { FieldService } from '@/services/fieldService';
@@ -119,6 +120,24 @@ export const createDocumentRouter = (pool: Pool): Router => {
   router.delete('/:id/groups/:groupId', checkDocumentAccess, fieldGroupController.deleteGroup);
   router.post('/:id/groups/:groupId/fields', checkDocumentAccess, fieldGroupController.assignFields);
   router.post('/:id/groups/:groupId/fields/reorder', checkDocumentAccess, fieldGroupController.reorderFieldsInGroup);
+
+  // Field table management routes
+  router.get('/:id/tables', checkDocumentAccess, fieldTableController.getDocumentTables);
+  router.post('/:id/tables', checkDocumentAccess, fieldTableController.createTable);
+  router.get('/:id/tables/:tableId', checkDocumentAccess, fieldTableController.getTable);
+  router.put('/:id/tables/:tableId', checkDocumentAccess, fieldTableController.updateTable);
+  router.delete('/:id/tables/:tableId', checkDocumentAccess, fieldTableController.deleteTable);
+  // Table row management
+  router.post('/:id/tables/:tableId/rows', checkDocumentAccess, fieldTableController.addRow);
+  router.post('/:id/tables/:tableId/rows/reorder', checkDocumentAccess, fieldTableController.reorderRows);
+  router.put('/:id/tables/:tableId/rows/:rowId', checkDocumentAccess, fieldTableController.updateRow);
+  router.delete('/:id/tables/:tableId/rows/:rowId', checkDocumentAccess, fieldTableController.deleteRow);
+  router.put('/:id/tables/:tableId/rows/:rowId/cells/:columnId', checkDocumentAccess, fieldTableController.updateCell);
+  // Table column management
+  router.post('/:id/tables/:tableId/columns', checkDocumentAccess, fieldTableController.addColumn);
+  router.post('/:id/tables/:tableId/columns/reorder', checkDocumentAccess, fieldTableController.reorderColumns);
+  router.put('/:id/tables/:tableId/columns/:columnId', checkDocumentAccess, fieldTableController.updateColumn);
+  router.delete('/:id/tables/:tableId/columns/:columnId', checkDocumentAccess, fieldTableController.deleteColumn);
 
   // Schedule management routes
   router.post('/:id/schedule', checkDocumentAccess, scheduleController.scheduleDocument);

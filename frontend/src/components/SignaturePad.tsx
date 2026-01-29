@@ -113,11 +113,15 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" role="region" aria-label="Signature input">
       {/* Mode Selector */}
-      <div className="flex gap-2 pb-3 border-b border-base-300">
+      <div className="flex gap-2 pb-3 border-b border-base-300" role="tablist" aria-label="Signature input method">
         <button
           onClick={() => setMode('drawn')}
+          role="tab"
+          aria-selected={mode === 'drawn'}
+          aria-controls="signature-panel"
+          id="tab-drawn"
           className={`
             px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
             ${mode === 'drawn'
@@ -127,12 +131,16 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
           `}
         >
           <span className="flex items-center gap-2">
-            <span>✍️</span>
+            <span aria-hidden="true">✍️</span>
             <span>Draw</span>
           </span>
         </button>
         <button
           onClick={() => setMode('typed')}
+          role="tab"
+          aria-selected={mode === 'typed'}
+          aria-controls="signature-panel"
+          id="tab-typed"
           className={`
             px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
             ${mode === 'typed'
@@ -142,12 +150,16 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
           `}
         >
           <span className="flex items-center gap-2">
-            <span>📝</span>
+            <span aria-hidden="true">📝</span>
             <span>Type</span>
           </span>
         </button>
         <button
           onClick={() => setMode('uploaded')}
+          role="tab"
+          aria-selected={mode === 'uploaded'}
+          aria-controls="signature-panel"
+          id="tab-uploaded"
           className={`
             px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
             ${mode === 'uploaded'
@@ -157,20 +169,28 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
           `}
         >
           <span className="flex items-center gap-2">
-            <span>📤</span>
+            <span aria-hidden="true">📤</span>
             <span>Upload</span>
           </span>
         </button>
       </div>
 
       {/* Signature Input Area */}
-      <div className="border-2 border-base-300 rounded-lg bg-base-100 overflow-hidden shadow-sm">
+      <div
+        id="signature-panel"
+        role="tabpanel"
+        aria-labelledby={`tab-${mode}`}
+        className="border-2 border-base-300 rounded-lg bg-base-100 overflow-hidden shadow-sm"
+      >
         {mode === 'drawn' && (
           <canvas
             ref={canvasRef}
             width={width}
             height={height}
             className="block touch-none"
+            aria-label="Signature drawing area. Use mouse or touch to draw your signature."
+            role="img"
+            tabIndex={0}
           />
         )}
 
@@ -179,14 +199,18 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
             className="flex items-center justify-center p-4"
             style={{ width: `${width}px`, height: `${height}px` }}
           >
+            <label className="sr-only" htmlFor="typed-signature">Type your signature</label>
             <input
+              id="typed-signature"
               type="text"
               value={typedText}
               onChange={(e) => setTypedText(e.target.value)}
               placeholder="Type your name"
               className="w-full text-center text-4xl bg-transparent border-none outline-none focus:ring-0"
               style={{ fontFamily: '"Brush Script MT", cursive' }}
+              aria-describedby="typed-signature-hint"
             />
+            <span id="typed-signature-hint" className="sr-only">Your typed name will appear as a signature</span>
           </div>
         )}
 
@@ -198,27 +222,29 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
             {uploadedImage ? (
               <img
                 src={uploadedImage}
-                alt="Uploaded signature"
+                alt="Uploaded signature preview"
                 className="max-w-full max-h-full object-contain"
               />
             ) : (
               <>
-                <div className="text-6xl">📤</div>
-                <label className="cursor-pointer">
+                <div className="text-6xl" aria-hidden="true">📤</div>
+                <label className="cursor-pointer" htmlFor="signature-upload">
                   <input
+                    id="signature-upload"
                     type="file"
                     accept="image/*"
                     onChange={handleFileUpload}
-                    className="hidden"
+                    className="sr-only"
+                    aria-describedby="upload-hint"
                   />
                   <span className="inline-flex items-center gap-2 px-4 py-2.5 bg-accent text-white rounded-lg font-medium text-sm hover:bg-accent/90 transition-all duration-200 shadow-sm">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
                     Choose File
                   </span>
                 </label>
-                <div className="text-xs text-base-content/60">
+                <div id="upload-hint" className="text-xs text-base-content/60">
                   Upload PNG or JPG image
                 </div>
               </>

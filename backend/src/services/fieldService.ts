@@ -59,6 +59,7 @@ export class FieldService {
       signer_email: data.signer_email ?? null,
       properties: data.properties ?? Field.getDefaultProperties(data.type),
       visibility_rules: data.visibility_rules ?? null,
+      calculation: data.calculation ?? null,
       created_at: new Date(),
     });
 
@@ -92,8 +93,8 @@ export class FieldService {
 
     // Insert field into database
     const result = await this.pool.query(
-      `INSERT INTO fields (document_id, type, page, x, y, width, height, required, signer_email, properties, visibility_rules)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `INSERT INTO fields (document_id, type, page, x, y, width, height, required, signer_email, properties, visibility_rules, calculation)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
       [
         data.document_id,
@@ -107,6 +108,7 @@ export class FieldService {
         data.signer_email ?? null,
         data.properties ? JSON.stringify(data.properties) : JSON.stringify(Field.getDefaultProperties(data.type)),
         data.visibility_rules ? JSON.stringify(data.visibility_rules) : null,
+        data.calculation ? JSON.stringify(data.calculation) : null,
       ]
     );
 
@@ -270,6 +272,10 @@ export class FieldService {
     if (data.visibility_rules !== undefined) {
       updates.push(`visibility_rules = $${paramIndex++}`);
       values.push(data.visibility_rules ? JSON.stringify(data.visibility_rules) : null);
+    }
+    if (data.calculation !== undefined) {
+      updates.push(`calculation = $${paramIndex++}`);
+      values.push(data.calculation ? JSON.stringify(data.calculation) : null);
     }
 
     if (updates.length === 0) {
@@ -439,6 +445,7 @@ export class FieldService {
       signer_email: row.signer_email,
       properties: row.properties,
       visibility_rules: row.visibility_rules,
+      calculation: row.calculation,
       created_at: row.created_at,
     };
   }

@@ -8,9 +8,30 @@ import { Pool } from 'pg';
 import { Worker, Job } from 'bullmq';
 import { getRedisConnection, QueueName, defaultWorkerOptions, getQueueTimeoutConfig, shouldMoveToDeadLetterQueue, moveToDeadLetterQueue } from '@/config/queue';
 import { createReminderService, ReminderJobData } from '@/services/reminderService';
-import { EmailService, EmailConfig } from '@/services/emailService';
+import { EmailService, EmailConfig, EmailBranding } from '@/services/emailService';
 import { createEmailLogService } from '@/services/emailLogService';
+import { BrandingService } from '@/services/brandingService';
+import { Branding } from '@/models/Branding';
 import logger from '@/services/loggerService';
+
+/**
+ * Convert Branding model to EmailBranding interface
+ */
+const convertToEmailBranding = (branding: Branding, baseUrl: string): EmailBranding => {
+  return {
+    companyName: branding.company_name,
+    logoUrl: branding.getLogoUrl(baseUrl),
+    primaryColor: branding.primary_color,
+    secondaryColor: branding.secondary_color,
+    footerText: branding.email_footer_text,
+    supportEmail: branding.support_email,
+    supportUrl: branding.support_url,
+    privacyUrl: branding.privacy_url,
+    termsUrl: branding.terms_url,
+    showPoweredBy: branding.show_powered_by,
+    hideEzsignBranding: branding.hide_ezsign_branding,
+  };
+};
 
 /**
  * Create the reminder worker
@@ -18,6 +39,7 @@ import logger from '@/services/loggerService';
 export const createReminderWorker = (pool: Pool): Worker<ReminderJobData> => {
   // Initialize services
   const reminderService = createReminderService(pool);
+  const brandingService = new BrandingService(pool);
 
   const emailUser = process.env.EMAIL_SMTP_USER || '';
   const emailPass = process.env.EMAIL_SMTP_PASS || '';
@@ -55,7 +77,7 @@ export const createReminderWorker = (pool: Pool): Worker<ReminderJobData> => {
       try {
         // Verify document is still pending
         const docResult = await pool.query(
-          `SELECT d.id, d.title, d.status, d.expires_at, d.user_id, u.email as owner_email, u.name as owner_name
+          `SELECT d.id, d.title, d.status, d.expires_at, d.user_id, d.team_id, u.email as owner_email, u.name as owner_name
            FROM documents d
            JOIN users u ON u.id = d.user_id
            WHERE d.id = $1`,
@@ -111,6 +133,22 @@ export const createReminderWorker = (pool: Pool): Worker<ReminderJobData> => {
         const now = new Date();
         const daysRemaining = Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
+        // Fetch branding for email customization
+        let emailBranding: EmailBranding | undefined;
+        if (doc.team_id) {
+          try {
+            const branding = await brandingService.getByTeamId(doc.team_id);
+            if (branding) {
+              emailBranding = convertToEmailBranding(branding, baseUrl);
+            }
+          } catch (error) {
+            logger.warn('Failed to fetch branding for reminder email', {
+              teamId: doc.team_id,
+              error: (error as Error).message,
+            });
+          }
+        }
+
         // Send reminder email
         const signingUrl = emailService.generateSigningUrl(signer.access_token);
 
@@ -124,6 +162,7 @@ export const createReminderWorker = (pool: Pool): Worker<ReminderJobData> => {
           documentId,
           signerId,
           userId: doc.user_id,
+          branding: emailBranding,
         });
 
         // Mark reminder as sent

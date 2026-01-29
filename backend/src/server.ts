@@ -22,6 +22,9 @@ import { createTwoFactorRouter } from '@/routes/twoFactor';
 import { createEmailLogRouter, createEmailWebhookRouter } from '@/routes/emailLogRoutes';
 import { createAdminDlqRouter } from '@/routes/adminDlqRoutes';
 import { createAdminStatsRouter } from '@/routes/adminStatsRoutes';
+import { createBrandingRouter, createPublicBrandingRouter } from '@/routes/brandingRoutes';
+import utilityRoutes from '@/routes/utilityRoutes';
+import { getStorageService } from '@/config/storage';
 import { HealthService } from '@/services/healthService';
 import { errorHandler } from '@/middleware/errorHandler';
 import { apiLimiter } from '@/middleware/rateLimiter';
@@ -36,6 +39,7 @@ import { shutdownManager } from '@/services/shutdownManager';
 import { tokenBlacklistService } from '@/services/tokenBlacklistService';
 import { closeRateLimitRedis } from '@/middleware/rateLimiter';
 import { createMonitoredPool, logQueryStatsSummary } from '@/services/databaseService';
+import { initializeFieldTableService } from '@/services/fieldTableService';
 import logger from '@/services/loggerService';
 
 // Environment variables
@@ -57,6 +61,9 @@ const dbConfig = {
 // Initialize database connection pool with monitoring
 const rawPool = new Pool(dbConfig);
 const pool = createMonitoredPool(rawPool);
+
+// Initialize field table service
+initializeFieldTableService(pool);
 
 // Test database connection
 pool.connect((err, _client, release) => {
@@ -163,6 +170,8 @@ app.use('/api/auth/2fa', createTwoFactorRouter(pool)); // Two-factor authenticat
 app.use('/api/documents', createDocumentRouter(pool));
 app.use('/api/documents', createDocumentSigningRouter(pool)); // Signing operations on documents
 app.use('/api/teams', createTeamsRouter(pool));
+app.use('/api/teams/:teamId/branding', createBrandingRouter(pool, getStorageService())); // Team branding settings
+app.use('/api/branding', createPublicBrandingRouter(pool, getStorageService())); // Public branding endpoints
 app.use('/api/api-keys', createApiKeysRouter(pool));
 app.use('/api/templates', createTemplateRouter(pool));
 app.use('/api/webhooks', createWebhookRouter(pool));
@@ -172,6 +181,7 @@ app.use('/api/signing', createSigningRouter(pool)); // Public signing links
 app.use('/api/admin/emails', createEmailLogRouter(pool)); // Email logs (admin)
 app.use('/api/admin/dlq', createAdminDlqRouter(pool)); // Dead Letter Queue (admin)
 app.use('/api/admin/stats', createAdminStatsRouter(pool)); // Query performance stats (admin)
+app.use('/api/util', utilityRoutes); // Utility endpoints (public)
 
 // API documentation placeholder
 app.get('/api/docs', (_req: Request, res: Response) => {
@@ -182,6 +192,7 @@ app.get('/api/docs', (_req: Request, res: Response) => {
       auth: '/api/auth',
       documents: '/api/documents',
       teams: '/api/teams',
+      branding: '/api/teams/:teamId/branding',
       apiKeys: '/api/api-keys',
       templates: '/api/templates',
       webhooks: '/api/webhooks',

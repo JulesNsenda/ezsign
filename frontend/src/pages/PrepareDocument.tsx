@@ -955,6 +955,7 @@ export const PrepareDocument: React.FC = () => {
                     {activeTab === 'properties' && selectedField && (
                       <FieldProperties
                         field={selectedField}
+                        fields={fields}
                         signers={signers}
                         groups={fieldGroups}
                         onUpdate={(updates) => handleUpdateFieldProperty(selectedField.id, updates)}

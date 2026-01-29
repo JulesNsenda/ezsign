@@ -19,6 +19,34 @@ export interface EmailContext {
   userId?: string;
 }
 
+/**
+ * Branding data for email customization
+ */
+export interface EmailBranding {
+  companyName?: string | null;
+  logoUrl?: string | null;
+  primaryColor?: string;
+  secondaryColor?: string;
+  footerText?: string | null;
+  supportEmail?: string | null;
+  supportUrl?: string | null;
+  privacyUrl?: string | null;
+  termsUrl?: string | null;
+  showPoweredBy?: boolean;
+  hideEzsignBranding?: boolean;
+}
+
+/**
+ * Default branding values
+ */
+const DEFAULT_BRANDING: Required<Pick<EmailBranding, 'companyName' | 'primaryColor' | 'secondaryColor' | 'showPoweredBy' | 'hideEzsignBranding'>> = {
+  companyName: 'EzSign',
+  primaryColor: '#4F46E5',
+  secondaryColor: '#10B981',
+  showPoweredBy: true,
+  hideEzsignBranding: false,
+};
+
 export interface SigningRequestEmailData {
   recipientEmail: string;
   recipientName: string;
@@ -31,6 +59,8 @@ export interface SigningRequestEmailData {
   documentId?: string;
   signerId?: string;
   userId?: string;
+  // Branding customization
+  branding?: EmailBranding;
 }
 
 export interface CompletionEmailData {
@@ -42,6 +72,8 @@ export interface CompletionEmailData {
   // Context for email logging
   documentId?: string;
   userId?: string;
+  // Branding customization
+  branding?: EmailBranding;
 }
 
 export interface ReminderEmailData {
@@ -55,6 +87,8 @@ export interface ReminderEmailData {
   documentId?: string;
   signerId?: string;
   userId?: string;
+  // Branding customization
+  branding?: EmailBranding;
 }
 
 export interface PasswordChangeEmailData {
@@ -263,9 +297,13 @@ export class EmailService {
    * Generate signing request HTML email
    */
   private generateSigningRequestHtml(data: SigningRequestEmailData): string {
-    const headerColor = data.isReminder ? '#f59e0b' : '#4F46E5';
-    const buttonColor = data.isReminder ? '#f59e0b' : '#4F46E5';
+    const branding = data.branding || {};
+    const companyName = branding.companyName || DEFAULT_BRANDING.companyName;
+    const primaryColor = branding.primaryColor || DEFAULT_BRANDING.primaryColor;
+    const headerColor = data.isReminder ? '#f59e0b' : primaryColor;
+    const buttonColor = data.isReminder ? '#f59e0b' : primaryColor;
     const headerTitle = data.isReminder ? 'Signature Reminder' : 'Signature Request';
+    const footerText = branding.footerText || `This is an automated email from ${companyName}. Please do not reply to this email.`;
 
     return `
       <!DOCTYPE html>
@@ -276,6 +314,7 @@ export class EmailService {
             body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
             .container { max-width: 600px; margin: 0 auto; padding: 20px; }
             .header { background-color: ${headerColor}; color: white; padding: 20px; text-align: center; }
+            .logo { max-height: 40px; margin-bottom: 10px; }
             .content { padding: 30px 20px; background-color: #f9fafb; }
             .button {
               display: inline-block;
@@ -287,15 +326,18 @@ export class EmailService {
               margin: 20px 0;
             }
             .footer { padding: 20px; text-align: center; color: #6b7280; font-size: 14px; }
+            .footer-links { margin-top: 10px; }
+            .footer-links a { color: #6b7280; text-decoration: none; margin: 0 10px; }
             .message { background-color: #e0e7ff; padding: 15px; border-radius: 5px; margin: 15px 0; }
             .reminder { background-color: #fef3c7; padding: 15px; border-radius: 5px; margin: 15px 0; }
             .link-box { background-color: #f3f4f6; padding: 12px; border-radius: 5px; margin: 15px 0; word-break: break-all; overflow-wrap: break-word; font-size: 12px; }
-            .link-box a { color: #4F46E5; text-decoration: none; }
+            .link-box a { color: ${primaryColor}; text-decoration: none; }
           </style>
         </head>
         <body>
           <div class="container">
             <div class="header">
+              ${branding.logoUrl ? `<img src="${branding.logoUrl}" alt="${companyName}" class="logo" />` : ''}
               <h1>${headerTitle}</h1>
             </div>
             <div class="content">
@@ -315,7 +357,9 @@ export class EmailService {
               <div class="link-box"><a href="${data.signingUrl}">${data.signingUrl}</a></div>
             </div>
             <div class="footer">
-              <p>This is an automated email from EzSign. Please do not reply to this email.</p>
+              <p>${footerText}</p>
+              ${this.generateFooterLinks(branding)}
+              ${branding.showPoweredBy !== false && !branding.hideEzsignBranding ? `<p style="font-size: 12px; color: #9ca3af;">Powered by ${companyName}</p>` : ''}
             </div>
           </div>
         </body>
@@ -351,6 +395,11 @@ This is an automated email from EzSign. Please do not reply to this email.
    * Generate completion notification HTML email
    */
   private generateCompletionHtml(data: CompletionEmailData): string {
+    const branding = data.branding || {};
+    const companyName = branding.companyName || DEFAULT_BRANDING.companyName;
+    const secondaryColor = branding.secondaryColor || DEFAULT_BRANDING.secondaryColor;
+    const footerText = branding.footerText || `This is an automated email from ${companyName}. Please do not reply to this email.`;
+
     const formattedDate = data.completedAt.toLocaleString('en-US', {
       dateStyle: 'long',
       timeStyle: 'short',
@@ -362,26 +411,30 @@ This is an automated email from EzSign. Please do not reply to this email.
         <head>
           <meta charset="utf-8">
           <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
             .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background-color: #10b981; color: white; padding: 20px; text-align: center; }
+            .header { background-color: ${secondaryColor}; color: white; padding: 20px; text-align: center; }
+            .logo { max-height: 40px; margin-bottom: 10px; }
             .content { padding: 30px 20px; background-color: #f9fafb; }
             .button {
               display: inline-block;
               padding: 12px 30px;
-              background-color: #10b981;
+              background-color: ${secondaryColor};
               color: white;
               text-decoration: none;
               border-radius: 5px;
               margin: 20px 0;
             }
             .footer { padding: 20px; text-align: center; color: #6b7280; font-size: 14px; }
+            .footer-links { margin-top: 10px; }
+            .footer-links a { color: #6b7280; text-decoration: none; margin: 0 10px; }
             .info { background-color: #d1fae5; padding: 15px; border-radius: 5px; margin: 15px 0; }
           </style>
         </head>
         <body>
           <div class="container">
             <div class="header">
+              ${branding.logoUrl ? `<img src="${branding.logoUrl}" alt="${companyName}" class="logo" />` : ''}
               <h1>✓ Document Completed</h1>
             </div>
             <div class="content">
@@ -399,7 +452,9 @@ This is an automated email from EzSign. Please do not reply to this email.
               ` : ''}
             </div>
             <div class="footer">
-              <p>This is an automated email from EzSign. Please do not reply to this email.</p>
+              <p>${footerText}</p>
+              ${this.generateFooterLinks(branding)}
+              ${branding.showPoweredBy !== false && !branding.hideEzsignBranding ? `<p style="font-size: 12px; color: #9ca3af;">Powered by ${companyName}</p>` : ''}
             </div>
           </div>
         </body>
@@ -435,6 +490,12 @@ This is an automated email from EzSign. Please do not reply to this email.
    * Generate reminder HTML email
    */
   private generateReminderHtml(data: ReminderEmailData): string {
+    const branding = data.branding || {};
+    const companyName = branding.companyName || DEFAULT_BRANDING.companyName;
+    const footerText = branding.footerText || `This is an automated email from ${companyName}. Please do not reply to this email.`;
+    // Reminders use amber color for urgency, regardless of branding
+    const reminderColor = '#f59e0b';
+
     return `
       <!DOCTYPE html>
       <html>
@@ -443,26 +504,30 @@ This is an automated email from EzSign. Please do not reply to this email.
           <style>
             body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
             .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background-color: #f59e0b; color: white; padding: 20px; text-align: center; }
+            .header { background-color: ${reminderColor}; color: white; padding: 20px; text-align: center; }
+            .logo { max-height: 40px; margin-bottom: 10px; }
             .content { padding: 30px 20px; background-color: #f9fafb; }
             .button {
               display: inline-block;
               padding: 12px 30px;
-              background-color: #f59e0b;
+              background-color: ${reminderColor};
               color: white;
               text-decoration: none;
               border-radius: 5px;
               margin: 20px 0;
             }
             .footer { padding: 20px; text-align: center; color: #6b7280; font-size: 14px; }
+            .footer-links { margin-top: 10px; }
+            .footer-links a { color: #6b7280; text-decoration: none; margin: 0 10px; }
             .reminder { background-color: #fef3c7; padding: 15px; border-radius: 5px; margin: 15px 0; }
             .link-box { background-color: #f3f4f6; padding: 12px; border-radius: 5px; margin: 15px 0; word-break: break-all; overflow-wrap: break-word; font-size: 12px; }
-            .link-box a { color: #f59e0b; text-decoration: none; }
+            .link-box a { color: ${reminderColor}; text-decoration: none; }
           </style>
         </head>
         <body>
           <div class="container">
             <div class="header">
+              ${branding.logoUrl ? `<img src="${branding.logoUrl}" alt="${companyName}" class="logo" />` : ''}
               <h1>Signature Reminder</h1>
             </div>
             <div class="content">
@@ -480,7 +545,9 @@ This is an automated email from EzSign. Please do not reply to this email.
               <div class="link-box"><a href="${data.signingUrl}">${data.signingUrl}</a></div>
             </div>
             <div class="footer">
-              <p>This is an automated email from EzSign. Please do not reply to this email.</p>
+              <p>${footerText}</p>
+              ${this.generateFooterLinks(branding)}
+              ${branding.showPoweredBy !== false && !branding.hideEzsignBranding ? `<p style="font-size: 12px; color: #9ca3af;">Powered by ${companyName}</p>` : ''}
             </div>
           </div>
         </body>
@@ -602,6 +669,33 @@ If you made this change, you can safely ignore this email.
 This is an automated email from EzSign. Please do not reply to this email.
 If you have any concerns, please contact support.
     `.trim();
+  }
+
+  /**
+   * Generate footer links HTML based on branding
+   */
+  private generateFooterLinks(branding: EmailBranding): string {
+    const links: string[] = [];
+
+    if (branding.supportUrl) {
+      links.push(`<a href="${branding.supportUrl}">Support</a>`);
+    } else if (branding.supportEmail) {
+      links.push(`<a href="mailto:${branding.supportEmail}">Contact Support</a>`);
+    }
+
+    if (branding.privacyUrl) {
+      links.push(`<a href="${branding.privacyUrl}">Privacy Policy</a>`);
+    }
+
+    if (branding.termsUrl) {
+      links.push(`<a href="${branding.termsUrl}">Terms of Service</a>`);
+    }
+
+    if (links.length === 0) {
+      return '';
+    }
+
+    return `<div class="footer-links">${links.join(' | ')}</div>`;
   }
 
   /**
