@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { ApiKeyService } from '@/services/apiKeyService';
 import { UserService } from '@/services/userService';
 import { UserRole } from '@/models/User';
+import { ApiKeyScope } from '@/models/ApiKey';
 import logger from '@/services/loggerService';
 
 // Extend Express Request type to include API key authentication data
@@ -13,6 +14,7 @@ declare global {
         id: string;
         userId: string;
         name: string;
+        scopes: ApiKeyScope[];
       };
     }
   }
@@ -23,6 +25,7 @@ export interface ApiKeyAuthenticatedRequest extends Request {
     id: string;
     userId: string;
     name: string;
+    scopes: ApiKeyScope[];
   };
   user: {
     userId: string;
@@ -91,6 +94,7 @@ export const createApiKeyAuth = (pool: Pool) => {
         id: apiKey.id,
         userId: apiKey.user_id,
         name: apiKey.name,
+        scopes: apiKey.scopes,
       };
 
       // Attach actual user data for authorization checks
@@ -105,6 +109,7 @@ export const createApiKeyAuth = (pool: Pool) => {
         userId: user.id,
         email: user.email,
         role: user.role,
+        scopes: apiKey.scopes,
         correlationId: req.correlationId,
       });
 
@@ -187,6 +192,7 @@ export const createDualAuth = (pool: Pool) => {
         id: apiKey.id,
         userId: apiKey.user_id,
         name: apiKey.name,
+        scopes: apiKey.scopes,
       };
 
       // Attach actual user data for authorization checks
@@ -201,6 +207,7 @@ export const createDualAuth = (pool: Pool) => {
         userId: user.id,
         email: user.email,
         role: user.role,
+        scopes: apiKey.scopes,
         correlationId: req.correlationId,
       });
 
@@ -225,4 +232,89 @@ export const isApiKeyAuthenticated = (
   req: Request
 ): req is ApiKeyAuthenticatedRequest => {
   return req.apiKey !== undefined;
+};
+
+/**
+ * Middleware to require specific scope(s) for API key authenticated requests
+ * If authenticated via JWT (no apiKey), the request is allowed (JWT has full access)
+ * If authenticated via API key, checks if the key has the required scope(s)
+ *
+ * @param requiredScopes - Scopes required (any one of them grants access)
+ */
+export const requireScope = (...requiredScopes: ApiKeyScope[]) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    // If not API key authenticated (i.e., JWT auth), allow access
+    if (!req.apiKey) {
+      next();
+      return;
+    }
+
+    // Check if API key has any of the required scopes
+    const hasRequiredScope = requiredScopes.some((scope) =>
+      req.apiKey?.scopes.includes(scope)
+    );
+
+    if (!hasRequiredScope) {
+      logger.warn('API key scope check failed', {
+        apiKeyId: req.apiKey.id,
+        requiredScopes,
+        actualScopes: req.apiKey.scopes,
+        correlationId: req.correlationId,
+      });
+
+      res.status(403).json({
+        error: 'Forbidden',
+        message: `This API key does not have the required scope. Required: ${requiredScopes.join(' or ')}`,
+        requiredScopes,
+      });
+      return;
+    }
+
+    next();
+  };
+};
+
+/**
+ * Middleware to require all specified scopes for API key authenticated requests
+ * If authenticated via JWT (no apiKey), the request is allowed (JWT has full access)
+ *
+ * @param requiredScopes - All scopes required
+ */
+export const requireAllScopes = (...requiredScopes: ApiKeyScope[]) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    // If not API key authenticated (i.e., JWT auth), allow access
+    if (!req.apiKey) {
+      next();
+      return;
+    }
+
+    // Check if API key has all of the required scopes
+    const hasAllScopes = requiredScopes.every((scope) =>
+      req.apiKey?.scopes.includes(scope)
+    );
+
+    if (!hasAllScopes) {
+      const missingScopes = requiredScopes.filter(
+        (scope) => !req.apiKey?.scopes.includes(scope)
+      );
+
+      logger.warn('API key scope check failed (all scopes required)', {
+        apiKeyId: req.apiKey.id,
+        requiredScopes,
+        missingScopes,
+        actualScopes: req.apiKey.scopes,
+        correlationId: req.correlationId,
+      });
+
+      res.status(403).json({
+        error: 'Forbidden',
+        message: `This API key is missing required scopes: ${missingScopes.join(', ')}`,
+        requiredScopes,
+        missingScopes,
+      });
+      return;
+    }
+
+    next();
+  };
 };

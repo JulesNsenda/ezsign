@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { ApiKeyService } from '@/services/apiKeyService';
 import { AuthenticatedRequest } from '@/middleware/auth';
 import logger from '@/services/loggerService';
+import { ApiKey, API_KEY_SCOPES, ApiKeyScope } from '@/models/ApiKey';
 
 export class ApiKeyController {
   private apiKeyService: ApiKeyService;
@@ -10,6 +11,26 @@ export class ApiKeyController {
   constructor(pool: Pool) {
     this.apiKeyService = new ApiKeyService(pool);
   }
+
+  /**
+   * Get available scopes
+   * GET /api/api-keys/scopes
+   */
+  getAvailableScopes = async (_req: Request, res: Response): Promise<void> => {
+    res.status(200).json({
+      scopes: API_KEY_SCOPES,
+      descriptions: {
+        'documents:read': 'Read documents, list, download, view metadata',
+        'documents:write': 'Create, update, delete documents',
+        'signers:read': 'Read signers, list signers',
+        'signers:write': 'Create, update, delete signers, send signing requests',
+        'templates:read': 'Read templates, list templates',
+        'templates:write': 'Create, update, delete templates',
+        'webhooks:read': 'Read webhooks, list webhooks',
+        'webhooks:write': 'Create, update, delete webhooks',
+      },
+    });
+  };
 
   /**
    * Get all API keys for the authenticated user
@@ -59,7 +80,7 @@ export class ApiKeyController {
         return;
       }
 
-      const { name, expiresIn } = req.body;
+      const { name, expiresIn, scopes } = req.body;
 
       // Validate input
       if (!name) {
@@ -77,6 +98,40 @@ export class ApiKeyController {
           message: 'API key name must be 255 characters or less',
         });
         return;
+      }
+
+      // Validate scopes if provided
+      let validatedScopes: ApiKeyScope[] | undefined;
+      if (scopes !== undefined) {
+        if (!Array.isArray(scopes)) {
+          res.status(400).json({
+            error: 'Bad Request',
+            message: 'scopes must be an array of scope strings',
+          });
+          return;
+        }
+
+        if (scopes.length === 0) {
+          res.status(400).json({
+            error: 'Bad Request',
+            message: 'At least one scope is required',
+          });
+          return;
+        }
+
+        // Validate each scope
+        if (!ApiKey.validateScopes(scopes)) {
+          const invalidScopes = scopes.filter(
+            (s: string) => !API_KEY_SCOPES.includes(s as ApiKeyScope)
+          );
+          res.status(400).json({
+            error: 'Bad Request',
+            message: `Invalid scopes: ${invalidScopes.join(', ')}. Valid scopes: ${API_KEY_SCOPES.join(', ')}`,
+          });
+          return;
+        }
+
+        validatedScopes = scopes as ApiKeyScope[];
       }
 
       // Calculate expiry date if provided
@@ -98,6 +153,7 @@ export class ApiKeyController {
       const { apiKey, plainTextKey } = await this.apiKeyService.createApiKey({
         user_id: authenticatedReq.user.userId,
         name,
+        scopes: validatedScopes,
         expires_at: expiresAt,
       });
 
@@ -191,7 +247,7 @@ export class ApiKeyController {
       }
 
       const id = req.params.id;
-      const { name, expiresIn } = req.body;
+      const { name, expiresIn, scopes } = req.body;
 
       if (!id) {
         res.status(400).json({
@@ -221,6 +277,40 @@ export class ApiKeyController {
         return;
       }
 
+      // Validate scopes if provided
+      let validatedScopes: ApiKeyScope[] | undefined;
+      if (scopes !== undefined) {
+        if (!Array.isArray(scopes)) {
+          res.status(400).json({
+            error: 'Bad Request',
+            message: 'scopes must be an array of scope strings',
+          });
+          return;
+        }
+
+        if (scopes.length === 0) {
+          res.status(400).json({
+            error: 'Bad Request',
+            message: 'At least one scope is required',
+          });
+          return;
+        }
+
+        // Validate each scope
+        if (!ApiKey.validateScopes(scopes)) {
+          const invalidScopes = scopes.filter(
+            (s: string) => !API_KEY_SCOPES.includes(s as ApiKeyScope)
+          );
+          res.status(400).json({
+            error: 'Bad Request',
+            message: `Invalid scopes: ${invalidScopes.join(', ')}. Valid scopes: ${API_KEY_SCOPES.join(', ')}`,
+          });
+          return;
+        }
+
+        validatedScopes = scopes as ApiKeyScope[];
+      }
+
       // Calculate expiry date if provided
       let expiresAt: Date | null | undefined = undefined;
       if (expiresIn !== undefined) {
@@ -243,6 +333,7 @@ export class ApiKeyController {
       // Update API key
       const updatedKey = await this.apiKeyService.updateApiKey(id, {
         name,
+        scopes: validatedScopes,
         expires_at: expiresAt,
       });
 

@@ -1,6 +1,6 @@
 import { Job, Worker, Queue } from 'bullmq';
 import { Pool } from 'pg';
-import { getRedisConnection, QueueName } from '@/config/queue';
+import { getRedisConnection, QueueName, getQueueTimeoutConfig } from '@/config/queue';
 import { CleanupService } from '@/services/cleanupService';
 import logger from '@/services/loggerService';
 
@@ -27,6 +27,8 @@ export interface CleanupJobData {
  */
 export const createCleanupWorker = (pool: Pool): Worker<CleanupJobData> => {
   const cleanupService = new CleanupService(pool);
+
+  const timeoutConfig = getQueueTimeoutConfig(QueueName.CLEANUP);
 
   const worker = new Worker<CleanupJobData>(
     QueueName.CLEANUP,
@@ -64,6 +66,8 @@ export const createCleanupWorker = (pool: Pool): Worker<CleanupJobData> => {
     {
       connection: getRedisConnection(),
       concurrency: 1, // Run one cleanup at a time to avoid conflicts
+      lockDuration: timeoutConfig.lockDuration,
+      stalledInterval: timeoutConfig.stalledInterval,
     }
   );
 
@@ -80,6 +84,13 @@ export const createCleanupWorker = (pool: Pool): Worker<CleanupJobData> => {
       jobId: job?.id,
       type: job?.data.type,
       error: err.message,
+    });
+  });
+
+  worker.on('stalled', (jobId: string) => {
+    logger.warn('Cleanup job stalled (timeout exceeded)', {
+      jobId,
+      queueName: QueueName.CLEANUP,
     });
   });
 

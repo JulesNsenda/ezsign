@@ -13,10 +13,43 @@ import { useToast } from '@/hooks/useToast';
 import apiClient from '@/api/client';
 import { twoFactorService, type TwoFactorStatus } from '@/services/twoFactorService';
 
+type ApiKeyScope =
+  | 'documents:read'
+  | 'documents:write'
+  | 'signers:read'
+  | 'signers:write'
+  | 'templates:read'
+  | 'templates:write'
+  | 'webhooks:read'
+  | 'webhooks:write';
+
+const ALL_SCOPES: ApiKeyScope[] = [
+  'documents:read',
+  'documents:write',
+  'signers:read',
+  'signers:write',
+  'templates:read',
+  'templates:write',
+  'webhooks:read',
+  'webhooks:write',
+];
+
+const SCOPE_DESCRIPTIONS: Record<ApiKeyScope, string> = {
+  'documents:read': 'Read documents, list, download',
+  'documents:write': 'Create, update, delete documents',
+  'signers:read': 'Read signers, list signers',
+  'signers:write': 'Create, update, delete signers',
+  'templates:read': 'Read templates, list templates',
+  'templates:write': 'Create, update, delete templates',
+  'webhooks:read': 'Read webhooks, list webhooks',
+  'webhooks:write': 'Create, update, delete webhooks',
+};
+
 interface ApiKey {
   id: string;
   name: string;
   key?: string;
+  scopes: ApiKeyScope[];
   last_used_at: string | null;
   expires_at: string | null;
   created_at: string;
@@ -58,6 +91,7 @@ export const Settings: React.FC = () => {
   // API Keys
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [newApiKeyName, setNewApiKeyName] = useState('');
+  const [newApiKeyScopes, setNewApiKeyScopes] = useState<ApiKeyScope[]>([...ALL_SCOPES]);
   const [createdApiKey, setCreatedApiKey] = useState<string | null>(null);
 
   // Webhooks
@@ -163,8 +197,8 @@ export const Settings: React.FC = () => {
   });
 
   const createApiKeyMutation = useMutation({
-    mutationFn: async (name: string) => {
-      const response = await apiClient.post('/api-keys', { name });
+    mutationFn: async (data: { name: string; scopes: ApiKeyScope[] }) => {
+      const response = await apiClient.post('/api-keys', data);
       return response.data;
     },
     onSuccess: (data) => {
@@ -242,8 +276,13 @@ export const Settings: React.FC = () => {
       toast.error('Please enter an API key name');
       return;
     }
-    await createApiKeyMutation.mutateAsync(newApiKeyName);
+    if (newApiKeyScopes.length === 0) {
+      toast.error('Please select at least one scope');
+      return;
+    }
+    await createApiKeyMutation.mutateAsync({ name: newApiKeyName, scopes: newApiKeyScopes });
     setNewApiKeyName('');
+    setNewApiKeyScopes([...ALL_SCOPES]);
   };
 
   const handleCreateWebhook = async () => {
@@ -604,53 +643,76 @@ export const Settings: React.FC = () => {
               <div className="grid gap-4">
                 {apiKeys.map((key) => (
                   <Card key={key.id}>
-                    <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-neutral mb-2 flex items-center gap-2">
-                          <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                          </svg>
-                          {key.name}
-                        </h3>
-                        <div className="flex flex-col gap-1 text-sm text-base-content/60">
-                          <div className="flex items-center gap-2">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-neutral mb-2 flex items-center gap-2">
+                            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
                             </svg>
-                            Created {new Date(key.created_at).toLocaleDateString()}
-                          </div>
-                          {key.last_used_at && (
+                            {key.name}
+                          </h3>
+                          <div className="flex flex-col gap-1 text-sm text-base-content/60">
                             <div className="flex items-center gap-2">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                               </svg>
-                              Last used {new Date(key.last_used_at).toLocaleDateString()}
+                              Created {new Date(key.created_at).toLocaleDateString()}
                             </div>
-                          )}
+                            {key.last_used_at && (
+                              <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Last used {new Date(key.last_used_at).toLocaleDateString()}
+                              </div>
+                            )}
+                          </div>
                         </div>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={() => {
+                            setConfirmModal({
+                              isOpen: true,
+                              title: 'Delete API Key',
+                              message: 'Are you sure you want to delete this API key? This action cannot be undone.',
+                              onConfirm: () => {
+                                deleteApiKeyMutation.mutate(key.id);
+                                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                              },
+                            });
+                          }}
+                          icon={
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          }
+                        >
+                          Delete
+                        </Button>
                       </div>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => {
-                          setConfirmModal({
-                            isOpen: true,
-                            title: 'Delete API Key',
-                            message: 'Are you sure you want to delete this API key? This action cannot be undone.',
-                            onConfirm: () => {
-                              deleteApiKeyMutation.mutate(key.id);
-                              setConfirmModal(prev => ({ ...prev, isOpen: false }));
-                            },
-                          });
-                        }}
-                        icon={
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        }
-                      >
-                        Delete
-                      </Button>
+                      {key.scopes && key.scopes.length > 0 && (
+                        <div className="border-t border-base-200 pt-3">
+                          <p className="text-xs font-semibold text-base-content/60 mb-2 uppercase tracking-wide">Permissions</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {key.scopes.length === ALL_SCOPES.length ? (
+                              <span className="px-2 py-1 bg-success/10 text-success text-xs font-medium rounded-md">
+                                Full Access
+                              </span>
+                            ) : (
+                              key.scopes.map((scope) => (
+                                <span
+                                  key={scope}
+                                  className="px-2 py-1 bg-accent/10 text-accent text-xs font-medium rounded-md"
+                                >
+                                  {scope}
+                                </span>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </Card>
                 ))}
@@ -876,6 +938,7 @@ export const Settings: React.FC = () => {
           onClose={() => {
             setIsApiKeyModalOpen(false);
             setNewApiKeyName('');
+            setNewApiKeyScopes([...ALL_SCOPES]);
             setCreatedApiKey(null);
           }}
           title={createdApiKey ? 'API Key Created' : 'Create API Key'}
@@ -917,6 +980,7 @@ export const Settings: React.FC = () => {
                 </Button>
                 <Button onClick={() => {
                   setIsApiKeyModalOpen(false);
+                  setNewApiKeyScopes([...ALL_SCOPES]);
                   setCreatedApiKey(null);
                 }}>
                   Done
@@ -939,12 +1003,69 @@ export const Settings: React.FC = () => {
                 />
                 <p className="text-xs text-base-content/60 mt-2">Choose a descriptive name to identify this key</p>
               </div>
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-semibold text-neutral">
+                    Permissions <span className="text-error">*</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewApiKeyScopes([...ALL_SCOPES])}
+                      className="text-xs text-neutral hover:text-neutral/80 font-medium"
+                    >
+                      Select All
+                    </button>
+                    <span className="text-base-content/30">|</span>
+                    <button
+                      type="button"
+                      onClick={() => setNewApiKeyScopes([])}
+                      className="text-xs text-neutral hover:text-neutral/80 font-medium"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[240px] overflow-y-auto p-1">
+                  {ALL_SCOPES.map((scope) => (
+                    <label
+                      key={scope}
+                      className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                        newApiKeyScopes.includes(scope)
+                          ? 'border-neutral/40 bg-neutral/5'
+                          : 'border-base-300 hover:bg-base-200'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={newApiKeyScopes.includes(scope)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setNewApiKeyScopes([...newApiKeyScopes, scope]);
+                          } else {
+                            setNewApiKeyScopes(newApiKeyScopes.filter((s) => s !== scope));
+                          }
+                        }}
+                        className="w-4 h-4 mt-0.5 text-neutral rounded border-base-300 focus:ring-2 focus:ring-neutral"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium block">{scope}</span>
+                        <span className="text-xs text-base-content/60">{SCOPE_DESCRIPTIONS[scope]}</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-base-content/60 mt-2">
+                  {newApiKeyScopes.length} of {ALL_SCOPES.length} permissions selected
+                </p>
+              </div>
               <div className="flex gap-3 justify-end pt-2">
                 <Button
                   variant="outline"
                   onClick={() => {
                     setIsApiKeyModalOpen(false);
                     setNewApiKeyName('');
+                    setNewApiKeyScopes([...ALL_SCOPES]);
                   }}
                 >
                   Cancel

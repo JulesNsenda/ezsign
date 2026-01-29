@@ -1,14 +1,16 @@
 import React from 'react';
-import type { Field, RadioOption } from '@/types';
+import type { Field, RadioOption, FieldGroup } from '@/types';
 import Button from './Button';
 import RadioOptionsEditor from './RadioOptionsEditor';
 
 export interface FieldPropertiesProps {
   field: Field | null;
   signers: Array<{ id: string; email: string; name: string }>;
+  groups?: FieldGroup[];
   onUpdate: (updates: Partial<Field>) => void;
   onDelete: () => void;
   onClose: () => void;
+  onGroupChange?: (fieldId: string, groupId: string | null) => void;
 }
 
 /**
@@ -17,9 +19,11 @@ export interface FieldPropertiesProps {
 const FieldProperties: React.FC<FieldPropertiesProps> = ({
   field,
   signers,
+  groups = [],
   onUpdate,
   onDelete,
   onClose,
+  onGroupChange,
 }) => {
   if (!field) {
     return (
@@ -423,6 +427,30 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
             </p>
           )}
         </div>
+
+        {/* Assign to Group */}
+        {groups.length > 0 && onGroupChange && (
+          <div>
+            <label className="block text-xs font-semibold text-base-content/70 mb-2 uppercase tracking-wide">
+              Field Group
+            </label>
+            <select
+              value={field.group_id || ''}
+              onChange={(e) => {
+                const value = e.target.value;
+                onGroupChange(field.id, value === '' ? null : value);
+              }}
+              className="input-docuseal text-sm"
+            >
+              <option value="">No group</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Delete Button */}
         <div className="mt-2 pt-4 border-t border-base-300">

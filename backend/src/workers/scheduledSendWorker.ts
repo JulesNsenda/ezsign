@@ -1,6 +1,6 @@
 import { Job, Worker } from 'bullmq';
 import { Pool } from 'pg';
-import { createWorker, QueueName } from '@/config/queue';
+import { createWorker, QueueName, shouldMoveToDeadLetterQueue, moveToDeadLetterQueue } from '@/config/queue';
 import { Signer, SignerData } from '@/models/Signer';
 import { EmailService, EmailConfig } from '@/services/emailService';
 import { ScheduledSendJobData } from '@/services/scheduledSendService';
@@ -233,16 +233,37 @@ export class ScheduledSendWorker {
       });
     });
 
-    this.worker.on('failed', (job: Job<ScheduledSendJobData> | undefined, error: Error) => {
+    this.worker.on('failed', async (job: Job<ScheduledSendJobData> | undefined, error: Error) => {
       if (job) {
         logger.error('Scheduled send job failed', {
           jobId: job.id,
           documentId: job.data.documentId,
+          attemptsMade: job.attemptsMade,
           error: error.message,
         });
+
+        // Move to Dead Letter Queue after all retries exhausted
+        if (shouldMoveToDeadLetterQueue(job)) {
+          try {
+            await moveToDeadLetterQueue(this.pool, job, error, QueueName.SCHEDULED_SEND);
+            logger.info('Scheduled send job moved to Dead Letter Queue', { jobId: job.id });
+          } catch (dlqError) {
+            logger.error('Failed to move scheduled send job to DLQ', {
+              jobId: job.id,
+              error: (dlqError as Error).message,
+            });
+          }
+        }
       } else {
         logger.error('Scheduled send job failed (job undefined)', { error: error.message });
       }
+    });
+
+    this.worker.on('stalled', (jobId: string) => {
+      logger.warn('Scheduled send job stalled (timeout exceeded)', {
+        jobId,
+        queueName: QueueName.SCHEDULED_SEND,
+      });
     });
 
     this.worker.on('error', (error: Error) => {

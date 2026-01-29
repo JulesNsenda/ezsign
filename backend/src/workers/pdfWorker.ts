@@ -1,6 +1,6 @@
 import { Job } from 'bullmq';
 import { Pool } from 'pg';
-import { createWorker, QueueName } from '@/config/queue';
+import { createWorker, QueueName, shouldMoveToDeadLetterQueue, moveToDeadLetterQueue } from '@/config/queue';
 import { PdfJobData, PdfJobType } from '@/services/pdfQueueService';
 import { pdfService } from '@/services/pdfService';
 import logger from '@/services/loggerService';
@@ -271,12 +271,36 @@ export class PdfWorker {
       logger.debug('PDF job completed successfully', { jobId: job.id });
     });
 
-    this.worker.on('failed', (job: Job<PdfJobData> | undefined, error: Error) => {
-      logger.error('PDF job failed', { jobId: job?.id, error: error.message });
+    this.worker.on('failed', async (job: Job<PdfJobData> | undefined, error: Error) => {
+      logger.error('PDF job failed', {
+        jobId: job?.id,
+        attemptsMade: job?.attemptsMade,
+        error: error.message,
+      });
+
+      // Move to Dead Letter Queue after all retries exhausted
+      if (job && this.pool && shouldMoveToDeadLetterQueue(job)) {
+        try {
+          await moveToDeadLetterQueue(this.pool, job, error, QueueName.PDF_PROCESSING);
+          logger.info('PDF job moved to Dead Letter Queue', { jobId: job.id });
+        } catch (dlqError) {
+          logger.error('Failed to move PDF job to DLQ', {
+            jobId: job.id,
+            error: (dlqError as Error).message,
+          });
+        }
+      }
     });
 
     this.worker.on('error', (error: Error) => {
       logger.error('PDF worker error', { error: error.message, stack: error.stack });
+    });
+
+    this.worker.on('stalled', (jobId: string) => {
+      logger.warn('PDF job stalled (timeout exceeded)', {
+        jobId,
+        queueName: QueueName.PDF_PROCESSING,
+      });
     });
   }
 

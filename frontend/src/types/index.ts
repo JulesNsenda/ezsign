@@ -79,6 +79,58 @@ export interface TextareaFieldProperties {
   borderColor?: string;
 }
 
+/**
+ * Common field properties that apply to most field types
+ */
+export interface CommonFieldProperties {
+  placeholder?: string;
+  fontSize?: number;
+  textColor?: string;
+  backgroundColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  readonly?: boolean;
+  defaultValue?: string;  // Can contain template variables like {{signer.name}}, {{today}}
+}
+
+/**
+ * Template variable info for pre-filled fields
+ */
+export interface TemplateVariable {
+  variable: string;
+  description: string;
+  example: string;
+}
+
+/**
+ * Visibility rule condition comparison operators
+ */
+export type VisibilityComparison =
+  | 'equals'
+  | 'not_equals'
+  | 'contains'
+  | 'not_empty'
+  | 'is_empty'
+  | 'is_checked'
+  | 'is_not_checked';
+
+/**
+ * A single visibility condition
+ */
+export interface VisibilityCondition {
+  fieldId: string;
+  comparison: VisibilityComparison;
+  value?: string | number | boolean;
+}
+
+/**
+ * Visibility rules for a field
+ */
+export interface VisibilityRules {
+  operator: 'and' | 'or';
+  conditions: VisibilityCondition[];
+}
+
 export interface Document {
   id: string;
   user_id: string;
@@ -120,7 +172,23 @@ export interface Field {
   required: boolean;
   signer_email?: string;
   properties?: Record<string, any>;
+  visibility_rules?: VisibilityRules | null;
+  group_id?: string | null;
+  group_sort_order?: number | null;
   created_at: string;
+}
+
+export interface FieldGroup {
+  id: string;
+  document_id: string;
+  name: string;
+  description: string | null;
+  sort_order: number;
+  collapsed: boolean;
+  color: string | null;
+  created_at: string;
+  updated_at: string;
+  field_count?: number;
 }
 
 export interface Signer {

@@ -220,6 +220,89 @@ export class DocumentController {
   };
 
   /**
+   * List documents with keyset (cursor-based) pagination
+   * GET /api/documents/cursor
+   * More efficient for large datasets
+   */
+  listCursor = async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'Authentication required',
+        });
+        return;
+      }
+
+      const {
+        team_id,
+        status,
+        cursor,
+        limit = '20',
+        sort_by = 'created_at',
+        sort_order = 'desc',
+        include_total,
+      } = req.query;
+
+      // Validate limit
+      const limitNum = parseInt(limit as string, 10);
+      if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Limit must be between 1 and 100',
+        });
+        return;
+      }
+
+      // Validate sort parameters
+      const validSortBy = ['created_at', 'updated_at', 'title'];
+      const validSortOrder = ['asc', 'desc'];
+
+      if (!validSortBy.includes(sort_by as string)) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Invalid sort_by parameter',
+        });
+        return;
+      }
+
+      if (!validSortOrder.includes(sort_order as string)) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Invalid sort_order parameter',
+        });
+        return;
+      }
+
+      const result = await this.documentService.findDocumentsKeyset({
+        userId: req.user.userId,
+        teamId: team_id as string | undefined,
+        status: status as any,
+        cursor: cursor as string | undefined,
+        limit: limitNum,
+        sortBy: sort_by as any,
+        sortOrder: sort_order as any,
+        includeTotal: include_total === 'true',
+      });
+
+      res.status(200).json({
+        documents: result.documents.map((doc) => doc.toPublicJSON()),
+        pagination: {
+          next_cursor: result.nextCursor,
+          has_more: result.hasMore,
+          ...(result.total !== undefined && { total: result.total }),
+        },
+      });
+    } catch (error) {
+      logger.error('Document cursor list error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
+      res.status(500).json({
+        error: 'Internal Server Error',
+        message: 'Failed to retrieve documents',
+      });
+    }
+  };
+
+  /**
    * Get a single document
    * GET /api/documents/:id
    */

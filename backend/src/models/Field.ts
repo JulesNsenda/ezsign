@@ -5,6 +5,35 @@ export interface RadioOption {
   value: string;
 }
 
+/**
+ * Visibility rule condition comparison operators
+ */
+export type VisibilityComparison =
+  | 'equals'         // Field value equals specified value
+  | 'not_equals'     // Field value does not equal specified value
+  | 'contains'       // Field value contains specified value (text fields)
+  | 'not_empty'      // Field has any value
+  | 'is_empty'       // Field has no value
+  | 'is_checked'     // Checkbox is checked
+  | 'is_not_checked'; // Checkbox is not checked
+
+/**
+ * A single visibility condition
+ */
+export interface VisibilityCondition {
+  fieldId: string;                   // UUID of the field to check
+  comparison: VisibilityComparison;  // How to compare
+  value?: string | number | boolean; // Value to compare against (optional for is_checked, not_empty, etc.)
+}
+
+/**
+ * Visibility rules for a field
+ */
+export interface VisibilityRules {
+  operator: 'and' | 'or';           // How to combine conditions
+  conditions: VisibilityCondition[]; // List of conditions to evaluate
+}
+
 export interface FieldProperties {
   // Text field properties
   placeholder?: string;
@@ -43,6 +72,9 @@ export interface FieldProperties {
   borderColor?: string;
   borderWidth?: number;
   readonly?: boolean;
+
+  // Pre-fill properties
+  defaultValue?: string;  // Can contain template variables like {{signer.name}}, {{today}}
 }
 
 export interface FieldData {
@@ -57,6 +89,7 @@ export interface FieldData {
   required: boolean;
   signer_email: string | null;
   properties: FieldProperties | null;
+  visibility_rules: VisibilityRules | null;
   created_at: Date;
 }
 
@@ -71,6 +104,7 @@ export interface CreateFieldData {
   required?: boolean;
   signer_email?: string | null;
   properties?: FieldProperties | null;
+  visibility_rules?: VisibilityRules | null;
 }
 
 export interface UpdateFieldData {
@@ -83,6 +117,7 @@ export interface UpdateFieldData {
   required?: boolean;
   signer_email?: string | null;
   properties?: FieldProperties | null;
+  visibility_rules?: VisibilityRules | null;
 }
 
 export class Field {
@@ -97,6 +132,7 @@ export class Field {
   required: boolean;
   signer_email: string | null;
   properties: FieldProperties | null;
+  visibility_rules: VisibilityRules | null;
   created_at: Date;
 
   constructor(data: FieldData) {
@@ -111,6 +147,7 @@ export class Field {
     this.required = data.required;
     this.signer_email = data.signer_email;
     this.properties = data.properties;
+    this.visibility_rules = data.visibility_rules;
     this.created_at = data.created_at;
   }
 
@@ -517,6 +554,86 @@ export class Field {
   }
 
   /**
+   * Check if field has visibility rules
+   */
+  hasVisibilityRules(): boolean {
+    return (
+      this.visibility_rules !== null &&
+      this.visibility_rules.conditions.length > 0
+    );
+  }
+
+  /**
+   * Validate visibility rules
+   */
+  validateVisibilityRules(allFieldIds: string[]): {
+    valid: boolean;
+    errors: string[];
+  } {
+    const errors: string[] = [];
+
+    if (!this.visibility_rules) {
+      return { valid: true, errors: [] };
+    }
+
+    const { operator, conditions } = this.visibility_rules;
+
+    // Validate operator
+    if (operator !== 'and' && operator !== 'or') {
+      errors.push('Visibility rules operator must be "and" or "or"');
+    }
+
+    // Validate conditions
+    if (!Array.isArray(conditions) || conditions.length === 0) {
+      errors.push('Visibility rules must have at least one condition');
+    }
+
+    const validComparisons: VisibilityComparison[] = [
+      'equals',
+      'not_equals',
+      'contains',
+      'not_empty',
+      'is_empty',
+      'is_checked',
+      'is_not_checked',
+    ];
+
+    for (const condition of conditions) {
+      // Check fieldId exists
+      if (!condition.fieldId) {
+        errors.push('Visibility condition must specify a fieldId');
+        continue;
+      }
+
+      // Check fieldId refers to a valid field
+      if (!allFieldIds.includes(condition.fieldId)) {
+        errors.push(`Visibility condition references unknown field: ${condition.fieldId}`);
+      }
+
+      // Prevent self-reference
+      if (condition.fieldId === this.id) {
+        errors.push('Field cannot reference itself in visibility rules');
+      }
+
+      // Validate comparison operator
+      if (!validComparisons.includes(condition.comparison)) {
+        errors.push(`Invalid visibility comparison: ${condition.comparison}`);
+      }
+
+      // Validate value is provided for comparisons that require it
+      const requiresValue: VisibilityComparison[] = ['equals', 'not_equals', 'contains'];
+      if (requiresValue.includes(condition.comparison) && condition.value === undefined) {
+        errors.push(`Visibility comparison "${condition.comparison}" requires a value`);
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+    };
+  }
+
+  /**
    * Convert to JSON
    */
   toJSON(): FieldData {
@@ -532,6 +649,7 @@ export class Field {
       required: this.required,
       signer_email: this.signer_email,
       properties: this.properties,
+      visibility_rules: this.visibility_rules,
       created_at: this.created_at,
     };
   }

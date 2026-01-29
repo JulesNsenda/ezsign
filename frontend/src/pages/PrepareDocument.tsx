@@ -8,11 +8,13 @@ import FieldPalette from '@/components/FieldPalette';
 import FieldsLayer from '@/components/FieldsLayer';
 import DroppablePdfContainer from '@/components/DroppablePdfContainer';
 import FieldProperties from '@/components/FieldProperties';
+import GroupPanel from '@/components/GroupPanel';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
 import ConfirmModal from '@/components/ConfirmModal';
 import { useDocument, useScheduleDocument, useCancelSchedule } from '@/hooks/useDocuments';
 import { useFields, useCreateField, useUpdateField, useDeleteField } from '@/hooks/useFields';
+import { useFieldGroups, useCreateFieldGroup, useUpdateFieldGroup, useDeleteFieldGroup, useAssignFieldsToGroup, useUngroupFields } from '@/hooks/useFieldGroups';
 import { useSigners, useCreateSigner, useDeleteSigner, useSendDocument } from '@/hooks/useSigners';
 import { useCreateTemplate } from '@/hooks/useTemplates';
 import { useToast } from '@/hooks/useToast';
@@ -31,7 +33,7 @@ export const PrepareDocument: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [numPages, setNumPages] = useState(0);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'signers' | 'properties'>('signers');
+  const [activeTab, setActiveTab] = useState<'signers' | 'properties' | 'groups'>('signers');
   const [activeDragItem, setActiveDragItem] = useState<{ id: string; type: FieldType; isNew: boolean } | null>(null);
   const [isSignerModalOpen, setIsSignerModalOpen] = useState(false);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
@@ -63,11 +65,17 @@ export const PrepareDocument: React.FC = () => {
 
   const { data: doc } = useDocument(id!);
   const { data: fields = [], refetch: refetchFields } = useFields(id!);
+  const { data: fieldGroups = [], isLoading: isLoadingGroups } = useFieldGroups(id!, true);
   const { data: signers = [], refetch: refetchSigners } = useSigners(id!);
 
   const createFieldMutation = useCreateField();
   const updateFieldMutation = useUpdateField();
   const deleteFieldMutation = useDeleteField();
+  const createFieldGroupMutation = useCreateFieldGroup();
+  const updateFieldGroupMutation = useUpdateFieldGroup();
+  const deleteFieldGroupMutation = useDeleteFieldGroup();
+  const assignFieldsToGroupMutation = useAssignFieldsToGroup();
+  const ungroupFieldsMutation = useUngroupFields();
   const createSignerMutation = useCreateSigner();
   const deleteSignerMutation = useDeleteSigner();
   const sendDocumentMutation = useSendDocument();
@@ -775,6 +783,14 @@ export const PrepareDocument: React.FC = () => {
                       Signers ({signers.length})
                     </button>
                     <button
+                      className={activeTab === 'groups'
+                        ? 'flex-1 text-center py-3 font-semibold text-xs sm:text-sm text-neutral border-b-2 border-neutral'
+                        : 'flex-1 text-center py-3 font-semibold text-xs sm:text-sm text-base-content/60 hover:bg-base-200 transition-colors'}
+                      onClick={() => setActiveTab('groups')}
+                    >
+                      Groups ({fieldGroups.length})
+                    </button>
+                    <button
                       className={activeTab === 'properties'
                         ? 'flex-1 text-center py-3 font-semibold text-xs sm:text-sm text-neutral border-b-2 border-neutral'
                         : 'flex-1 text-center py-3 font-semibold text-xs sm:text-sm text-base-content/60 hover:bg-base-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'}
@@ -782,7 +798,7 @@ export const PrepareDocument: React.FC = () => {
                       disabled={!selectedField}
                     >
                       <span className="hidden sm:inline">Field {selectedField ? '✓' : ''}</span>
-                      <span className="sm:hidden">Properties</span>
+                      <span className="sm:hidden">Props</span>
                     </button>
                   </div>
 
@@ -858,13 +874,121 @@ export const PrepareDocument: React.FC = () => {
                       </>
                     )}
 
+                    {activeTab === 'groups' && (
+                      <GroupPanel
+                        documentId={id!}
+                        groups={fieldGroups}
+                        fields={fields}
+                        isLoading={isLoadingGroups}
+                        onCreateGroup={(data) => {
+                          createFieldGroupMutation.mutate(
+                            { documentId: id!, data },
+                            {
+                              onSuccess: () => {
+                                toast.success('Group created successfully');
+                              },
+                              onError: (error: Error) => {
+                                toast.error(error.message || 'Failed to create group');
+                              },
+                            }
+                          );
+                        }}
+                        onUpdateGroup={(groupId, data) => {
+                          updateFieldGroupMutation.mutate(
+                            { documentId: id!, groupId, data },
+                            {
+                              onSuccess: () => {
+                                toast.success('Group updated');
+                              },
+                              onError: (error: Error) => {
+                                toast.error(error.message || 'Failed to update group');
+                              },
+                            }
+                          );
+                        }}
+                        onDeleteGroup={(groupId) => {
+                          deleteFieldGroupMutation.mutate(
+                            { documentId: id!, groupId },
+                            {
+                              onSuccess: () => {
+                                toast.success('Group deleted');
+                                refetchFields();
+                              },
+                              onError: (error: Error) => {
+                                toast.error(error.message || 'Failed to delete group');
+                              },
+                            }
+                          );
+                        }}
+                        onAssignFieldToGroup={(fieldId, groupId) => {
+                          if (groupId) {
+                            assignFieldsToGroupMutation.mutate(
+                              { documentId: id!, groupId, fieldIds: [fieldId] },
+                              {
+                                onSuccess: () => {
+                                  toast.success('Field assigned to group');
+                                  refetchFields();
+                                },
+                                onError: (error: Error) => {
+                                  toast.error(error.message || 'Failed to assign field');
+                                },
+                              }
+                            );
+                          } else {
+                            ungroupFieldsMutation.mutate(
+                              { documentId: id!, fieldIds: [fieldId] },
+                              {
+                                onSuccess: () => {
+                                  toast.success('Field removed from group');
+                                  refetchFields();
+                                },
+                                onError: (error: Error) => {
+                                  toast.error(error.message || 'Failed to remove field from group');
+                                },
+                              }
+                            );
+                          }
+                        }}
+                      />
+                    )}
+
                     {activeTab === 'properties' && selectedField && (
                       <FieldProperties
                         field={selectedField}
                         signers={signers}
+                        groups={fieldGroups}
                         onUpdate={(updates) => handleUpdateFieldProperty(selectedField.id, updates)}
                         onDelete={() => handleDeleteField(selectedField.id)}
                         onClose={() => { setSelectedFieldId(null); setActiveTab('signers'); }}
+                        onGroupChange={(fieldId, groupId) => {
+                          if (groupId) {
+                            assignFieldsToGroupMutation.mutate(
+                              { documentId: id!, groupId, fieldIds: [fieldId] },
+                              {
+                                onSuccess: () => {
+                                  toast.success('Field assigned to group');
+                                  refetchFields();
+                                },
+                                onError: (error: Error) => {
+                                  toast.error(error.message || 'Failed to assign field');
+                                },
+                              }
+                            );
+                          } else {
+                            ungroupFieldsMutation.mutate(
+                              { documentId: id!, fieldIds: [fieldId] },
+                              {
+                                onSuccess: () => {
+                                  toast.success('Field removed from group');
+                                  refetchFields();
+                                },
+                                onError: (error: Error) => {
+                                  toast.error(error.message || 'Failed to remove field from group');
+                                },
+                              }
+                            );
+                          }
+                        }}
                       />
                     )}
                   </div>

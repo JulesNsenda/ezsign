@@ -10,6 +10,9 @@ export const createApiKeysRouter = (pool: Pool): Router => {
   // All routes require authentication
   router.use(authenticate);
 
+  // Get available scopes (must be before /:id to avoid conflict)
+  router.get('/scopes', apiKeyController.getAvailableScopes);
+
   // Get all API keys for authenticated user
   router.get('/', apiKeyController.getApiKeys);
 

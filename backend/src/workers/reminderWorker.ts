@@ -6,7 +6,7 @@
 
 import { Pool } from 'pg';
 import { Worker, Job } from 'bullmq';
-import { getRedisConnection, QueueName, defaultWorkerOptions } from '@/config/queue';
+import { getRedisConnection, QueueName, defaultWorkerOptions, getQueueTimeoutConfig, shouldMoveToDeadLetterQueue, moveToDeadLetterQueue } from '@/config/queue';
 import { createReminderService, ReminderJobData } from '@/services/reminderService';
 import { EmailService, EmailConfig } from '@/services/emailService';
 import { createEmailLogService } from '@/services/emailLogService';
@@ -36,6 +36,8 @@ export const createReminderWorker = (pool: Pool): Worker<ReminderJobData> => {
   const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
   const emailLogService = createEmailLogService(pool);
   const emailService = new EmailService(emailConfig, baseUrl, emailLogService);
+
+  const timeoutConfig = getQueueTimeoutConfig(QueueName.DEADLINE_REMINDERS);
 
   const worker = new Worker<ReminderJobData>(
     QueueName.DEADLINE_REMINDERS,
@@ -150,6 +152,8 @@ export const createReminderWorker = (pool: Pool): Worker<ReminderJobData> => {
     {
       ...defaultWorkerOptions,
       connection: getRedisConnection(),
+      lockDuration: timeoutConfig.lockDuration,
+      stalledInterval: timeoutConfig.stalledInterval,
     }
   );
 
@@ -161,11 +165,32 @@ export const createReminderWorker = (pool: Pool): Worker<ReminderJobData> => {
     });
   });
 
-  worker.on('failed', (job, error) => {
+  worker.on('failed', async (job, error) => {
     logger.error('Reminder job failed', {
       jobId: job?.id,
       documentId: job?.data.documentId,
+      attemptsMade: job?.attemptsMade,
       error: error.message,
+    });
+
+    // Move to Dead Letter Queue after all retries exhausted
+    if (job && shouldMoveToDeadLetterQueue(job)) {
+      try {
+        await moveToDeadLetterQueue(pool, job, error, QueueName.DEADLINE_REMINDERS);
+        logger.info('Reminder job moved to Dead Letter Queue', { jobId: job.id });
+      } catch (dlqError) {
+        logger.error('Failed to move reminder job to DLQ', {
+          jobId: job.id,
+          error: (dlqError as Error).message,
+        });
+      }
+    }
+  });
+
+  worker.on('stalled', (jobId: string) => {
+    logger.warn('Reminder job stalled (timeout exceeded)', {
+      jobId,
+      queueName: QueueName.DEADLINE_REMINDERS,
     });
   });
 

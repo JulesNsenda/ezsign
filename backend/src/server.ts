@@ -20,6 +20,8 @@ import { createPdfRouter } from '@/routes/pdfRoutes';
 import { createHealthRoutes } from '@/routes/health';
 import { createTwoFactorRouter } from '@/routes/twoFactor';
 import { createEmailLogRouter, createEmailWebhookRouter } from '@/routes/emailLogRoutes';
+import { createAdminDlqRouter } from '@/routes/adminDlqRoutes';
+import { createAdminStatsRouter } from '@/routes/adminStatsRoutes';
 import { HealthService } from '@/services/healthService';
 import { errorHandler } from '@/middleware/errorHandler';
 import { apiLimiter } from '@/middleware/rateLimiter';
@@ -33,6 +35,7 @@ import { getRedisConnection } from '@/config/queue';
 import { shutdownManager } from '@/services/shutdownManager';
 import { tokenBlacklistService } from '@/services/tokenBlacklistService';
 import { closeRateLimitRedis } from '@/middleware/rateLimiter';
+import { createMonitoredPool, logQueryStatsSummary } from '@/services/databaseService';
 import logger from '@/services/loggerService';
 
 // Environment variables
@@ -51,8 +54,9 @@ const dbConfig = {
   connectionTimeoutMillis: 2000,
 };
 
-// Initialize database connection pool
-const pool = new Pool(dbConfig);
+// Initialize database connection pool with monitoring
+const rawPool = new Pool(dbConfig);
+const pool = createMonitoredPool(rawPool);
 
 // Test database connection
 pool.connect((err, _client, release) => {
@@ -166,6 +170,8 @@ app.use('/api/webhooks', createEmailWebhookRouter(pool)); // Email delivery webh
 app.use('/api/pdf', createPdfRouter(pool)); // PDF processing endpoints
 app.use('/api/signing', createSigningRouter(pool)); // Public signing links
 app.use('/api/admin/emails', createEmailLogRouter(pool)); // Email logs (admin)
+app.use('/api/admin/dlq', createAdminDlqRouter(pool)); // Dead Letter Queue (admin)
+app.use('/api/admin/stats', createAdminStatsRouter(pool)); // Query performance stats (admin)
 
 // API documentation placeholder
 app.get('/api/docs', (_req: Request, res: Response) => {
@@ -312,5 +318,20 @@ shutdownManager.register({
 
 // Install signal handlers for graceful shutdown
 shutdownManager.installSignalHandlers();
+
+// Log query stats periodically (every 5 minutes in production)
+const QUERY_STATS_INTERVAL = NODE_ENV === 'production' ? 5 * 60 * 1000 : 60 * 1000;
+const queryStatsInterval = setInterval(() => {
+  logQueryStatsSummary();
+}, QUERY_STATS_INTERVAL);
+
+// Register query stats timer for cleanup
+shutdownManager.register({
+  name: 'Query Stats Timer',
+  priority: 90,
+  close: async () => {
+    clearInterval(queryStatsInterval);
+  },
+});
 
 export default app;

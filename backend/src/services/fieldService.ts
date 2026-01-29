@@ -58,6 +58,7 @@ export class FieldService {
       required: data.required ?? true,
       signer_email: data.signer_email ?? null,
       properties: data.properties ?? Field.getDefaultProperties(data.type),
+      visibility_rules: data.visibility_rules ?? null,
       created_at: new Date(),
     });
 
@@ -91,8 +92,8 @@ export class FieldService {
 
     // Insert field into database
     const result = await this.pool.query(
-      `INSERT INTO fields (document_id, type, page, x, y, width, height, required, signer_email, properties)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO fields (document_id, type, page, x, y, width, height, required, signer_email, properties, visibility_rules)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
       [
         data.document_id,
@@ -105,6 +106,7 @@ export class FieldService {
         data.required ?? true,
         data.signer_email ?? null,
         data.properties ? JSON.stringify(data.properties) : JSON.stringify(Field.getDefaultProperties(data.type)),
+        data.visibility_rules ? JSON.stringify(data.visibility_rules) : null,
       ]
     );
 
@@ -264,6 +266,10 @@ export class FieldService {
     if (data.properties !== undefined) {
       updates.push(`properties = $${paramIndex++}`);
       values.push(JSON.stringify(data.properties));
+    }
+    if (data.visibility_rules !== undefined) {
+      updates.push(`visibility_rules = $${paramIndex++}`);
+      values.push(data.visibility_rules ? JSON.stringify(data.visibility_rules) : null);
     }
 
     if (updates.length === 0) {
@@ -432,6 +438,7 @@ export class FieldService {
       required: row.required,
       signer_email: row.signer_email,
       properties: row.properties,
+      visibility_rules: row.visibility_rules,
       created_at: row.created_at,
     };
   }

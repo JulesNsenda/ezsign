@@ -1,10 +1,32 @@
 import * as crypto from 'crypto';
 
+/**
+ * Available API key scopes
+ */
+export const API_KEY_SCOPES = [
+  'documents:read',
+  'documents:write',
+  'signers:read',
+  'signers:write',
+  'templates:read',
+  'templates:write',
+  'webhooks:read',
+  'webhooks:write',
+] as const;
+
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
+
+/**
+ * All scopes - for full access keys
+ */
+export const ALL_SCOPES: ApiKeyScope[] = [...API_KEY_SCOPES];
+
 export interface ApiKeyData {
   id: string;
   user_id: string;
   key_hash: string;
   name: string;
+  scopes: ApiKeyScope[];
   last_used_at: Date | null;
   expires_at: Date | null;
   created_at: Date;
@@ -13,11 +35,13 @@ export interface ApiKeyData {
 export interface CreateApiKeyData {
   user_id: string;
   name: string;
+  scopes?: ApiKeyScope[];
   expires_at?: Date | null;
 }
 
 export interface UpdateApiKeyData {
   name?: string;
+  scopes?: ApiKeyScope[];
   expires_at?: Date | null;
 }
 
@@ -26,6 +50,7 @@ export class ApiKey {
   user_id: string;
   key_hash: string;
   name: string;
+  scopes: ApiKeyScope[];
   last_used_at: Date | null;
   expires_at: Date | null;
   created_at: Date;
@@ -35,9 +60,49 @@ export class ApiKey {
     this.user_id = data.user_id;
     this.key_hash = data.key_hash;
     this.name = data.name;
+    this.scopes = data.scopes || ALL_SCOPES;
     this.last_used_at = data.last_used_at;
     this.expires_at = data.expires_at;
     this.created_at = data.created_at;
+  }
+
+  /**
+   * Check if the API key has a specific scope
+   */
+  hasScope(scope: ApiKeyScope): boolean {
+    return this.scopes.includes(scope);
+  }
+
+  /**
+   * Check if the API key has all of the specified scopes
+   */
+  hasAllScopes(scopes: ApiKeyScope[]): boolean {
+    return scopes.every((scope) => this.hasScope(scope));
+  }
+
+  /**
+   * Check if the API key has any of the specified scopes
+   */
+  hasAnyScope(scopes: ApiKeyScope[]): boolean {
+    return scopes.some((scope) => this.hasScope(scope));
+  }
+
+  /**
+   * Validate that all provided scopes are valid
+   */
+  static validateScopes(scopes: string[]): scopes is ApiKeyScope[] {
+    return scopes.every((scope) =>
+      API_KEY_SCOPES.includes(scope as ApiKeyScope)
+    );
+  }
+
+  /**
+   * Filter invalid scopes and return only valid ones
+   */
+  static filterValidScopes(scopes: string[]): ApiKeyScope[] {
+    return scopes.filter((scope) =>
+      API_KEY_SCOPES.includes(scope as ApiKeyScope)
+    ) as ApiKeyScope[];
   }
 
   /**
@@ -111,6 +176,7 @@ export class ApiKey {
       id: this.id,
       user_id: this.user_id,
       name: this.name,
+      scopes: this.scopes,
       last_used_at: this.last_used_at,
       expires_at: this.expires_at,
       created_at: this.created_at,
