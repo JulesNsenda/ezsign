@@ -31,7 +31,7 @@ export const Button: React.FC<ButtonProps> = ({
   const getVariantClasses = () => {
     const variants = {
       primary: 'bg-neutral text-base-100 hover:bg-neutral/90 active:bg-neutral/80 shadow-sm hover:shadow-md',
-      secondary: 'bg-secondary text-white hover:bg-secondary/90 active:bg-secondary/80 shadow-sm hover:shadow-md',
+      secondary: 'bg-info text-white hover:bg-info/90 active:bg-info/80 shadow-sm hover:shadow-md',
       danger: 'bg-error text-white hover:bg-error/90 active:bg-error/80 shadow-sm hover:shadow-md',
       success: 'bg-success text-white hover:bg-success/90 active:bg-success/80 shadow-sm hover:shadow-md',
       ghost: 'bg-transparent hover:bg-base-200 active:bg-base-300 text-base-content',
