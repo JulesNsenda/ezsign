@@ -134,7 +134,15 @@ export const createTieredRateLimiter = (): RateLimitRequestHandler => {
     legacyHeaders: false,
     skip: (req) => {
       // Skip rate limiting for health checks
-      return req.path === '/health' || req.path.startsWith('/health/');
+      if (req.path === '/health' || req.path.startsWith('/health/')) {
+        return true;
+      }
+      // Skip rate limiting for public signing routes (signers access via token)
+      // The token itself provides access control
+      if (req.path.startsWith('/api/signing/')) {
+        return true;
+      }
+      return false;
     },
     handler: (req, res, _next, options) => {
       logger.warn('Rate limit exceeded', {
