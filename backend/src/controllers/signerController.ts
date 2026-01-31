@@ -1,11 +1,11 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
-import { SignerService } from '../services/signerService.js';
-import { DocumentService } from '../services/documentService.js';
-import { EmailService, EmailBranding } from '../services/emailService.js';
-import { BrandingService } from '../services/brandingService.js';
-import { Branding } from '../models/Branding.js';
-import { CreateSignerData, UpdateSignerData } from '../models/Signer.js';
+import { SignerService } from '@/services/signerService';
+import { DocumentService } from '@/services/documentService';
+import { EmailService, EmailBranding } from '@/services/emailService';
+import { BrandingService } from '@/services/brandingService';
+import { Branding } from '@/models/Branding';
+import { CreateSignerData, UpdateSignerData } from '@/models/Signer';
 import logger from '@/services/loggerService';
 
 export class SignerController {

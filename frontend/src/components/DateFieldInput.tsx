@@ -54,20 +54,27 @@ export const DateFieldInput: React.FC<DateFieldInputProps> = ({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="text-sm text-base-content/60 mb-2">
+      <label htmlFor="date-input" className="text-sm text-base-content/60 mb-2">
         Select a date:
-      </div>
+      </label>
 
       <input
+        id="date-input"
         type="date"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         className="input input-bordered w-full text-lg"
         autoFocus
+        aria-describedby={value ? 'date-preview' : undefined}
       />
 
       {value && (
-        <div className="text-sm text-base-content/70 bg-base-200 p-3 rounded-lg">
+        <div
+          id="date-preview"
+          className="text-sm text-base-content/70 bg-base-200 p-3 rounded-lg"
+          aria-live="polite"
+          aria-atomic="true"
+        >
           <span className="font-medium">Preview:</span>{' '}
           <span className="text-primary font-semibold">
             {formatDate(value, dateFormat)}

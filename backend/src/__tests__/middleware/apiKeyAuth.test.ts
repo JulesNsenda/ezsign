@@ -38,6 +38,7 @@ describe('API Key Authentication Middleware', () => {
     user_id: 'user-123',
     key_hash: validApiKeyHash,
     name: 'Test API Key',
+    scopes: ['documents:read', 'documents:write', 'signers:read', 'signers:write', 'templates:read', 'templates:write', 'webhooks:read', 'webhooks:write'],
     last_used_at: null,
     expires_at: null,
     created_at: new Date(),
@@ -160,6 +161,7 @@ describe('API Key Authentication Middleware', () => {
         id: testApiKey.id,
         userId: testApiKey.user_id,
         name: testApiKey.name,
+        scopes: testApiKey.scopes,
       });
     });
 

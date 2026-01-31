@@ -11,6 +11,10 @@ module.exports = {
   // Test match patterns
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
 
+  // Exclude integration tests from default run (require database/redis)
+  // Run with: npm run test:integration
+  testPathIgnorePatterns: ['/node_modules/', '/__tests__/integration/'],
+
   // Transform files with ts-jest
   transform: {
     '^.+\\.ts$': 'ts-jest',
@@ -43,8 +47,11 @@ module.exports = {
     },
   },
 
-  // Module name mapper for path aliases
+  // Module name mapper for path aliases and .js extension stripping
   moduleNameMapper: {
+    // Strip .js extension from relative imports (ESM-style imports in source)
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+    // Path aliases
     '^@/(.*)$': '<rootDir>/src/$1',
     '^@config/(.*)$': '<rootDir>/src/config/$1',
     '^@controllers/(.*)$': '<rootDir>/src/controllers/$1',

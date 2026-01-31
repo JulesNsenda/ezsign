@@ -13,6 +13,8 @@ export interface DraggableFieldProps {
   onClick?: () => void;
   onDelete?: () => void;
   onResize?: (width: number, height: number) => void;
+  /** Keyboard movement handler - called with delta x, y values */
+  onMove?: (deltaX: number, deltaY: number) => void;
   borderColor?: string;
 }
 
@@ -38,6 +40,11 @@ const FIELD_LABELS: Record<FieldType, string> = {
   dropdown: 'Dropdown',
 };
 
+// Movement step size in pixels (before scaling)
+const MOVE_STEP = 5;
+const MOVE_STEP_LARGE = 20;
+const RESIZE_STEP = 5;
+
 export const DraggableField: React.FC<DraggableFieldProps> = ({
   field,
   scale = 1,
@@ -45,10 +52,82 @@ export const DraggableField: React.FC<DraggableFieldProps> = ({
   onClick,
   onDelete,
   onResize,
+  onMove,
   borderColor,
 }) => {
   // Use custom border color if provided, otherwise use field type color
   const fieldColor = borderColor || FIELD_COLORS[field.type];
+
+  // Handle keyboard navigation for moving and resizing
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!isSelected) return;
+
+    const step = e.shiftKey ? MOVE_STEP_LARGE : MOVE_STEP;
+
+    switch (e.key) {
+      case 'ArrowUp':
+        e.preventDefault();
+        onMove?.(0, -step);
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        onMove?.(0, step);
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        onMove?.(-step, 0);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        onMove?.(step, 0);
+        break;
+      case 'Delete':
+      case 'Backspace':
+        e.preventDefault();
+        onDelete?.();
+        break;
+    }
+  };
+
+  // Handle keyboard resize
+  const handleResizeKeyDown = (e: React.KeyboardEvent, direction: string) => {
+    if (!onResize) return;
+
+    const step = e.shiftKey ? RESIZE_STEP * 4 : RESIZE_STEP;
+    let newWidth = field.width;
+    let newHeight = field.height;
+
+    switch (e.key) {
+      case 'ArrowRight':
+        if (direction.includes('e') || direction === 'se') {
+          e.preventDefault();
+          newWidth = Math.max(50, field.width + step);
+        }
+        break;
+      case 'ArrowLeft':
+        if (direction.includes('e') || direction === 'se') {
+          e.preventDefault();
+          newWidth = Math.max(50, field.width - step);
+        }
+        break;
+      case 'ArrowDown':
+        if (direction.includes('s') || direction === 'se') {
+          e.preventDefault();
+          newHeight = Math.max(30, field.height + step);
+        }
+        break;
+      case 'ArrowUp':
+        if (direction.includes('s') || direction === 'se') {
+          e.preventDefault();
+          newHeight = Math.max(30, field.height - step);
+        }
+        break;
+    }
+
+    if (newWidth !== field.width || newHeight !== field.height) {
+      onResize(newWidth, newHeight);
+    }
+  };
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: field.id,
@@ -109,6 +188,8 @@ export const DraggableField: React.FC<DraggableFieldProps> = ({
     transition: 'box-shadow 0.2s ease, background-color 0.2s ease',
   };
 
+  const fieldLabel = `${FIELD_LABELS[field.type]} field${field.required ? ', required' : ''}${field.signer_email ? `, assigned to ${field.signer_email.split('@')[0]}` : ''}`;
+
   return (
     <div
       ref={setNodeRef}
@@ -117,11 +198,16 @@ export const DraggableField: React.FC<DraggableFieldProps> = ({
         e.stopPropagation();
         onClick?.();
       }}
+      onKeyDown={handleKeyDown}
       {...listeners}
       {...attributes}
+      role="button"
+      aria-label={`${fieldLabel}. Use arrow keys to move when selected, Delete to remove.`}
+      aria-pressed={isSelected}
+      tabIndex={0}
     >
       {/* Field Label - no pointer events so drag works */}
-      <div style={{ pointerEvents: 'none', textAlign: 'center', padding: '4px' }}>
+      <div style={{ pointerEvents: 'none', textAlign: 'center', padding: '4px' }} aria-hidden="true">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
           <span>{FIELD_LABELS[field.type]}</span>
           {field.required && <span style={{ color: '#dc3545', fontSize: '1.2em' }}>*</span>}
@@ -170,21 +256,29 @@ export const DraggableField: React.FC<DraggableFieldProps> = ({
             pointerEvents: 'auto',
             boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
           }}
+          aria-label="Delete field"
           title="Delete field"
         >
-          ×
+          <span aria-hidden="true">×</span>
         </button>
       )}
 
-      {/* Resize Handles - separate pointer events */}
+      {/* Resize Handles - separate pointer events, keyboard accessible */}
       {isSelected && onResize && (
         <>
           {/* Bottom-right resize handle */}
           <div
+            role="slider"
+            aria-label="Resize field diagonally. Use arrow keys to resize."
+            aria-valuemin={50}
+            aria-valuemax={500}
+            aria-valuenow={Math.round(Math.sqrt(field.width * field.width + field.height * field.height))}
+            tabIndex={0}
             onMouseDown={(e) => {
               e.stopPropagation();
               handleResizeStart(e, 'se');
             }}
+            onKeyDown={(e) => handleResizeKeyDown(e, 'se')}
             style={{
               position: 'absolute',
               bottom: '-4px',
@@ -203,10 +297,18 @@ export const DraggableField: React.FC<DraggableFieldProps> = ({
           />
           {/* Right resize handle */}
           <div
+            role="slider"
+            aria-label="Resize field width. Use left/right arrow keys."
+            aria-orientation="horizontal"
+            aria-valuemin={50}
+            aria-valuemax={500}
+            aria-valuenow={Math.round(field.width)}
+            tabIndex={0}
             onMouseDown={(e) => {
               e.stopPropagation();
               handleResizeStart(e, 'e');
             }}
+            onKeyDown={(e) => handleResizeKeyDown(e, 'e')}
             style={{
               position: 'absolute',
               top: '50%',
@@ -225,10 +327,18 @@ export const DraggableField: React.FC<DraggableFieldProps> = ({
           />
           {/* Bottom resize handle */}
           <div
+            role="slider"
+            aria-label="Resize field height. Use up/down arrow keys."
+            aria-orientation="vertical"
+            aria-valuemin={30}
+            aria-valuemax={500}
+            aria-valuenow={Math.round(field.height)}
+            tabIndex={0}
             onMouseDown={(e) => {
               e.stopPropagation();
               handleResizeStart(e, 's');
             }}
+            onKeyDown={(e) => handleResizeKeyDown(e, 's')}
             style={{
               position: 'absolute',
               bottom: '-4px',

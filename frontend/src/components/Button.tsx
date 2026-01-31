@@ -2,6 +2,9 @@ import React from 'react';
 
 /**
  * Professional button component with multiple variants and sizes
+ *
+ * Accessibility: For icon-only buttons (no children text), always provide an aria-label.
+ * Example: <Button icon={<TrashIcon />} aria-label="Delete item" />
  */
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -28,7 +31,7 @@ export const Button: React.FC<ButtonProps> = ({
   const getVariantClasses = () => {
     const variants = {
       primary: 'bg-neutral text-base-100 hover:bg-neutral/90 active:bg-neutral/80 shadow-sm hover:shadow-md',
-      secondary: 'bg-secondary text-white hover:bg-secondary/90 active:bg-secondary/80 shadow-sm hover:shadow-md',
+      secondary: 'bg-info text-white hover:bg-info/90 active:bg-info/80 shadow-sm hover:shadow-md',
       danger: 'bg-error text-white hover:bg-error/90 active:bg-error/80 shadow-sm hover:shadow-md',
       success: 'bg-success text-white hover:bg-success/90 active:bg-success/80 shadow-sm hover:shadow-md',
       ghost: 'bg-transparent hover:bg-base-200 active:bg-base-300 text-base-content',
@@ -62,6 +65,8 @@ export const Button: React.FC<ButtonProps> = ({
         ${className || ''}
       `}
       disabled={disabled || loading}
+      aria-busy={loading}
+      aria-disabled={disabled || loading}
       {...props}
     >
       {loading ? (
@@ -71,6 +76,7 @@ export const Button: React.FC<ButtonProps> = ({
             xmlns="http://www.w3.org/2000/svg"
             fill="none"
             viewBox="0 0 24 24"
+            aria-hidden="true"
           >
             <circle
               className="opacity-25"
@@ -90,9 +96,9 @@ export const Button: React.FC<ButtonProps> = ({
         </>
       ) : (
         <>
-          {icon && iconPosition === 'left' && icon}
+          {icon && iconPosition === 'left' && <span aria-hidden="true">{icon}</span>}
           {children}
-          {icon && iconPosition === 'right' && icon}
+          {icon && iconPosition === 'right' && <span aria-hidden="true">{icon}</span>}
         </>
       )}
     </button>

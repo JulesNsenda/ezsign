@@ -52,6 +52,17 @@ vi.mock('@/hooks/useToast', () => ({
   })),
 }));
 
+// Mock ThemeContext
+vi.mock('@/contexts/ThemeContext', () => ({
+  useTheme: vi.fn(() => ({
+    theme: 'light',
+    resolvedTheme: 'light',
+    setTheme: vi.fn(),
+    toggleTheme: vi.fn(),
+  })),
+  ThemeProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: false },
@@ -89,6 +100,9 @@ describe('Templates Page', () => {
 
   it('should render delete button', () => {
     renderWithProviders(<Templates />);
-    expect(screen.getByText('Delete')).toBeInTheDocument();
+    // Delete button is icon-only with danger variant
+    const buttons = screen.getAllByRole('button');
+    const deleteButton = buttons.find(btn => btn.className.includes('bg-error'));
+    expect(deleteButton).toBeDefined();
   });
 });

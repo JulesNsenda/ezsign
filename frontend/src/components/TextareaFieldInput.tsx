@@ -64,17 +64,18 @@ export const TextareaFieldInput: React.FC<TextareaFieldInputProps> = ({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="text-sm text-base-content/60 mb-2">
+      <label htmlFor="textarea-input" className="text-sm text-base-content/60 mb-2">
         Enter your text below:
         {validation?.pattern && example && (
-          <span className="block text-xs text-base-content/40 mt-1">
+          <span id="textarea-example" className="block text-xs text-base-content/40 mt-1">
             Example: {example}
           </span>
         )}
-      </div>
+      </label>
 
       <div className="relative">
         <textarea
+          id="textarea-input"
           value={value}
           onChange={(e) => setValue(e.target.value.slice(0, maxLength))}
           onBlur={handleBlur}
@@ -88,8 +89,17 @@ export const TextareaFieldInput: React.FC<TextareaFieldInputProps> = ({
             ${!error && value ? 'border-accent' : 'border-base-300'}
           `}
           autoFocus
+          aria-invalid={touched && !!error}
+          aria-describedby={[
+            touched && error ? 'textarea-error' : null,
+            'textarea-char-count',
+            validation?.pattern && example ? 'textarea-example' : null,
+          ].filter(Boolean).join(' ') || undefined}
         />
         <div
+          id="textarea-char-count"
+          aria-live="polite"
+          aria-atomic="true"
           className={`absolute bottom-2 right-3 text-xs ${
             remainingChars < 50 ? 'text-warning' : 'text-base-content/40'
           } ${remainingChars < 10 ? 'text-error font-semibold' : ''}`}
@@ -100,15 +110,15 @@ export const TextareaFieldInput: React.FC<TextareaFieldInputProps> = ({
 
       {/* Validation error */}
       {touched && error && (
-        <div className="text-xs text-error -mt-2">
+        <div id="textarea-error" role="alert" aria-live="polite" className="text-xs text-error -mt-2">
           {error}
         </div>
       )}
 
       {/* Validation success indicator */}
       {validation?.pattern && !error && value && (
-        <div className="text-xs text-success flex items-center gap-1 -mt-2">
-          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+        <div className="text-xs text-success flex items-center gap-1 -mt-2" aria-live="polite">
+          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
           </svg>
           Valid format

@@ -1,0 +1,23 @@
+{
+  "name": "ezsign-load-tests",
+  "version": "1.0.0",
+  "description": "Load testing suite for EzSign API",
+  "scripts": {
+    "test:smoke": "k6 run --env PROFILE=smoke scenarios/health.js",
+    "test:smoke:auth": "k6 run --env PROFILE=smoke scenarios/auth.js",
+    "test:smoke:docs": "k6 run --env PROFILE=smoke scenarios/documents.js",
+    "test:load": "k6 run --env PROFILE=load scenarios/mixed-workload.js",
+    "test:load:auth": "k6 run --env PROFILE=load scenarios/auth.js",
+    "test:load:docs": "k6 run --env PROFILE=load scenarios/documents.js",
+    "test:load:health": "k6 run --env PROFILE=load scenarios/health.js",
+    "test:stress": "k6 run --env PROFILE=stress scenarios/mixed-workload.js",
+    "test:stress:auth": "k6 run --env PROFILE=stress scenarios/auth.js",
+    "test:stress:docs": "k6 run --env PROFILE=stress scenarios/documents.js",
+    "test:spike": "k6 run --env PROFILE=spike scenarios/mixed-workload.js",
+    "test:soak": "k6 run --env PROFILE=soak scenarios/mixed-workload.js",
+    "test:all": "npm run test:smoke && npm run test:load",
+    "test:json": "k6 run --env PROFILE=load --out json=results/load-$(date +%Y%m%d-%H%M%S).json scenarios/mixed-workload.js"
+  },
+  "keywords": ["load-testing", "k6", "performance"],
+  "license": "MIT"
+}

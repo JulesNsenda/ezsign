@@ -12,6 +12,8 @@ describe('Signer Model', () => {
     signed_at: null,
     ip_address: null,
     user_agent: null,
+    last_reminder_sent_at: null,
+    reminder_count: 0,
     created_at: new Date(),
     updated_at: new Date(),
   };

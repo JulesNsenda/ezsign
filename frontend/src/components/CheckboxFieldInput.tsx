@@ -25,7 +25,7 @@ export const CheckboxFieldInput: React.FC<CheckboxFieldInputProps> = ({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="text-sm text-base-content/60 mb-2">
+      <div id="checkbox-instructions" className="text-sm text-base-content/60 mb-2">
         Check the box below to confirm:
       </div>
 
@@ -43,13 +43,14 @@ export const CheckboxFieldInput: React.FC<CheckboxFieldInputProps> = ({
           checked={checked}
           onChange={(e) => setChecked(e.target.checked)}
           className="checkbox checkbox-accent checkbox-lg"
+          aria-describedby="checkbox-instructions checkbox-status"
         />
         <span className="text-base font-medium text-base-content">
           {label}
         </span>
       </label>
 
-      <div className="flex items-center gap-2 text-sm">
+      <div id="checkbox-status" className="flex items-center gap-2 text-sm" aria-live="polite" aria-atomic="true">
         <span className={`font-medium ${checked ? 'text-success' : 'text-base-content/50'}`}>
           {checked ? 'Checked' : 'Unchecked'}
         </span>

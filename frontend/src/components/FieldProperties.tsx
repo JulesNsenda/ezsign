@@ -49,10 +49,12 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
           Properties
         </h3>
         <button
+          type="button"
           onClick={onClose}
           className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-base-200 text-base-content/60 hover:text-base-content transition-all text-xl"
+          aria-label="Close properties panel"
         >
-          ×
+          <span aria-hidden="true">×</span>
         </button>
       </div>
 
@@ -89,6 +91,7 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
               onChange={(e) => onUpdate({ x: Number(e.target.value) })}
               className="input-docuseal text-sm"
               placeholder="X"
+              aria-label="X position"
             />
             <input
               type="number"
@@ -96,6 +99,7 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
               onChange={(e) => onUpdate({ y: Number(e.target.value) })}
               className="input-docuseal text-sm"
               placeholder="Y"
+              aria-label="Y position"
             />
           </div>
         </div>
@@ -113,6 +117,7 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
               min={50}
               className="input-docuseal text-sm"
               placeholder="Width"
+              aria-label="Field width"
             />
             <input
               type="number"
@@ -121,6 +126,7 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
               min={30}
               className="input-docuseal text-sm"
               placeholder="Height"
+              aria-label="Field height"
             />
           </div>
         </div>
@@ -501,6 +507,7 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
               onUpdate({ signer_email: value === '' ? undefined : value });
             }}
             className="input-docuseal text-sm"
+            aria-label="Assign field to signer"
           >
             <option value="">Unassigned</option>
             {signers.map((signer) => (
@@ -529,6 +536,7 @@ const FieldProperties: React.FC<FieldPropertiesProps> = ({
                 onGroupChange(field.id, value === '' ? null : value);
               }}
               className="input-docuseal text-sm"
+              aria-label="Assign field to group"
             >
               <option value="">No group</option>
               {groups.map((group) => (

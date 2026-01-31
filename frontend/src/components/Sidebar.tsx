@@ -103,15 +103,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {onToggleCollapse && (
           <div className="hidden lg:flex justify-end p-3 border-b border-base-300">
             <button
+              type="button"
               onClick={handleToggleCollapse}
               className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-base-200 text-base-content/60 hover:text-base-content transition-colors"
-              title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-expanded={!isCollapsed}
             >
               <svg
                 className={`w-5 h-5 ${isTransitioning ? 'transition-transform duration-300' : ''} ${isCollapsed ? 'rotate-180' : ''}`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
+                aria-hidden="true"
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
               </svg>
@@ -119,7 +122,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
 
-        <nav className="p-4 space-y-1">
+        <nav id="sidebar-nav" className="p-4 space-y-1" aria-label="Main navigation">
           {navItems.map((item) => {
             const isActive = location.pathname === item.path;
 
@@ -137,8 +140,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }
                 `}
                 title={isCollapsed ? item.label : undefined}
+                aria-current={isActive ? 'page' : undefined}
               >
-                <span className="flex-shrink-0">{item.icon}</span>
+                <span className="flex-shrink-0" aria-hidden="true">{item.icon}</span>
                 {!isCollapsed && <span>{item.label}</span>}
               </Link>
             );

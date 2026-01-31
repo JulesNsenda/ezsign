@@ -31,14 +31,16 @@ export const DropdownFieldInput: React.FC<DropdownFieldInputProps> = ({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="text-sm text-base-content/60 mb-2">
+      <label htmlFor={fieldName} className="text-sm text-base-content/60 mb-2">
         Select an option from the list:
-      </div>
+      </label>
 
       <select
         id={fieldName}
         value={selectedValue}
         onChange={(e) => setSelectedValue(e.target.value)}
+        aria-label="Select an option"
+        aria-describedby={selectedValue ? 'dropdown-selection' : undefined}
         className={`
           w-full px-4 py-3 border-2 rounded-lg text-base
           bg-base-100 transition-all duration-200
@@ -57,7 +59,7 @@ export const DropdownFieldInput: React.FC<DropdownFieldInputProps> = ({
       </select>
 
       {selectedValue && (
-        <div className="p-3 bg-accent/10 border border-accent/30 rounded-lg">
+        <div id="dropdown-selection" className="p-3 bg-accent/10 border border-accent/30 rounded-lg" aria-live="polite" aria-atomic="true">
           <div className="flex items-center gap-2">
             <span className="text-accent font-bold">Selected:</span>
             <span className="text-base-content font-medium">
