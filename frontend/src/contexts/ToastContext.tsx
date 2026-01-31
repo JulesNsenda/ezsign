@@ -76,7 +76,7 @@ const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onRemove }) => 
       position: 'fixed',
       top: '1rem',
       right: '1rem',
-      zIndex: 9999,
+      zIndex: 60000, // Higher than modals (50000) to ensure visibility
       display: 'flex',
       flexDirection: 'column',
       gap: '0.5rem',

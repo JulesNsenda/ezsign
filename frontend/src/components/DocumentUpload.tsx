@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Button from './Button';
 import { useUploadDocument } from '@/hooks/useDocuments';
+import { useTeams } from '@/hooks/useTeams';
 import { useToast } from '@/hooks/useToast';
 
 /**
@@ -12,6 +13,7 @@ import { useToast } from '@/hooks/useToast';
 
 const uploadSchema = z.object({
   title: z.string().min(1, 'Title is required').max(255, 'Title too long'),
+  team_id: z.string().optional(),
 });
 
 type UploadFormData = z.infer<typeof uploadSchema>;
@@ -25,6 +27,7 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({ onSuccess, onCan
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const uploadMutation = useUploadDocument();
+  const { data: teams = [] } = useTeams();
   const toast = useToast();
 
   const {
@@ -87,6 +90,7 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({ onSuccess, onCan
         file,
         data: {
           title: data.title,
+          team_id: data.team_id || undefined,
         },
       });
 
@@ -120,6 +124,35 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({ onSuccess, onCan
           </div>
         )}
       </div>
+
+      {teams.length > 0 && (
+        <div style={{ marginBottom: '1.5rem' }}>
+          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
+            Team (Optional)
+          </label>
+          <select
+            {...register('team_id')}
+            style={{
+              width: '100%',
+              padding: '0.5rem',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              fontSize: '1rem',
+              backgroundColor: 'white',
+            }}
+          >
+            <option value="">No team (personal document)</option>
+            {teams.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.name}
+              </option>
+            ))}
+          </select>
+          <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
+            Assign to a team to apply custom branding on signing pages
+          </div>
+        </div>
+      )}
 
       <div style={{ marginBottom: '1.5rem' }}>
         <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
