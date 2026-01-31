@@ -338,7 +338,7 @@ export const Settings: React.FC = () => {
       setIsCreateTeamModalOpen(false);
       setNewTeamName('');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to create team');
+      toast.error(error.response?.data?.message || error.response?.data?.error?.message || 'Failed to create team');
     }
   };
 
@@ -357,7 +357,7 @@ export const Settings: React.FC = () => {
       setSelectedTeamForEdit(null);
       setEditTeamName('');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to update team');
+      toast.error(error.response?.data?.message || error.response?.data?.error?.message || 'Failed to update team');
     }
   };
 
@@ -368,7 +368,7 @@ export const Settings: React.FC = () => {
       setIsManageMembersModalOpen(false);
       setSelectedTeamForEdit(null);
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to delete team');
+      toast.error(error.response?.data?.message || error.response?.data?.error?.message || 'Failed to delete team');
     }
   };
 
@@ -387,7 +387,7 @@ export const Settings: React.FC = () => {
       setNewMemberEmail('');
       setNewMemberRole('member');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to add member');
+      toast.error(error.response?.data?.message || error.response?.data?.error?.message || 'Failed to add member');
     }
   };
 
@@ -401,7 +401,7 @@ export const Settings: React.FC = () => {
       });
       toast.success('Member role updated');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to update role');
+      toast.error(error.response?.data?.message || error.response?.data?.error?.message || 'Failed to update role');
     }
   };
 
@@ -414,7 +414,7 @@ export const Settings: React.FC = () => {
       });
       toast.success('Member removed');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to remove member');
+      toast.error(error.response?.data?.message || error.response?.data?.error?.message || 'Failed to remove member');
     }
   };
 
