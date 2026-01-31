@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/useAuth';
+import { useDefaultBranding } from '@/hooks/useBranding';
 import Button from '@/components/Button';
 import TwoFactorVerify from '@/components/TwoFactorVerify';
 import BackupCodeVerify from '@/components/BackupCodeVerify';
@@ -34,6 +35,16 @@ export const Login: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loginStep, setLoginStep] = useState<LoginStep>('credentials');
   const [twoFactorState, setTwoFactorState] = useState<TwoFactorState | null>(null);
+
+  // Fetch default branding for the login page
+  const { data: brandingData } = useDefaultBranding();
+  const branding = brandingData?.branding;
+
+  // Get branding display values
+  const displayName = branding?.company_name || 'EzSign';
+  const tagline = branding?.tagline || 'Sign documents with ease';
+  const logoUrl = branding?.logo_url || null;
+  const primaryColor = branding?.primary_color || '#4F46E5';
 
   const {
     register,
@@ -126,12 +137,23 @@ export const Login: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-200 via-base-200 to-base-300 px-4 py-12">
         <div className="w-full max-w-md animate-fade-in">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-neutral to-neutral/80 text-base-100 mb-4 shadow-lg">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-              </svg>
-            </div>
-            <h1 className="text-4xl font-bold text-neutral mb-2">EzSign</h1>
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={`${displayName} logo`}
+                className="h-16 w-auto mx-auto mb-4 object-contain"
+              />
+            ) : (
+              <div
+                className="inline-flex items-center justify-center w-16 h-16 rounded-2xl text-base-100 mb-4 shadow-lg"
+                style={{ backgroundColor: primaryColor }}
+              >
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </div>
+            )}
+            <h1 className="text-4xl font-bold text-neutral mb-2">{displayName}</h1>
           </div>
 
           <div className="bg-base-100 rounded-2xl shadow-xl border border-base-300/50 p-8">
@@ -154,12 +176,23 @@ export const Login: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-200 via-base-200 to-base-300 px-4 py-12">
         <div className="w-full max-w-md animate-fade-in">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-neutral to-neutral/80 text-base-100 mb-4 shadow-lg">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-              </svg>
-            </div>
-            <h1 className="text-4xl font-bold text-neutral mb-2">EzSign</h1>
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={`${displayName} logo`}
+                className="h-16 w-auto mx-auto mb-4 object-contain"
+              />
+            ) : (
+              <div
+                className="inline-flex items-center justify-center w-16 h-16 rounded-2xl text-base-100 mb-4 shadow-lg"
+                style={{ backgroundColor: primaryColor }}
+              >
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </div>
+            )}
+            <h1 className="text-4xl font-bold text-neutral mb-2">{displayName}</h1>
           </div>
 
           <div className="bg-base-100 rounded-2xl shadow-xl border border-base-300/50 p-8">
@@ -182,13 +215,25 @@ export const Login: React.FC = () => {
       <div className="w-full max-w-md animate-fade-in">
         {/* Logo/Title */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-neutral to-neutral/80 text-base-100 mb-4 shadow-lg" aria-hidden="true">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-            </svg>
-          </div>
-          <h1 className="text-4xl font-bold text-neutral mb-2">EzSign</h1>
-          <p className="text-base-content/60">Sign documents with ease</p>
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt={`${displayName} logo`}
+              className="h-16 w-auto mx-auto mb-4 object-contain"
+            />
+          ) : (
+            <div
+              className="inline-flex items-center justify-center w-16 h-16 rounded-2xl text-base-100 mb-4 shadow-lg"
+              style={{ backgroundColor: primaryColor }}
+              aria-hidden="true"
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+            </div>
+          )}
+          <h1 className="text-4xl font-bold text-neutral mb-2">{displayName}</h1>
+          <p className="text-base-content/60">{tagline}</p>
         </div>
 
         <div className="bg-base-100 rounded-2xl shadow-xl border border-base-300/50 p-8">
@@ -292,13 +337,13 @@ export const Login: React.FC = () => {
 
         <div className="text-center text-sm text-base-content/50 mt-8">
           <div className="mb-2">
-            <Link to="/privacy" className="hover:text-neutral transition-colors">Privacy Policy</Link>
+            <Link to={branding?.privacy_url || '/privacy'} className="hover:text-neutral transition-colors">Privacy Policy</Link>
             <span className="mx-2">|</span>
-            <Link to="/terms" className="hover:text-neutral transition-colors">Terms of Service</Link>
+            <Link to={branding?.terms_url || '/terms'} className="hover:text-neutral transition-colors">Terms of Service</Link>
             <span className="mx-2">|</span>
             <Link to="/contact" className="hover:text-neutral transition-colors">Contact</Link>
           </div>
-          <p>© 2025 EzSign. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} {displayName}. All rights reserved.</p>
         </div>
       </div>
     </div>

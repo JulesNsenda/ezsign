@@ -59,6 +59,9 @@ export const createPublicBrandingRouter = (pool: Pool, storageService: StorageSe
   const router = Router();
   const brandingController = new BrandingController(pool, storageService);
 
+  // Get default branding for public pages (login, register)
+  router.get('/default', brandingController.getDefaultBranding);
+
   // Get logo file (public endpoint for displaying logos)
   router.get('/logo/:teamId', brandingController.getLogo);
 
