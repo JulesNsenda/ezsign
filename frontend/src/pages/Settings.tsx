@@ -13,6 +13,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/useToast';
 import apiClient from '@/api/client';
 import { twoFactorService, type TwoFactorStatus } from '@/services/twoFactorService';
+import {
+  useTeams,
+  useCreateTeam,
+  useUpdateTeam,
+  useDeleteTeam,
+  useTeamMembers,
+  useAddTeamMember,
+  useUpdateTeamMemberRole,
+  useRemoveTeamMember,
+} from '@/hooks/useTeams';
+import type { TeamMember } from '@/services/teamService';
 
 type ApiKeyScope =
   | 'documents:read'
@@ -64,10 +75,13 @@ interface Webhook {
   created_at: string;
 }
 
-interface Team {
+interface TeamWithRole {
   id: string;
   name: string;
+  owner_id: string;
   role: string;
+  created_at: string;
+  updated_at: string;
 }
 
 /**
@@ -111,6 +125,17 @@ export const Settings: React.FC = () => {
   const [regenerateCode, setRegenerateCode] = useState('');
   const [newBackupCodes, setNewBackupCodes] = useState<string[]>([]);
 
+  // Teams
+  const [isCreateTeamModalOpen, setIsCreateTeamModalOpen] = useState(false);
+  const [isEditTeamModalOpen, setIsEditTeamModalOpen] = useState(false);
+  const [isManageMembersModalOpen, setIsManageMembersModalOpen] = useState(false);
+  const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
+  const [selectedTeamForEdit, setSelectedTeamForEdit] = useState<TeamWithRole | null>(null);
+  const [newTeamName, setNewTeamName] = useState('');
+  const [editTeamName, setEditTeamName] = useState('');
+  const [newMemberEmail, setNewMemberEmail] = useState('');
+  const [newMemberRole, setNewMemberRole] = useState<'admin' | 'member'>('member');
+
   // Confirm Modal
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -142,14 +167,15 @@ export const Settings: React.FC = () => {
     enabled: false, // Disabled until backend implements webhooks
   });
 
-  const { data: teams = [] } = useQuery<Team[]>({
-    queryKey: ['teams'],
-    queryFn: async () => {
-      const response = await apiClient.get('/teams');
-      return response.data.teams || [];
-    },
-    enabled: activeTab === 'teams',
-  });
+  const { data: teams = [], isLoading: isTeamsLoading } = useTeams();
+  const { data: teamMembers = [], isLoading: isMembersLoading } = useTeamMembers(selectedTeamForEdit?.id || null);
+
+  const createTeamMutation = useCreateTeam();
+  const updateTeamMutation = useUpdateTeam();
+  const deleteTeamMutation = useDeleteTeam();
+  const addMemberMutation = useAddTeamMember();
+  const updateMemberRoleMutation = useUpdateTeamMemberRole();
+  const removeMemberMutation = useRemoveTeamMember();
 
   const { data: twoFactorStatus, refetch: refetch2FAStatus } = useQuery<TwoFactorStatus>({
     queryKey: ['2fa-status'],
@@ -299,6 +325,108 @@ export const Settings: React.FC = () => {
       return;
     }
     await createWebhookMutation.mutateAsync({ url: webhookUrl, events: webhookEvents });
+  };
+
+  const handleCreateTeam = async () => {
+    if (!newTeamName.trim()) {
+      toast.error('Please enter a team name');
+      return;
+    }
+    try {
+      await createTeamMutation.mutateAsync({ name: newTeamName });
+      toast.success('Team created successfully');
+      setIsCreateTeamModalOpen(false);
+      setNewTeamName('');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Failed to create team');
+    }
+  };
+
+  const handleUpdateTeam = async () => {
+    if (!selectedTeamForEdit || !editTeamName.trim()) {
+      toast.error('Please enter a team name');
+      return;
+    }
+    try {
+      await updateTeamMutation.mutateAsync({
+        teamId: selectedTeamForEdit.id,
+        data: { name: editTeamName },
+      });
+      toast.success('Team updated successfully');
+      setIsEditTeamModalOpen(false);
+      setSelectedTeamForEdit(null);
+      setEditTeamName('');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Failed to update team');
+    }
+  };
+
+  const handleDeleteTeam = async (teamId: string) => {
+    try {
+      await deleteTeamMutation.mutateAsync(teamId);
+      toast.success('Team deleted successfully');
+      setIsManageMembersModalOpen(false);
+      setSelectedTeamForEdit(null);
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Failed to delete team');
+    }
+  };
+
+  const handleAddMember = async () => {
+    if (!selectedTeamForEdit || !newMemberEmail.trim()) {
+      toast.error('Please enter an email address');
+      return;
+    }
+    try {
+      await addMemberMutation.mutateAsync({
+        teamId: selectedTeamForEdit.id,
+        data: { email: newMemberEmail, role: newMemberRole },
+      });
+      toast.success('Member added successfully');
+      setIsAddMemberModalOpen(false);
+      setNewMemberEmail('');
+      setNewMemberRole('member');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Failed to add member');
+    }
+  };
+
+  const handleUpdateMemberRole = async (userId: string, role: 'admin' | 'member') => {
+    if (!selectedTeamForEdit) return;
+    try {
+      await updateMemberRoleMutation.mutateAsync({
+        teamId: selectedTeamForEdit.id,
+        userId,
+        data: { role },
+      });
+      toast.success('Member role updated');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Failed to update role');
+    }
+  };
+
+  const handleRemoveMember = async (userId: string) => {
+    if (!selectedTeamForEdit) return;
+    try {
+      await removeMemberMutation.mutateAsync({
+        teamId: selectedTeamForEdit.id,
+        userId,
+      });
+      toast.success('Member removed');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Failed to remove member');
+    }
+  };
+
+  const openManageMembers = (team: TeamWithRole) => {
+    setSelectedTeamForEdit(team);
+    setIsManageMembersModalOpen(true);
+  };
+
+  const openEditTeam = (team: TeamWithRole) => {
+    setSelectedTeamForEdit(team);
+    setEditTeamName(team.name);
+    setIsEditTeamModalOpen(true);
   };
 
   const availableEvents = [
@@ -830,47 +958,107 @@ export const Settings: React.FC = () => {
         {/* Teams Tab */}
         {activeTab === 'teams' && (
           <div>
-            <div className="mb-6">
-              <h2 className="text-xl font-semibold text-neutral">Teams</h2>
-              <p className="text-sm text-base-content/60 mt-1">Collaborate with your team members</p>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+              <div>
+                <h2 className="text-xl font-semibold text-neutral">Teams</h2>
+                <p className="text-sm text-base-content/60 mt-1">Collaborate with your team members</p>
+              </div>
+              <Button
+                onClick={() => setIsCreateTeamModalOpen(true)}
+                icon={
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                }
+              >
+                Create Team
+              </Button>
             </div>
 
-            {teams.length === 0 ? (
+            {isTeamsLoading ? (
+              <Card>
+                <div className="text-center py-12">
+                  <div className="w-8 h-8 border-4 border-neutral/20 border-t-neutral rounded-full animate-spin mx-auto mb-4"></div>
+                  <p className="text-base-content/60">Loading teams...</p>
+                </div>
+              </Card>
+            ) : teams.length === 0 ? (
               <Card>
                 <div className="text-center py-12">
                   <svg className="w-16 h-16 mx-auto mb-4 text-base-content/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                   </svg>
                   <h3 className="text-lg font-semibold text-neutral mb-2">No teams yet</h3>
-                  <p className="text-base-content/60 mb-4">You haven't joined any teams yet</p>
+                  <p className="text-base-content/60 mb-4">Create a team to collaborate with others and customize branding</p>
+                  <Button onClick={() => setIsCreateTeamModalOpen(true)}>
+                    Create Your First Team
+                  </Button>
                 </div>
               </Card>
             ) : (
               <div className="grid gap-4">
-                {teams.map((team) => (
+                {(teams as TeamWithRole[]).map((team) => (
                   <Card key={team.id}>
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-gradient-to-br from-neutral/20 to-neutral/30 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <svg className="w-6 h-6 text-neutral" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                        </svg>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                      <div className="flex items-center gap-4 flex-1">
+                        <div className="w-12 h-12 bg-gradient-to-br from-neutral/20 to-neutral/30 rounded-xl flex items-center justify-center flex-shrink-0">
+                          <svg className="w-6 h-6 text-neutral" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                          </svg>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-neutral">{team.name}</h3>
+                          <p className="text-sm text-base-content/60 capitalize">Role: {team.role}</p>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-neutral">{team.name}</h3>
-                        <p className="text-sm text-base-content/60 capitalize">Role: {team.role}</p>
+                      <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                        {(team.role === 'owner' || team.role === 'admin') && (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openManageMembers(team)}
+                              icon={
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                </svg>
+                              }
+                            >
+                              Members
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedBrandingTeamId(team.id);
+                                setActiveTab('branding');
+                              }}
+                              icon={
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                                </svg>
+                              }
+                            >
+                              Branding
+                            </Button>
+                          </>
+                        )}
+                        {team.role === 'owner' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEditTeam(team)}
+                            icon={
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                            }
+                          >
+                            Settings
+                          </Button>
+                        )}
                       </div>
-                      {(team.role === 'owner' || team.role === 'admin') && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedBrandingTeamId(team.id);
-                            setActiveTab('branding');
-                          }}
-                        >
-                          Branding
-                        </Button>
-                      )}
                     </div>
                   </Card>
                 ))}
@@ -888,13 +1076,25 @@ export const Settings: React.FC = () => {
                   <svg className="w-16 h-16 mx-auto mb-4 text-base-content/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
                   </svg>
-                  <h3 className="text-lg font-semibold text-neutral mb-2">Select a Team</h3>
+                  <h3 className="text-lg font-semibold text-neutral mb-2">
+                    {teams.length === 0 ? 'Create a Team First' : 'Select a Team'}
+                  </h3>
                   <p className="text-base-content/60 mb-4">
-                    Choose a team from the Teams tab to customize its branding
+                    {teams.length === 0
+                      ? 'You need to create a team before you can customize branding'
+                      : 'Choose a team from the Teams tab to customize its branding'}
                   </p>
-                  <Button variant="outline" onClick={() => setActiveTab('teams')}>
-                    Go to Teams
-                  </Button>
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                    {teams.length === 0 ? (
+                      <Button onClick={() => setIsCreateTeamModalOpen(true)}>
+                        Create Team
+                      </Button>
+                    ) : (
+                      <Button variant="outline" onClick={() => setActiveTab('teams')}>
+                        Go to Teams
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </Card>
             ) : (
@@ -1370,6 +1570,298 @@ export const Settings: React.FC = () => {
               </div>
             </div>
           )}
+        </Modal>
+
+        {/* Create Team Modal */}
+        <Modal
+          isOpen={isCreateTeamModalOpen}
+          onClose={() => {
+            setIsCreateTeamModalOpen(false);
+            setNewTeamName('');
+          }}
+          title="Create Team"
+        >
+          <div className="flex flex-col gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-neutral mb-2">
+                Team Name <span className="text-error">*</span>
+              </label>
+              <input
+                type="text"
+                value={newTeamName}
+                onChange={(e) => setNewTeamName(e.target.value)}
+                placeholder="e.g., My Company"
+                className="input-docuseal"
+                autoFocus
+              />
+              <p className="text-xs text-base-content/60 mt-2">
+                Choose a name that represents your team or organization
+              </p>
+            </div>
+            <div className="flex gap-3 justify-end pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsCreateTeamModalOpen(false);
+                  setNewTeamName('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateTeam}
+                loading={createTeamMutation.isPending}
+                disabled={!newTeamName.trim()}
+              >
+                Create Team
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Edit Team Modal */}
+        <Modal
+          isOpen={isEditTeamModalOpen}
+          onClose={() => {
+            setIsEditTeamModalOpen(false);
+            setSelectedTeamForEdit(null);
+            setEditTeamName('');
+          }}
+          title="Team Settings"
+        >
+          <div className="flex flex-col gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-neutral mb-2">
+                Team Name <span className="text-error">*</span>
+              </label>
+              <input
+                type="text"
+                value={editTeamName}
+                onChange={(e) => setEditTeamName(e.target.value)}
+                placeholder="Team name"
+                className="input-docuseal"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3 justify-end pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsEditTeamModalOpen(false);
+                  setSelectedTeamForEdit(null);
+                  setEditTeamName('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleUpdateTeam}
+                loading={updateTeamMutation.isPending}
+                disabled={!editTeamName.trim()}
+              >
+                Save Changes
+              </Button>
+            </div>
+            <div className="border-t border-base-300 pt-4 mt-2">
+              <h4 className="font-semibold text-error mb-2">Danger Zone</h4>
+              <p className="text-sm text-base-content/60 mb-3">
+                Deleting this team will remove all team members and branding settings. This action cannot be undone.
+              </p>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  if (selectedTeamForEdit) {
+                    setConfirmModal({
+                      isOpen: true,
+                      title: 'Delete Team',
+                      message: `Are you sure you want to delete "${selectedTeamForEdit.name}"? This will remove all team members and branding settings.`,
+                      onConfirm: () => {
+                        handleDeleteTeam(selectedTeamForEdit.id);
+                        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                        setIsEditTeamModalOpen(false);
+                      },
+                    });
+                  }
+                }}
+              >
+                Delete Team
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Manage Team Members Modal */}
+        <Modal
+          isOpen={isManageMembersModalOpen}
+          onClose={() => {
+            setIsManageMembersModalOpen(false);
+            setSelectedTeamForEdit(null);
+          }}
+          title={`Team Members - ${selectedTeamForEdit?.name || ''}`}
+          width="600px"
+        >
+          <div className="flex flex-col gap-4">
+            <div className="flex justify-between items-center">
+              <p className="text-sm text-base-content/60">
+                Manage who has access to this team
+              </p>
+              <Button
+                size="sm"
+                onClick={() => setIsAddMemberModalOpen(true)}
+                icon={
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                }
+              >
+                Add Member
+              </Button>
+            </div>
+
+            {isMembersLoading ? (
+              <div className="text-center py-8">
+                <div className="w-6 h-6 border-3 border-neutral/20 border-t-neutral rounded-full animate-spin mx-auto"></div>
+              </div>
+            ) : teamMembers.length === 0 ? (
+              <div className="text-center py-8 text-base-content/60">
+                No members yet
+              </div>
+            ) : (
+              <div className="divide-y divide-base-200 max-h-[400px] overflow-y-auto">
+                {teamMembers.map((member: TeamMember) => (
+                  <div key={member.user_id} className="flex items-center gap-4 py-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-neutral/20 to-neutral/30 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-sm font-semibold text-neutral uppercase">
+                        {member.email.charAt(0)}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-neutral truncate">{member.email}</p>
+                      <p className="text-xs text-base-content/60">
+                        Joined {new Date(member.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {member.role === 'owner' ? (
+                        <span className="px-2 py-1 text-xs font-semibold bg-neutral/10 text-neutral rounded-md">
+                          Owner
+                        </span>
+                      ) : (
+                        <>
+                          <select
+                            value={member.role}
+                            onChange={(e) =>
+                              handleUpdateMemberRole(member.user_id, e.target.value as 'admin' | 'member')
+                            }
+                            className="select select-sm select-bordered text-sm"
+                            disabled={updateMemberRoleMutation.isPending}
+                          >
+                            <option value="member">Member</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setConfirmModal({
+                                isOpen: true,
+                                title: 'Remove Member',
+                                message: `Are you sure you want to remove ${member.email} from this team?`,
+                                onConfirm: () => {
+                                  handleRemoveMember(member.user_id);
+                                  setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                },
+                              });
+                            }}
+                            className="text-error hover:bg-error/10"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2 border-t border-base-200">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsManageMembersModalOpen(false);
+                  setSelectedTeamForEdit(null);
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Add Team Member Modal */}
+        <Modal
+          isOpen={isAddMemberModalOpen}
+          onClose={() => {
+            setIsAddMemberModalOpen(false);
+            setNewMemberEmail('');
+            setNewMemberRole('member');
+          }}
+          title="Add Team Member"
+        >
+          <div className="flex flex-col gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-neutral mb-2">
+                Email Address <span className="text-error">*</span>
+              </label>
+              <input
+                type="email"
+                value={newMemberEmail}
+                onChange={(e) => setNewMemberEmail(e.target.value)}
+                placeholder="colleague@company.com"
+                className="input-docuseal"
+                autoFocus
+              />
+              <p className="text-xs text-base-content/60 mt-2">
+                The user must have an existing account
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-neutral mb-2">
+                Role
+              </label>
+              <select
+                value={newMemberRole}
+                onChange={(e) => setNewMemberRole(e.target.value as 'admin' | 'member')}
+                className="select select-bordered w-full"
+              >
+                <option value="member">Member - Can view and sign documents</option>
+                <option value="admin">Admin - Can manage team settings and branding</option>
+              </select>
+            </div>
+            <div className="flex gap-3 justify-end pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsAddMemberModalOpen(false);
+                  setNewMemberEmail('');
+                  setNewMemberRole('member');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddMember}
+                loading={addMemberMutation.isPending}
+                disabled={!newMemberEmail.trim()}
+              >
+                Add Member
+              </Button>
+            </div>
+          </div>
         </Modal>
       </div>
     </Layout>

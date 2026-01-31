@@ -187,7 +187,7 @@ export const createTieredRateLimiter = (): RateLimitRequestHandler => {
   // If rate limiting is disabled, return a pass-through middleware
   if (!isRateLimitEnabled()) {
     logger.info('Rate limiting is DISABLED (RATE_LIMIT_ENABLED=false)');
-    return (_req: Request, _res: Response, next: NextFunction) => next();
+    return ((_req: Request, _res: Response, next: NextFunction) => next()) as unknown as RateLimitRequestHandler;
   }
 
   const store = getRedisStore();
