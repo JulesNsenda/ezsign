@@ -1412,17 +1412,6 @@ export const Settings: React.FC = () => {
           </div>
         </Modal>
 
-        {/* Confirm Modal for destructive actions */}
-        <ConfirmModal
-          isOpen={confirmModal.isOpen}
-          onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-          onConfirm={confirmModal.onConfirm}
-          title={confirmModal.title}
-          message={confirmModal.message}
-          confirmText="Delete"
-          variant="danger"
-        />
-
         {/* 2FA Setup Modal */}
         <Modal
           isOpen={is2FASetupModalOpen}
@@ -1863,6 +1852,17 @@ export const Settings: React.FC = () => {
             </div>
           </div>
         </Modal>
+
+        {/* Confirm Modal for destructive actions - rendered last to appear on top */}
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          onConfirm={confirmModal.onConfirm}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          confirmText="Delete"
+          variant="danger"
+        />
       </div>
     </Layout>
   );
