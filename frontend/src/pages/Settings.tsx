@@ -19,11 +19,17 @@ import {
   useUpdateTeam,
   useDeleteTeam,
   useTeamMembers,
-  useAddTeamMember,
   useUpdateTeamMemberRole,
   useRemoveTeamMember,
 } from '@/hooks/useTeams';
+import {
+  useTeamInvitations,
+  useCreateInvitation,
+  useCancelInvitation,
+  useResendInvitation,
+} from '@/hooks/useInvitations';
 import type { TeamMember } from '@/services/teamService';
+import type { Invitation } from '@/services/invitationService';
 
 type ApiKeyScope =
   | 'documents:read'
@@ -169,13 +175,16 @@ export const Settings: React.FC = () => {
 
   const { data: teams = [], isLoading: isTeamsLoading } = useTeams();
   const { data: teamMembers = [], isLoading: isMembersLoading } = useTeamMembers(selectedTeamForEdit?.id || null);
+  const { data: teamInvitations = [], isLoading: isInvitationsLoading } = useTeamInvitations(selectedTeamForEdit?.id || null);
 
   const createTeamMutation = useCreateTeam();
   const updateTeamMutation = useUpdateTeam();
   const deleteTeamMutation = useDeleteTeam();
-  const addMemberMutation = useAddTeamMember();
   const updateMemberRoleMutation = useUpdateTeamMemberRole();
   const removeMemberMutation = useRemoveTeamMember();
+  const createInvitationMutation = useCreateInvitation();
+  const cancelInvitationMutation = useCancelInvitation();
+  const resendInvitationMutation = useResendInvitation();
 
   const { data: twoFactorStatus, refetch: refetch2FAStatus } = useQuery<TwoFactorStatus>({
     queryKey: ['2fa-status'],
@@ -372,22 +381,48 @@ export const Settings: React.FC = () => {
     }
   };
 
-  const handleAddMember = async () => {
+  const handleInviteMember = async () => {
     if (!selectedTeamForEdit || !newMemberEmail.trim()) {
       toast.error('Please enter an email address');
       return;
     }
     try {
-      await addMemberMutation.mutateAsync({
+      await createInvitationMutation.mutateAsync({
         teamId: selectedTeamForEdit.id,
         data: { email: newMemberEmail, role: newMemberRole },
       });
-      toast.success('Member added successfully');
+      toast.success('Invitation sent successfully');
       setIsAddMemberModalOpen(false);
       setNewMemberEmail('');
       setNewMemberRole('member');
     } catch (error: any) {
-      toast.error(error.response?.data?.message || error.response?.data?.error?.message || 'Failed to add member');
+      toast.error(error.response?.data?.message || error.response?.data?.error?.message || 'Failed to send invitation');
+    }
+  };
+
+  const handleCancelInvitation = async (invitationId: string) => {
+    if (!selectedTeamForEdit) return;
+    try {
+      await cancelInvitationMutation.mutateAsync({
+        teamId: selectedTeamForEdit.id,
+        invitationId,
+      });
+      toast.success('Invitation cancelled');
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || error.response?.data?.error?.message || 'Failed to cancel invitation');
+    }
+  };
+
+  const handleResendInvitation = async (invitationId: string) => {
+    if (!selectedTeamForEdit) return;
+    try {
+      await resendInvitationMutation.mutateAsync({
+        teamId: selectedTeamForEdit.id,
+        invitationId,
+      });
+      toast.success('Invitation resent');
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || error.response?.data?.error?.message || 'Failed to resend invitation');
     }
   };
 
@@ -1704,78 +1739,150 @@ export const Settings: React.FC = () => {
                   </svg>
                 }
               >
-                Add Member
+                Invite Member
               </Button>
             </div>
 
-            {isMembersLoading ? (
-              <div className="text-center py-8">
-                <div className="w-6 h-6 border-3 border-neutral/20 border-t-neutral rounded-full animate-spin mx-auto"></div>
-              </div>
-            ) : teamMembers.length === 0 ? (
-              <div className="text-center py-8 text-base-content/60">
-                No members yet
-              </div>
-            ) : (
-              <div className="divide-y divide-base-200 max-h-[400px] overflow-y-auto">
-                {teamMembers.map((member: TeamMember) => (
-                  <div key={member.user_id} className="flex items-center gap-4 py-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-neutral/20 to-neutral/30 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-semibold text-neutral uppercase">
-                        {member.email.charAt(0)}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-neutral truncate">{member.email}</p>
-                      <p className="text-xs text-base-content/60">
-                        Joined {new Date(member.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {member.role === 'owner' ? (
-                        <span className="px-2 py-1 text-xs font-semibold bg-neutral/10 text-neutral rounded-md">
-                          Owner
+            {/* Current Members Section */}
+            <div>
+              <h4 className="text-sm font-semibold text-neutral mb-2">Members</h4>
+              {isMembersLoading ? (
+                <div className="text-center py-4">
+                  <div className="w-6 h-6 border-3 border-neutral/20 border-t-neutral rounded-full animate-spin mx-auto"></div>
+                </div>
+              ) : teamMembers.length === 0 ? (
+                <div className="text-center py-4 text-base-content/60 text-sm">
+                  No members yet
+                </div>
+              ) : (
+                <div className="divide-y divide-base-200 max-h-[200px] overflow-y-auto border border-base-200 rounded-lg">
+                  {teamMembers.map((member: TeamMember) => (
+                    <div key={member.user_id} className="flex items-center gap-4 py-3 px-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-neutral/20 to-neutral/30 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-sm font-semibold text-neutral uppercase">
+                          {member.email.charAt(0)}
                         </span>
-                      ) : (
-                        <>
-                          <select
-                            value={member.role}
-                            onChange={(e) =>
-                              handleUpdateMemberRole(member.user_id, e.target.value as 'admin' | 'member')
-                            }
-                            className="select select-sm select-bordered text-sm"
-                            disabled={updateMemberRoleMutation.isPending}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-neutral truncate">{member.email}</p>
+                        <p className="text-xs text-base-content/60">
+                          Joined {new Date(member.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {member.role === 'owner' ? (
+                          <span className="px-2 py-1 text-xs font-semibold bg-neutral/10 text-neutral rounded-md">
+                            Owner
+                          </span>
+                        ) : (
+                          <>
+                            <select
+                              value={member.role}
+                              onChange={(e) =>
+                                handleUpdateMemberRole(member.user_id, e.target.value as 'admin' | 'member')
+                              }
+                              className="select select-sm select-bordered text-sm"
+                              disabled={updateMemberRoleMutation.isPending}
+                            >
+                              <option value="member">Member</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setConfirmModal({
+                                  isOpen: true,
+                                  title: 'Remove Member',
+                                  message: `Are you sure you want to remove ${member.email} from this team?`,
+                                  onConfirm: () => {
+                                    handleRemoveMember(member.user_id);
+                                    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                  },
+                                });
+                              }}
+                              className="text-error hover:bg-error/10"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Pending Invitations Section */}
+            <div>
+              <h4 className="text-sm font-semibold text-neutral mb-2">Pending Invitations</h4>
+              {isInvitationsLoading ? (
+                <div className="text-center py-4">
+                  <div className="w-6 h-6 border-3 border-neutral/20 border-t-neutral rounded-full animate-spin mx-auto"></div>
+                </div>
+              ) : teamInvitations.filter((inv: Invitation) => inv.status === 'pending').length === 0 ? (
+                <div className="text-center py-4 text-base-content/60 text-sm border border-base-200 rounded-lg">
+                  No pending invitations
+                </div>
+              ) : (
+                <div className="divide-y divide-base-200 max-h-[200px] overflow-y-auto border border-base-200 rounded-lg">
+                  {teamInvitations
+                    .filter((inv: Invitation) => inv.status === 'pending')
+                    .map((invitation: Invitation) => (
+                      <div key={invitation.id} className="flex items-center gap-4 py-3 px-3">
+                        <div className="w-10 h-10 bg-gradient-to-br from-warning/20 to-warning/30 rounded-full flex items-center justify-center flex-shrink-0">
+                          <svg className="w-5 h-5 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-neutral truncate">{invitation.email}</p>
+                          <p className="text-xs text-base-content/60">
+                            Invited as {invitation.role} - Expires {new Date(invitation.expires_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleResendInvitation(invitation.id)}
+                            disabled={resendInvitationMutation.isPending}
+                            title="Resend invitation"
                           >
-                            <option value="member">Member</option>
-                            <option value="admin">Admin</option>
-                          </select>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => {
                               setConfirmModal({
                                 isOpen: true,
-                                title: 'Remove Member',
-                                message: `Are you sure you want to remove ${member.email} from this team?`,
+                                title: 'Cancel Invitation',
+                                message: `Are you sure you want to cancel the invitation for ${invitation.email}?`,
                                 onConfirm: () => {
-                                  handleRemoveMember(member.user_id);
+                                  handleCancelInvitation(invitation.id);
                                   setConfirmModal(prev => ({ ...prev, isOpen: false }));
                                 },
                               });
                             }}
                             className="text-error hover:bg-error/10"
+                            title="Cancel invitation"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                             </svg>
                           </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
 
             <div className="flex justify-end pt-2 border-t border-base-200">
               <Button
@@ -1791,7 +1898,7 @@ export const Settings: React.FC = () => {
           </div>
         </Modal>
 
-        {/* Add Team Member Modal */}
+        {/* Invite Team Member Modal */}
         <Modal
           isOpen={isAddMemberModalOpen}
           onClose={() => {
@@ -1799,9 +1906,19 @@ export const Settings: React.FC = () => {
             setNewMemberEmail('');
             setNewMemberRole('member');
           }}
-          title="Add Team Member"
+          title="Invite Team Member"
         >
           <div className="flex flex-col gap-4">
+            <div className="p-3 bg-info/10 border border-info/30 rounded-lg">
+              <div className="flex gap-2">
+                <svg className="w-5 h-5 text-info flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm text-base-content/70">
+                  An email invitation will be sent to join this team. If they don't have an account, they'll be prompted to create one.
+                </p>
+              </div>
+            </div>
             <div>
               <label className="block text-sm font-semibold text-neutral mb-2">
                 Email Address <span className="text-error">*</span>
@@ -1814,9 +1931,6 @@ export const Settings: React.FC = () => {
                 className="input-docuseal"
                 autoFocus
               />
-              <p className="text-xs text-base-content/60 mt-2">
-                The user must have an existing account
-              </p>
             </div>
             <div>
               <label className="block text-sm font-semibold text-neutral mb-2">
@@ -1843,11 +1957,11 @@ export const Settings: React.FC = () => {
                 Cancel
               </Button>
               <Button
-                onClick={handleAddMember}
-                loading={addMemberMutation.isPending}
+                onClick={handleInviteMember}
+                loading={createInvitationMutation.isPending}
                 disabled={!newMemberEmail.trim()}
               >
-                Add Member
+                Send Invitation
               </Button>
             </div>
           </div>

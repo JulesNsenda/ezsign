@@ -23,6 +23,7 @@ import { createEmailLogRouter, createEmailWebhookRouter } from '@/routes/emailLo
 import { createAdminDlqRouter } from '@/routes/adminDlqRoutes';
 import { createAdminStatsRouter } from '@/routes/adminStatsRoutes';
 import { createBrandingRouter, createPublicBrandingRouter } from '@/routes/brandingRoutes';
+import { createTeamInvitationsRouter, createInvitationsRouter } from '@/routes/invitations';
 import utilityRoutes from '@/routes/utilityRoutes';
 import { getStorageService } from '@/config/storage';
 import { HealthService } from '@/services/healthService';
@@ -171,6 +172,8 @@ app.use('/api/documents', createDocumentRouter(pool));
 app.use('/api/documents', createDocumentSigningRouter(pool)); // Signing operations on documents
 app.use('/api/teams', createTeamsRouter(pool));
 app.use('/api/teams/:teamId/branding', createBrandingRouter(pool, getStorageService())); // Team branding settings
+app.use('/api/teams/:teamId/invitations', createTeamInvitationsRouter(pool)); // Team invitations
+app.use('/api/invitations', createInvitationsRouter(pool)); // Public invitation endpoints
 app.use('/api/branding', createPublicBrandingRouter(pool, getStorageService())); // Public branding endpoints
 app.use('/api/api-keys', createApiKeysRouter(pool));
 app.use('/api/templates', createTemplateRouter(pool));
