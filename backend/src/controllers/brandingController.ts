@@ -61,11 +61,12 @@ export class BrandingController {
       // Get or create branding
       const branding = await this.brandingService.getOrCreateBranding(teamId);
 
-      const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      // Use actual request host for API URLs (logo endpoint)
+      const apiBaseUrl = `${req.protocol}://${req.get('host')}`;
 
       res.status(200).json({
         branding: branding.toJSON(),
-        publicBranding: branding.toPublicJSON(baseUrl),
+        publicBranding: branding.toPublicJSON(apiBaseUrl),
       });
     } catch (error) {
       logger.error('Get branding error', {
@@ -143,12 +144,13 @@ export class BrandingController {
         return;
       }
 
-      const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      // Use actual request host for API URLs (logo endpoint)
+      const apiBaseUrl = `${req.protocol}://${req.get('host')}`;
 
       res.status(200).json({
         message: 'Branding settings updated successfully',
         branding: branding.toJSON(),
-        publicBranding: branding.toPublicJSON(baseUrl),
+        publicBranding: branding.toPublicJSON(apiBaseUrl),
       });
     } catch (error) {
       logger.error('Update branding error', {
@@ -262,11 +264,12 @@ export class BrandingController {
         return;
       }
 
-      const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      // Use actual request host for API URLs (logo endpoint)
+      const apiBaseUrl = `${req.protocol}://${req.get('host')}`;
 
       res.status(200).json({
         message: 'Logo uploaded successfully',
-        logoUrl: branding.getLogoUrl(baseUrl),
+        logoUrl: branding.getLogoUrl(apiBaseUrl),
         branding: branding.toJSON(),
       });
     } catch (error) {
@@ -548,10 +551,11 @@ export class BrandingController {
         return;
       }
 
-      const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      // Use actual request host for API URLs (logo endpoint)
+      const apiBaseUrl = `${req.protocol}://${req.get('host')}`;
 
       res.status(200).json({
-        branding: branding.toPublicJSON(baseUrl),
+        branding: branding.toPublicJSON(apiBaseUrl),
         isDefault: !branding.hasCustomBranding(),
       });
     } catch (error) {

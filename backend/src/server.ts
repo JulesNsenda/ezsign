@@ -114,8 +114,21 @@ logger.info('Health service initialized');
 // Initialize Express app
 const app = express();
 
-// Security middleware
-app.use(helmet());
+// Security middleware with custom configuration
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+      },
+    },
+    // Disable cross-origin resource policy to allow images/logos to load from different origins
+    crossOriginResourcePolicy: false,
+  })
+);
 
 // Add correlation ID to all requests (must be early in middleware chain)
 app.use(correlationIdMiddleware);

@@ -23,13 +23,15 @@ export const configureSecurity = (app: Express): void => {
         includeSubDomains: true,
         preload: true,
       },
+      // Disable cross-origin resource policy to allow images to load from different origins
+      crossOriginResourcePolicy: false,
     })
   );
 
   // CORS configuration
   const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
-    : ['http://localhost:3000', 'http://localhost:5173'];
+    : ['http://localhost:3000', 'http://localhost:3002', 'http://localhost:5173'];
 
   app.use(
     cors({
