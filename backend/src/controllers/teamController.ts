@@ -1,14 +1,17 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { TeamService } from '@/services/teamService';
+import { UserService } from '@/services/userService';
 import { AuthenticatedRequest } from '@/middleware/auth';
 import logger from '@/services/loggerService';
 
 export class TeamController {
   private teamService: TeamService;
+  private userService: UserService;
 
   constructor(pool: Pool) {
     this.teamService = new TeamService(pool);
+    this.userService = new UserService(pool);
   }
 
   /**
@@ -423,8 +426,19 @@ export class TeamController {
 
       const members = await this.teamService.getMembers(id);
 
+      // Enrich members with email addresses
+      const membersWithEmail = await Promise.all(
+        members.map(async (member) => {
+          const user = await this.userService.findById(member.user_id);
+          return {
+            ...member.toJSON(),
+            email: user?.email || 'Unknown',
+          };
+        })
+      );
+
       res.status(200).json({
-        members: members.map((member) => member.toJSON()),
+        members: membersWithEmail,
       });
     } catch (error) {
       logger.error('Get team members error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
@@ -452,7 +466,7 @@ export class TeamController {
       }
 
       const id = req.params.id;
-      const { userId, role } = req.body;
+      const { userId: providedUserId, email, role } = req.body;
 
       if (!id) {
         res.status(400).json({
@@ -472,13 +486,27 @@ export class TeamController {
         return;
       }
 
-      // Validate input
-      if (!userId) {
+      // Validate input - require either userId or email
+      if (!providedUserId && !email) {
         res.status(400).json({
           error: 'Bad Request',
-          message: 'User ID is required',
+          message: 'Either userId or email is required',
         });
         return;
+      }
+
+      // Resolve userId from email if needed
+      let userId = providedUserId;
+      if (!userId && email) {
+        const user = await this.userService.findByEmail(email);
+        if (!user) {
+          res.status(404).json({
+            error: 'Not Found',
+            message: 'User with this email does not exist',
+          });
+          return;
+        }
+        userId = user.id;
       }
 
       // Validate role if provided
