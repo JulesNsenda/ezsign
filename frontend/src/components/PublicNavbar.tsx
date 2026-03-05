@@ -42,10 +42,7 @@ export const PublicNavbar: React.FC = () => {
           </Link>
           <div className="flex items-center gap-3">
             <Link to="/docs" className="text-sm text-base-content/60 hover:text-neutral transition-colors font-medium">
-              Docs
-            </Link>
-            <Link to="/api-reference" className="text-sm text-base-content/60 hover:text-neutral transition-colors font-medium">
-              API
+              Documentation
             </Link>
             {supportUrl && (
               <a
