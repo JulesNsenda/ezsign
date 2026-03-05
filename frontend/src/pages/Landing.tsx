@@ -89,6 +89,7 @@ export const Landing: React.FC = () => {
   const displayName = branding?.company_name || 'EzSign';
   const logoUrl = branding?.logo_url || null;
   const primaryColor = branding?.primary_color || '#4F46E5';
+  const supportUrl = import.meta.env.VITE_SUPPORT_URL || '';
 
   return (
     <div className="min-h-screen bg-base-100">
@@ -112,6 +113,20 @@ export const Landing: React.FC = () => {
               <span className="text-xl font-bold text-neutral">{displayName}</span>
             </div>
             <div className="flex items-center gap-3">
+              {supportUrl && (
+                <a
+                  href={supportUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-sm text-base-content/50 hover:text-error/70 transition-colors"
+                  title="Support this project"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                  </svg>
+                  <span className="hidden sm:inline">Support</span>
+                </a>
+              )}
               <Link to="/login">
                 <Button variant="ghost" size="sm">Sign In</Button>
               </Link>
@@ -305,6 +320,19 @@ export const Landing: React.FC = () => {
               <Link to="/privacy" className="hover:text-neutral transition-colors">Privacy</Link>
               <Link to="/terms" className="hover:text-neutral transition-colors">Terms</Link>
               <Link to="/contact" className="hover:text-neutral transition-colors">Contact</Link>
+              {supportUrl && (
+                <a
+                  href={supportUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 hover:text-error/70 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                  </svg>
+                  Support
+                </a>
+              )}
             </div>
           </div>
         </div>
