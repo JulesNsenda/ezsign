@@ -1,0 +1,77 @@
+# Production override — use with: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Prerequisites:
+#   1. Copy .env.example to .env and fill in production values
+#   2. Generate secrets: openssl rand -base64 32
+#   3. Set your domain in APP_URL and Caddyfile
+#   4. Configure SMTP for real email delivery
+
+services:
+  postgres:
+    ports: !reset []  # Don't expose DB port publicly
+    environment:
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME}
+
+  redis:
+    ports: !reset []  # Don't expose Redis publicly
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+
+  backend:
+    ports: !reset []  # Only accessible via Caddy reverse proxy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${DATABASE_NAME}
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      API_KEY_SECRET: ${API_KEY_SECRET}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
+      APP_URL: ${APP_URL}
+      CORS_ORIGIN: ${APP_URL}
+      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST}
+      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-587}
+      EMAIL_SMTP_SECURE: ${EMAIL_SMTP_SECURE:-true}
+      EMAIL_SMTP_USER: ${EMAIL_SMTP_USER}
+      EMAIL_SMTP_PASS: ${EMAIL_SMTP_PASS}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-EzSign}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS}
+      FILE_STORAGE_PATH: /app/storage
+
+  frontend:
+    ports: !reset []  # Only accessible via Caddy reverse proxy
+    environment:
+      VITE_API_URL: ${APP_URL}
+
+  # Caddy reverse proxy — automatic HTTPS via Let's Encrypt
+  caddy:
+    image: caddy:2-alpine
+    container_name: ezsign-caddy
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'  # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - ezsign-network
+
+volumes:
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local

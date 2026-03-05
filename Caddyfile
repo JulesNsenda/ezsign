@@ -1,0 +1,42 @@
+# EzSign Production Caddyfile
+# Replace yourdomain.com with your actual domain
+#
+# Caddy automatically obtains and renews TLS certificates via Let's Encrypt.
+# Just point your domain's DNS A record to your server's IP address.
+
+yourdomain.com {
+	# Frontend — serve the React SPA
+	handle {
+		reverse_proxy frontend:80
+	}
+
+	# Backend API — proxy /api/* and other backend routes
+	handle /api/* {
+		reverse_proxy backend:3001
+	}
+
+	handle /health {
+		reverse_proxy backend:3001
+	}
+
+	# Signing links — public token-based access
+	handle /sign/* {
+		reverse_proxy frontend:80
+	}
+
+	# Security headers
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# Logging
+	log {
+		output file /data/access.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+	}
+}
