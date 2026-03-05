@@ -99,17 +99,10 @@ export class TemplateController {
       }
 
       const templateId = req.params.id as string;
-      const template = await this.templateService.getTemplateById(templateId);
+      const template = await this.templateService.getTemplateById(templateId, userId);
 
       if (!template) {
         res.status(404).json({ success: false, error: 'Template not found' });
-        return;
-      }
-
-      // Check access
-      const userTeams = await this.templateService.getUserTeamIds(userId);
-      if (!template.canUserAccess(userId, userTeams)) {
-        res.status(403).json({ success: false, error: 'Access denied' });
         return;
       }
 

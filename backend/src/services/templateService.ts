@@ -116,16 +116,10 @@ export class TemplateService {
     try {
       await client.query('BEGIN');
 
-      // Get the template
-      const template = await this.getTemplateById(templateId);
+      // Get the template (with user-scoped query for defense-in-depth)
+      const template = await this.getTemplateById(templateId, userId);
       if (!template) {
         throw new Error('Template not found');
-      }
-
-      // Check access
-      const userTeams = await this.getUserTeamIds(userId);
-      if (!template.canUserAccess(userId, userTeams)) {
-        throw new Error('Access denied to this template');
       }
 
       // Copy the template file to documents directory
@@ -242,11 +236,24 @@ export class TemplateService {
   /**
    * Get a single template by ID
    */
-  async getTemplateById(templateId: string): Promise<Template | null> {
-    const result = await this.pool.query(
-      'SELECT * FROM templates WHERE id = $1',
-      [templateId]
-    );
+  async getTemplateById(templateId: string, userId?: string): Promise<Template | null> {
+    let query: string;
+    let params: any[];
+
+    if (userId) {
+      // Defense-in-depth: filter at DB level by ownership or team membership
+      query = `
+        SELECT t.* FROM templates t
+        LEFT JOIN team_members tm ON t.team_id = tm.team_id AND tm.user_id = $2
+        WHERE t.id = $1 AND (t.user_id = $2 OR tm.user_id IS NOT NULL)
+      `;
+      params = [templateId, userId];
+    } else {
+      query = 'SELECT * FROM templates WHERE id = $1';
+      params = [templateId];
+    }
+
+    const result = await this.pool.query(query, params);
 
     if (result.rows.length === 0) {
       return null;
@@ -275,7 +282,7 @@ export class TemplateService {
     userId: string,
     data: UpdateTemplateData
   ): Promise<Template> {
-    const template = await this.getTemplateById(templateId);
+    const template = await this.getTemplateById(templateId, userId);
     if (!template) {
       throw new Error('Template not found');
     }
@@ -319,7 +326,7 @@ export class TemplateService {
    * Delete a template
    */
   async deleteTemplate(templateId: string, userId: string): Promise<boolean> {
-    const template = await this.getTemplateById(templateId);
+    const template = await this.getTemplateById(templateId, userId);
     if (!template) {
       return false;
     }
@@ -348,7 +355,7 @@ export class TemplateService {
   /**
    * Get user's team IDs
    */
-  async getUserTeamIds(userId: string): Promise<string[]> {
+  private async getUserTeamIds(userId: string): Promise<string[]> {
     const result = await this.pool.query(
       'SELECT team_id FROM team_members WHERE user_id = $1',
       [userId]
