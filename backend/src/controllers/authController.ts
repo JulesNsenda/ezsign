@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { UserService } from '@/services/userService';
+import { TeamService } from '@/services/teamService';
 import { EmailService } from '@/services/emailService';
 import { TwoFactorService } from '@/services/twoFactorService';
 import { tokenService } from '@/services/tokenService';
@@ -22,11 +23,13 @@ setInterval(() => {
 
 export class AuthController {
   private userService: UserService;
+  private teamService: TeamService;
   private emailService: EmailService | null;
   private twoFactorService: TwoFactorService;
 
   constructor(pool: Pool, emailService?: EmailService) {
     this.userService = new UserService(pool);
+    this.teamService = new TeamService(pool);
     this.emailService = emailService || null;
     this.twoFactorService = new TwoFactorService(pool);
   }
@@ -93,6 +96,19 @@ export class AuthController {
         role: role || 'creator',
       });
 
+      // Auto-create a personal team for the new user
+      let team;
+      try {
+        const teamName = user.email.split('@')[0] + "'s Team";
+        team = await this.teamService.createTeam({
+          name: teamName,
+          owner_id: user.id,
+        });
+      } catch (teamError) {
+        logger.warn('Failed to create personal team for new user', { error: (teamError as Error).message, userId: user.id, correlationId: req.correlationId });
+        // Don't fail registration if team creation fails
+      }
+
       // Generate email verification token
       const { token, expires } = user.generateEmailVerificationToken();
       await this.userService.updateEmailVerificationToken(
@@ -131,6 +147,7 @@ export class AuthController {
       res.status(201).json({
         message: 'User registered successfully',
         user: user.toJSON(),
+        ...(team ? { team: { id: team.id, name: team.name } } : {}),
         ...tokens,
         ...verificationInfo,
       });

@@ -20,6 +20,7 @@ import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
 import Contact from './pages/Contact';
 import AcceptInvitation from './pages/AcceptInvitation';
+import VerifyEmail from './pages/VerifyEmail';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -52,6 +53,7 @@ function App() {
                 <Route path="/terms" element={<TermsOfService />} />
                 <Route path="/contact" element={<Contact />} />
                 <Route path="/accept-invitation/:token" element={<AcceptInvitation />} />
+                <Route path="/verify-email" element={<VerifyEmail />} />
 
                 {/* Protected routes */}
                 <Route

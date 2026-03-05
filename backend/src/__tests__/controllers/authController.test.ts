@@ -2,10 +2,12 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { AuthController } from '@/controllers/authController';
 import { UserService } from '@/services/userService';
+import { TeamService } from '@/services/teamService';
 import { tokenService } from '@/services/tokenService';
 
 // Mock dependencies
 jest.mock('@/services/userService');
+jest.mock('@/services/teamService');
 jest.mock('@/services/tokenService');
 jest.mock('@/services/tokenBlacklistService', () => ({
   tokenBlacklistService: {
@@ -34,6 +36,7 @@ describe('AuthController', () => {
   let authController: AuthController;
   let mockPool: jest.Mocked<Pool>;
   let mockUserService: jest.Mocked<UserService>;
+  let mockTeamService: jest.Mocked<TeamService>;
   let mockRequest: Partial<Request>;
   let mockResponse: Partial<Response>;
   let responseJson: jest.Mock;
@@ -47,9 +50,11 @@ describe('AuthController', () => {
     } as any;
 
     mockUserService = new UserService(mockPool) as jest.Mocked<UserService>;
+    mockTeamService = new TeamService(mockPool) as jest.Mocked<TeamService>;
 
     authController = new AuthController(mockPool);
     (authController as any).userService = mockUserService;
+    (authController as any).teamService = mockTeamService;
 
     // Mock the twoFactorService instance to avoid database calls
     (authController as any).twoFactorService = {
@@ -106,6 +111,10 @@ describe('AuthController', () => {
       mockUserService.findByEmail = jest.fn().mockResolvedValue(null);
       mockUserService.createUser = jest.fn().mockResolvedValue(mockUser);
       mockUserService.updateEmailVerificationToken = jest.fn().mockResolvedValue(undefined);
+      mockTeamService.createTeam = jest.fn().mockResolvedValue({
+        id: 'team-123',
+        name: "test's Team",
+      });
 
       (tokenService.generateTokenPair as jest.Mock) = jest.fn().mockReturnValue({
         accessToken: 'access-token',
@@ -129,6 +138,110 @@ describe('AuthController', () => {
           message: 'User registered successfully',
           accessToken: 'access-token',
           refreshToken: 'refresh-token',
+        })
+      );
+    });
+
+    it('should auto-create a personal team on registration', async () => {
+      const userData = {
+        email: 'newuser@example.com',
+        password: 'password123',
+      };
+
+      mockRequest.body = userData;
+
+      const mockUser = {
+        id: 'user-456',
+        email: userData.email,
+        role: 'creator',
+        generateEmailVerificationToken: jest.fn().mockReturnValue({
+          token: 'verification-token',
+          expires: new Date(),
+        }),
+        toJSON: jest.fn().mockReturnValue({
+          id: 'user-456',
+          email: userData.email,
+          role: 'creator',
+        }),
+      } as any;
+
+      mockUserService.findByEmail = jest.fn().mockResolvedValue(null);
+      mockUserService.createUser = jest.fn().mockResolvedValue(mockUser);
+      mockUserService.updateEmailVerificationToken = jest.fn().mockResolvedValue(undefined);
+      mockTeamService.createTeam = jest.fn().mockResolvedValue({
+        id: 'team-456',
+        name: "newuser's Team",
+      });
+
+      (tokenService.generateTokenPair as jest.Mock) = jest.fn().mockReturnValue({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+      });
+
+      await authController.register(
+        mockRequest as Request,
+        mockResponse as Response
+      );
+
+      expect(mockTeamService.createTeam).toHaveBeenCalledWith({
+        name: "newuser's Team",
+        owner_id: 'user-456',
+      });
+      expect(responseJson).toHaveBeenCalledWith(
+        expect.objectContaining({
+          team: { id: 'team-456', name: "newuser's Team" },
+        })
+      );
+    });
+
+    it('should still register successfully if team creation fails', async () => {
+      const userData = {
+        email: 'test@example.com',
+        password: 'password123',
+      };
+
+      mockRequest.body = userData;
+
+      const mockUser = {
+        id: '123',
+        email: userData.email,
+        role: 'creator',
+        generateEmailVerificationToken: jest.fn().mockReturnValue({
+          token: 'verification-token',
+          expires: new Date(),
+        }),
+        toJSON: jest.fn().mockReturnValue({
+          id: '123',
+          email: userData.email,
+          role: 'creator',
+        }),
+      } as any;
+
+      mockUserService.findByEmail = jest.fn().mockResolvedValue(null);
+      mockUserService.createUser = jest.fn().mockResolvedValue(mockUser);
+      mockUserService.updateEmailVerificationToken = jest.fn().mockResolvedValue(undefined);
+      mockTeamService.createTeam = jest.fn().mockRejectedValue(new Error('DB error'));
+
+      (tokenService.generateTokenPair as jest.Mock) = jest.fn().mockReturnValue({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+      });
+
+      await authController.register(
+        mockRequest as Request,
+        mockResponse as Response
+      );
+
+      expect(responseStatus).toHaveBeenCalledWith(201);
+      expect(responseJson).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'User registered successfully',
+        })
+      );
+      // Should not include team in response when team creation fails
+      expect(responseJson).toHaveBeenCalledWith(
+        expect.not.objectContaining({
+          team: expect.anything(),
         })
       );
     });
