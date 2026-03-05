@@ -1,3 +1,4 @@
+import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './contexts/AuthContext';
@@ -6,6 +7,8 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { SocketProvider } from './contexts/SocketContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
+import { useAuth } from './hooks/useAuth';
+import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
@@ -21,6 +24,31 @@ import TermsOfService from './pages/TermsOfService';
 import Contact from './pages/Contact';
 import AcceptInvitation from './pages/AcceptInvitation';
 import VerifyEmail from './pages/VerifyEmail';
+
+/**
+ * Shows landing page for guests, dashboard for authenticated users
+ */
+const HomePage: React.FC = () => {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <div>Loading...</div>
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    return (
+      <ProtectedRoute>
+        <Dashboard />
+      </ProtectedRoute>
+    );
+  }
+
+  return <Landing />;
+};
 
 // Create a client
 const queryClient = new QueryClient({
@@ -55,15 +83,10 @@ function App() {
                 <Route path="/accept-invitation/:token" element={<AcceptInvitation />} />
                 <Route path="/verify-email" element={<VerifyEmail />} />
 
+                {/* Home: landing page for guests, dashboard for authenticated */}
+                <Route path="/" element={<HomePage />} />
+
                 {/* Protected routes */}
-                <Route
-                  path="/"
-                  element={
-                    <ProtectedRoute>
-                      <Dashboard />
-                    </ProtectedRoute>
-                  }
-                />
                 <Route
                   path="/documents"
                   element={
