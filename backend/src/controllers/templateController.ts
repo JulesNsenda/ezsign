@@ -107,7 +107,7 @@ export class TemplateController {
       }
 
       // Check access
-      const userTeams = await this.getUserTeamIds(userId);
+      const userTeams = await this.templateService.getUserTeamIds(userId);
       if (!template.canUserAccess(userId, userTeams)) {
         res.status(403).json({ success: false, error: 'Access denied' });
         return;
@@ -244,12 +244,4 @@ export class TemplateController {
     }
   };
 
-  /**
-   * Helper to get user's team IDs
-   */
-  private async getUserTeamIds(_userId: string): Promise<string[]> {
-    // This should ideally be moved to a shared service
-    // For now, we'll return an empty array and let the service handle it
-    return [];
-  }
 }

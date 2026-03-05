@@ -348,7 +348,7 @@ export class TemplateService {
   /**
    * Get user's team IDs
    */
-  private async getUserTeamIds(userId: string): Promise<string[]> {
+  async getUserTeamIds(userId: string): Promise<string[]> {
     const result = await this.pool.query(
       'SELECT team_id FROM team_members WHERE user_id = $1',
       [userId]
