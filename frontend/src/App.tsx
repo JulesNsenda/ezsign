@@ -24,6 +24,8 @@ import TermsOfService from './pages/TermsOfService';
 import Contact from './pages/Contact';
 import AcceptInvitation from './pages/AcceptInvitation';
 import VerifyEmail from './pages/VerifyEmail';
+import Docs from './pages/Docs';
+import ApiReference from './pages/ApiReference';
 
 /**
  * Shows landing page for guests, dashboard for authenticated users
@@ -82,6 +84,8 @@ function App() {
                 <Route path="/contact" element={<Contact />} />
                 <Route path="/accept-invitation/:token" element={<AcceptInvitation />} />
                 <Route path="/verify-email" element={<VerifyEmail />} />
+                <Route path="/docs" element={<Docs />} />
+                <Route path="/api-reference" element={<ApiReference />} />
 
                 {/* Home: landing page for guests, dashboard for authenticated */}
                 <Route path="/" element={<HomePage />} />
