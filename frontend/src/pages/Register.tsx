@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/useAuth';
 import Button from '@/components/Button';
+import PublicNavbar from '@/components/PublicNavbar';
 
 /**
  * Registration page
@@ -51,15 +52,11 @@ export const Register: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-base-200 px-4">
-      <div className="w-full max-w-md">
-        {/* Logo/Title */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-neutral mb-2">EzSign</h1>
-          <p className="text-base-content/60">Sign documents with ease</p>
-        </div>
-
-        <div className="card-docuseal">
+    <div className="min-h-screen bg-base-100">
+      <PublicNavbar />
+      <div className="flex items-center justify-center bg-gradient-to-br from-base-200 via-base-200 to-base-300 px-4 py-12 min-h-[calc(100vh-4rem)]">
+      <div className="w-full max-w-md animate-fade-in">
+        <div className="bg-base-100 rounded-2xl shadow-xl border border-base-300/50 p-8">
           <h2 className="text-2xl font-semibold text-neutral mb-6 text-center">Create Account</h2>
 
           {error && (
@@ -152,8 +149,9 @@ export const Register: React.FC = () => {
             <span className="mx-2">|</span>
             <Link to="/contact" className="hover:text-neutral transition-colors">Contact</Link>
           </div>
-          <p>© 2025 EzSign. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} EzSign. All rights reserved.</p>
         </div>
+      </div>
       </div>
     </div>
   );
