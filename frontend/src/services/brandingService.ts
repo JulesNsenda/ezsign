@@ -98,6 +98,16 @@ export const brandingService = {
   },
 
   /**
+   * Get default branding for public pages (login, register - no auth required)
+   */
+  async getDefaultBranding(): Promise<PublicBrandingResponse> {
+    const response = await apiClient.get<PublicBrandingResponse>(
+      `/branding/default`
+    );
+    return response.data;
+  },
+
+  /**
    * Get logo URL for a team
    */
   getLogoUrl(teamId: string): string {

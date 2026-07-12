@@ -303,4 +303,43 @@ export class BrandingService {
     const branding = await this.getByTeamId(teamId);
     return branding ? branding.hasCustomBranding() : false;
   }
+
+  /**
+   * Get default branding for public pages (login, register)
+   * Returns branding from the first team that has custom branding configured,
+   * or the first team's branding if none have custom branding
+   */
+  async getDefaultBranding(): Promise<Branding | null> {
+    // First, try to find a team with custom branding (has logo or custom company name)
+    const customBrandingQuery = `
+      SELECT tb.*
+      FROM team_branding tb
+      WHERE tb.logo_path IS NOT NULL
+         OR tb.logo_url IS NOT NULL
+         OR tb.company_name IS NOT NULL
+      ORDER BY tb.created_at ASC
+      LIMIT 1
+    `;
+
+    const customResult = await this.pool.query<BrandingData>(customBrandingQuery);
+    if (customResult.rows[0]) {
+      return new Branding(customResult.rows[0]);
+    }
+
+    // If no custom branding, get branding from the first team
+    const firstTeamQuery = `
+      SELECT tb.*
+      FROM team_branding tb
+      INNER JOIN teams t ON t.id = tb.team_id
+      ORDER BY t.created_at ASC
+      LIMIT 1
+    `;
+
+    const firstResult = await this.pool.query<BrandingData>(firstTeamQuery);
+    if (firstResult.rows[0]) {
+      return new Branding(firstResult.rows[0]);
+    }
+
+    return null;
+  }
 }

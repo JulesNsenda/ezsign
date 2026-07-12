@@ -570,4 +570,41 @@ export class BrandingController {
       });
     }
   };
+
+  /**
+   * Get default branding for public pages (login, register)
+   * GET /api/branding/default
+   */
+  getDefaultBranding = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const branding = await this.brandingService.getDefaultBranding();
+
+      if (!branding) {
+        // Return null branding if none configured
+        res.status(200).json({
+          branding: null,
+          isDefault: true,
+        });
+        return;
+      }
+
+      // Use actual request host for API URLs (logo endpoint)
+      const apiBaseUrl = `${req.protocol}://${req.get('host')}`;
+
+      res.status(200).json({
+        branding: branding.toPublicJSON(apiBaseUrl),
+        isDefault: !branding.hasCustomBranding(),
+      });
+    } catch (error) {
+      logger.error('Get default branding error', {
+        error: (error as Error).message,
+        stack: (error as Error).stack,
+        correlationId: req.correlationId,
+      });
+      res.status(500).json({
+        error: 'Internal Server Error',
+        message: 'Failed to retrieve default branding',
+      });
+    }
+  };
 }

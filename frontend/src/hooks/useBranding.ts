@@ -34,6 +34,18 @@ export const usePublicBranding = (teamId: string | undefined) => {
 };
 
 /**
+ * Hook to get default branding for public pages (login, register)
+ */
+export const useDefaultBranding = () => {
+  return useQuery<PublicBrandingResponse>({
+    queryKey: ['defaultBranding'],
+    queryFn: () => brandingService.getDefaultBranding(),
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    retry: 1, // Only retry once on failure
+  });
+};
+
+/**
  * Hook to update branding settings
  */
 export const useUpdateBranding = () => {
