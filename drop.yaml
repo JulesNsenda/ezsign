@@ -1,0 +1,39 @@
+# DROP deployment manifest
+#
+# Deploys ezsign as a MONOREPO: the backend and frontend become two apps that
+# share ONE hostname — the frontend served at `/`, the backend reverse-proxied
+# at `/api` (same-origin, so no CORS). Requires a DROP server running the
+# monorepo/multi-service feature (drop `develop` or a release that includes it).
+#
+# NOTE (prerequisites — see the PR description):
+#   * Redis: DROP does not provision Redis. The backend needs it (BullMQ queues,
+#     rate limiting, JWT blacklist). Set REDIS_URL as a per-app SECRET on the
+#     ezsign-backend app, pointing at an external/managed Redis.
+#   * DB migrations: DROP provisions an empty Postgres and injects DATABASE_URL,
+#     but does not run app migrations — run `npm run migrate` against the
+#     provisioned DB (or wire migrations into the backend's startup).
+#   * build/start overrides below require DROP to honor drop.yaml build/start
+#     (a DROP-side fix — the TypeScript backend won't compile/start without it).
+name: ezsign
+
+services:
+  # --- API: Express + TypeScript (compiled with tsc) ---
+  backend:
+    path: backend
+    type: nodejs
+    build: npm run build        # backend "build": "tsc"  -> dist/
+    start: npm start            # backend "start": "node dist/server.js"
+    database: postgres          # DROP provisions Postgres and injects DATABASE_URL
+    route:
+      path: /api                # -> ezsign.<domain>/api
+    env:
+      NODE_ENV: production
+
+  # --- Web app: React + Vite ---
+  frontend:
+    path: frontend
+    type: static                # DROP builds it natively: npm install + npm run build -> serves dist/
+    build_env:
+      VITE_API_URL: ""          # empty -> the client calls the same origin at /api (no CORS)
+    route:
+      path: /                   # -> ezsign.<domain>
