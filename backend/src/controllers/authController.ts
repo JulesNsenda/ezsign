@@ -40,7 +40,7 @@ export class AuthController {
    */
   register = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { email, password, role } = req.body;
+      const { email, password } = req.body;
 
       // Validate input
       if (!email || !password) {
@@ -70,15 +70,6 @@ export class AuthController {
         return;
       }
 
-      // Validate role if provided
-      if (role && !['admin', 'creator', 'signer'].includes(role)) {
-        res.status(400).json({
-          error: 'Bad Request',
-          message: 'Invalid role. Must be admin, creator, or signer',
-        });
-        return;
-      }
-
       // Check if email already exists
       const existingUser = await this.userService.findByEmail(email);
       if (existingUser) {
@@ -89,11 +80,12 @@ export class AuthController {
         return;
       }
 
-      // Create user
+      // Create user. Role is always server-assigned — never trust a client-supplied
+      // role. Admin accounts are provisioned out-of-band (seed/CLI), not via public registration.
       const user = await this.userService.createUser({
         email,
         password,
-        role: role || 'creator',
+        role: 'creator',
       });
 
       // Auto-create a personal team for the new user
