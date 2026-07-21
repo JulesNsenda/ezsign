@@ -74,8 +74,11 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
             </svg>
           </button>
 
-          <div className="text-2xl font-bold text-neutral">
-            EzSign
+          <div className="flex items-center gap-2.5">
+            <img src="/icon-192.png" alt="" className="w-8 h-8 rounded-lg ring-1 ring-base-content/10" />
+            <div className="text-2xl font-bold text-neutral">
+              EzSign
+            </div>
           </div>
         </div>
 

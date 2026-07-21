@@ -17,7 +17,6 @@ export const PublicNavbar: React.FC = () => {
 
   const displayName = 'EzSign';
   const logoUrl = branding?.logo_url || null;
-  const primaryColor = branding?.primary_color || '#4F46E5';
   const supportUrl = import.meta.env.VITE_SUPPORT_URL || '';
 
   const isLoginPage = location.pathname === '/login';
@@ -41,19 +40,11 @@ export const PublicNavbar: React.FC = () => {
                 className="h-8 w-auto object-contain"
               />
             ) : (
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center text-base-100 shadow-sm flex-shrink-0"
-                style={{ backgroundColor: primaryColor }}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                  />
-                </svg>
-              </div>
+              <img
+                src="/icon-192.png"
+                alt=""
+                className="w-9 h-9 rounded-xl shadow-sm ring-1 ring-base-content/10 flex-shrink-0"
+              />
             )}
             <span className="text-xl font-bold text-neutral truncate">{displayName}</span>
           </Link>

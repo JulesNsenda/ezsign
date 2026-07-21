@@ -84,11 +84,11 @@ export const ForgotPassword: React.FC = () => {
       <div className="w-full max-w-md animate-fade-in">
         {/* Logo/Title */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-neutral to-neutral/80 text-base-100 mb-4 shadow-lg">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-            </svg>
-          </div>
+          <img
+            src="/icon-192.png"
+            alt=""
+            className="inline-block w-16 h-16 rounded-2xl mb-4 shadow-lg"
+          />
           <h1 className="text-4xl font-bold text-neutral mb-2">EzSign</h1>
           <p className="text-base-content/60">Sign documents with ease</p>
         </div>
