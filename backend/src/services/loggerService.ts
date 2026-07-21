@@ -67,8 +67,10 @@ const createTransports = (): winston.transport[] => {
     })
   );
 
-  // File transports - only in production or if explicitly enabled
-  if (process.env.NODE_ENV === 'production' || process.env.ENABLE_FILE_LOGGING === 'true') {
+  // File transports - opt-in only (ENABLE_FILE_LOGGING=true). In production the
+  // platform captures stdout/stderr into rotated host-side files, and the
+  // container filesystem may not be writable at the default log dir.
+  if (process.env.ENABLE_FILE_LOGGING === 'true') {
     const logDir = getLogDir();
 
     // Daily rotating file for all logs
@@ -105,28 +107,13 @@ const logger = winston.createLogger({
   levels: logLevels,
   level: getLogLevel(),
   transports: createTransports(),
-  // Handle uncaught exceptions and rejections
+  // Handle uncaught exceptions and rejections - logged to stdout so the
+  // platform's log capture picks them up
   exceptionHandlers: process.env.NODE_ENV === 'production'
-    ? [
-        new DailyRotateFile({
-          dirname: getLogDir(),
-          filename: 'ezsign-exceptions-%DATE%.log',
-          datePattern: 'YYYY-MM-DD',
-          maxFiles: '30d',
-          format: jsonFormat,
-        }),
-      ]
+    ? [new winston.transports.Console({ format: jsonFormat })]
     : undefined,
   rejectionHandlers: process.env.NODE_ENV === 'production'
-    ? [
-        new DailyRotateFile({
-          dirname: getLogDir(),
-          filename: 'ezsign-rejections-%DATE%.log',
-          datePattern: 'YYYY-MM-DD',
-          maxFiles: '30d',
-          format: jsonFormat,
-        }),
-      ]
+    ? [new winston.transports.Console({ format: jsonFormat })]
     : undefined,
 });
 
