@@ -5,8 +5,9 @@
 export interface User {
   id: string;
   email: string;
-  role: 'user' | 'admin';
+  role: 'admin' | 'creator' | 'signer';
   email_verified: boolean;
+  must_change_password: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -26,6 +27,8 @@ export interface AuthResponse {
   twoFactorRequired?: boolean;
   twoFactorToken?: string;
   userId?: string;
+  // Forced password change
+  mustChangePassword?: boolean;
 }
 
 export interface ApiError {

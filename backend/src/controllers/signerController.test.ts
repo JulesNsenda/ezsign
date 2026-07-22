@@ -1,11 +1,24 @@
 import { SignerController } from './signerController';
 import { Signer } from '@/models/Signer';
+import { getSettingsService } from '@/services/settingsService';
 
 // Mock the BrandingService module - mock all dependencies used by signerController
 jest.mock('@/services/brandingService', () => ({
   BrandingService: jest.fn().mockImplementation(() => ({
     getBrandingByTeamId: jest.fn().mockResolvedValue(null),
   })),
+}));
+
+// signerController now resolves the app base URL via settingsService.getAppUrl()
+// (instead of a hardcoded process.env.APP_URL fallback). Mock it directly so
+// the existing ordered mockPool.query queues (owner/update/audit) below don't
+// need to account for an extra intermediate query, and so the resolved
+// baseUrl matches the pre-existing 'http://localhost:3000' expectations.
+// Note: the jest config sets resetMocks: true, which strips any
+// implementation supplied inline in the factory below before every test - so
+// the resolved value is (re-)established in the top-level beforeEach instead.
+jest.mock('@/services/settingsService', () => ({
+  getSettingsService: jest.fn(),
 }));
 
 jest.mock('@/services/loggerService', () => {
@@ -45,6 +58,10 @@ describe('SignerController - resendSigningEmail', () => {
       sendSigningRequest: jest.fn(),
       generateSigningUrl: jest.fn((token: string) => `http://localhost:3000/sign/${token}`),
     };
+
+    (getSettingsService as jest.Mock).mockReturnValue({
+      getAppUrl: jest.fn().mockResolvedValue('http://localhost:3000'),
+    });
 
     controller = new SignerController(
       mockSignerService,

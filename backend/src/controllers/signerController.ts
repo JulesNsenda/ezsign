@@ -6,6 +6,8 @@ import { EmailService, EmailBranding } from '@/services/emailService';
 import { BrandingService } from '@/services/brandingService';
 import { Branding } from '@/models/Branding';
 import { CreateSignerData, UpdateSignerData } from '@/models/Signer';
+import { getSettingsService } from '@/services/settingsService';
+import { buildSigningUrl } from '@/utils/urlBuilder';
 import logger from '@/services/loggerService';
 
 export class SignerController {
@@ -50,7 +52,7 @@ export class SignerController {
   /**
    * Get email branding for a document based on its team_id
    */
-  private async getEmailBranding(teamId: string | null | undefined): Promise<EmailBranding | undefined> {
+  private async getEmailBranding(teamId: string | null | undefined, baseUrl: string): Promise<EmailBranding | undefined> {
     if (!teamId) {
       return undefined;
     }
@@ -58,7 +60,6 @@ export class SignerController {
     try {
       const branding = await this.brandingService.getByTeamId(teamId);
       if (branding) {
-        const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
         return this.convertToEmailBranding(branding, baseUrl);
       }
     } catch (error) {
@@ -408,8 +409,11 @@ export class SignerController {
       );
       const ownerEmail = ownerQuery.rows[0]?.email || 'Document Owner';
 
+      // Resolve app base URL fresh (per send) from instance settings
+      const baseUrl = await getSettingsService(this.pool).getAppUrl();
+
       // Fetch branding for email customization
-      const emailBranding = await this.getEmailBranding(document.team_id);
+      const emailBranding = await this.getEmailBranding(document.team_id, baseUrl);
 
       // Send email (if emailService is available)
       if (this.emailService) {
@@ -418,7 +422,7 @@ export class SignerController {
           recipientName: signer.name,
           documentTitle: document.title,
           senderName: ownerEmail,
-          signingUrl: this.emailService.generateSigningUrl(signer.access_token),
+          signingUrl: buildSigningUrl(baseUrl, signer.access_token),
           message: customMessage,
           isReminder: true,
           branding: emailBranding,

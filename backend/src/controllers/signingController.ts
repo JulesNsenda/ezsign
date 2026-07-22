@@ -11,6 +11,8 @@ import { StorageService } from '@/services/storageService';
 import { BrandingService } from '@/services/brandingService';
 import { socketService } from '@/services/socketService';
 import { ReminderService } from '@/services/reminderService';
+import { getSettingsService } from '@/services/settingsService';
+import { buildSigningUrl, buildDownloadUrl } from '@/utils/urlBuilder';
 import logger from '@/services/loggerService';
 
 export class SigningController {
@@ -58,7 +60,7 @@ export class SigningController {
   /**
    * Get email branding for a document based on its team_id
    */
-  private async getEmailBranding(teamId: string | null | undefined): Promise<EmailBranding | undefined> {
+  private async getEmailBranding(teamId: string | null | undefined, baseUrl: string): Promise<EmailBranding | undefined> {
     if (!teamId) {
       return undefined;
     }
@@ -66,7 +68,6 @@ export class SigningController {
     try {
       const branding = await this.brandingService.getByTeamId(teamId);
       if (branding) {
-        const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
         return this.convertToEmailBranding(branding, baseUrl);
       }
     } catch (error) {
@@ -197,8 +198,11 @@ export class SigningController {
       );
       const senderName = userResult.rows[0]?.email || 'Someone';
 
+      // Resolve app base URL fresh (per send) from instance settings
+      const baseUrl = await getSettingsService(this.pool).getAppUrl();
+
       // Fetch branding for email customization
-      const emailBranding = await this.getEmailBranding(document.team_id);
+      const emailBranding = await this.getEmailBranding(document.team_id, baseUrl);
 
       // Send signing requests to all signers (or first signer if sequential)
       const signers = signersResult.rows.map((row) => new Signer(this.mapRowToSignerData(row)));
@@ -212,7 +216,7 @@ export class SigningController {
             recipientName: firstSigner.name,
             documentTitle: document.title,
             senderName,
-            signingUrl: this.emailService.generateSigningUrl(firstSigner.access_token),
+            signingUrl: buildSigningUrl(baseUrl, firstSigner.access_token),
             message,
             branding: emailBranding,
           });
@@ -225,7 +229,7 @@ export class SigningController {
             recipientName: signer.name,
             documentTitle: document.title,
             senderName,
-            signingUrl: this.emailService.generateSigningUrl(signer.access_token),
+            signingUrl: buildSigningUrl(baseUrl, signer.access_token),
             message,
             branding: emailBranding,
           });
@@ -407,6 +411,10 @@ export class SigningController {
         });
         return;
       }
+
+      // Resolve app base URL fresh (per send) from instance settings, before
+      // opening the transaction below (avoid holding a client while awaiting).
+      const baseUrl = await getSettingsService(this.pool).getAppUrl();
 
       const client = await this.pool.connect();
       try {
@@ -767,13 +775,13 @@ export class SigningController {
           if (ownerResult.rows.length > 0) {
             const owner = ownerResult.rows[0];
             // Fetch branding for email customization
-            const completionBranding = await this.getEmailBranding(document.team_id);
+            const completionBranding = await this.getEmailBranding(document.team_id, baseUrl);
             await this.emailService.sendCompletionNotification({
               recipientEmail: owner.email,
               recipientName: owner.email,
               documentTitle: document.title,
               completedAt: new Date(),
-              downloadUrl: this.emailService.generateDownloadUrl(document.id),
+              downloadUrl: buildDownloadUrl(baseUrl, document.id),
               branding: completionBranding,
             });
           }
@@ -821,14 +829,14 @@ export class SigningController {
               const senderName = userResult.rows[0]?.email || 'Someone';
 
               // Fetch branding for email customization
-              const nextSignerBranding = await this.getEmailBranding(document.team_id);
+              const nextSignerBranding = await this.getEmailBranding(document.team_id, baseUrl);
 
               await this.emailService.sendSigningRequest({
                 recipientEmail: nextSigner.email,
                 recipientName: nextSigner.name,
                 documentTitle: document.title,
                 senderName,
-                signingUrl: this.emailService.generateSigningUrl(nextSigner.access_token),
+                signingUrl: buildSigningUrl(baseUrl, nextSigner.access_token),
                 branding: nextSignerBranding,
               });
             }

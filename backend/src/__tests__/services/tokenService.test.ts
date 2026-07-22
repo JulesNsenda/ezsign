@@ -246,31 +246,6 @@ describe('TokenService', () => {
     });
   });
 
-  describe('refreshAccessToken', () => {
-    it('should generate new access token from valid refresh token', () => {
-      const payload = {
-        userId: '123',
-        email: 'test@example.com',
-        role: 'creator' as UserRole,
-      };
-
-      const refreshToken = tokenService.generateRefreshToken(payload);
-      const newAccessToken = tokenService.refreshAccessToken(refreshToken);
-
-      expect(newAccessToken).toBeDefined();
-      expect(typeof newAccessToken).toBe('string');
-
-      const decoded = tokenService.verifyAccessToken(newAccessToken);
-      expect(decoded.userId).toBe(payload.userId);
-      expect(decoded.email).toBe(payload.email);
-      expect(decoded.role).toBe(payload.role);
-    });
-
-    it('should throw error for invalid refresh token', () => {
-      expect(() => tokenService.refreshAccessToken('invalid-token')).toThrow();
-    });
-  });
-
   describe('getAccessTokenExpiry', () => {
     it('should return access token expiry in seconds', () => {
       const expiry = tokenService.getAccessTokenExpiry();

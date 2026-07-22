@@ -89,6 +89,16 @@ export const createApiKeyAuth = (pool: Pool) => {
         return;
       }
 
+      // Block API key usage until the user has completed their forced password change
+      if (user.must_change_password) {
+        res.status(403).json({
+          error: 'Forbidden',
+          message: 'Password change required before accessing this resource',
+          code: 'PASSWORD_CHANGE_REQUIRED',
+        });
+        return;
+      }
+
       // Attach API key data to request
       req.apiKey = {
         id: apiKey.id,
@@ -184,6 +194,16 @@ export const createDualAuth = (pool: Pool) => {
         res.status(401).json({
           error: 'Unauthorized',
           message: 'User account no longer exists',
+        });
+        return;
+      }
+
+      // Block API key usage until the user has completed their forced password change
+      if (user.must_change_password) {
+        res.status(403).json({
+          error: 'Forbidden',
+          message: 'Password change required before accessing this resource',
+          code: 'PASSWORD_CHANGE_REQUIRED',
         });
         return;
       }

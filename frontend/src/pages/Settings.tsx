@@ -7,6 +7,7 @@ import Card from '@/components/Card';
 import TwoFactorSetup from '@/components/TwoFactorSetup';
 import BackupCodesDisplay from '@/components/BackupCodesDisplay';
 import BrandingSettings from '@/components/BrandingSettings';
+import { InstanceSettings } from '@/components/InstanceSettings';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -99,7 +100,7 @@ export const Settings: React.FC = () => {
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'security' | 'apikeys' | 'webhooks' | 'teams' | 'branding'>(
+  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'security' | 'apikeys' | 'webhooks' | 'teams' | 'branding' | 'instance'>(
     'profile'
   );
 
@@ -223,7 +224,16 @@ export const Settings: React.FC = () => {
       const response = await apiClient.post('/auth/change-password', data);
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // The endpoint rotates the token pair (old tokens are blacklisted
+      // server-side); persist the fresh pair instead of discarding it.
+      const { accessToken, refreshToken } = data;
+      if (accessToken) {
+        localStorage.setItem('access_token', accessToken);
+      }
+      if (refreshToken) {
+        localStorage.setItem('refresh_token', refreshToken);
+      }
       toast.success('Password changed successfully');
       setIsPasswordModalOpen(false);
       setCurrentPassword('');
@@ -481,6 +491,7 @@ export const Settings: React.FC = () => {
     { id: 'webhooks', label: 'Webhooks', icon: '🔗' },
     { id: 'teams', label: 'Teams', icon: '👥' },
     { id: 'branding', label: 'Branding', icon: '🎨' },
+    ...(user?.role === 'admin' ? [{ id: 'instance', label: 'Instance', icon: '🖥️' }] : []),
   ];
 
   return (
@@ -1157,6 +1168,12 @@ export const Settings: React.FC = () => {
                 />
               </>
             )}
+          </div>
+        )}
+
+        {activeTab === 'instance' && user?.role === 'admin' && (
+          <div className="animate-fade-in">
+            <InstanceSettings />
           </div>
         )}
 

@@ -14,11 +14,12 @@ import { FieldGroupService } from '@/services/fieldGroupService';
 import { SignerService } from '@/services/signerService';
 import { DocumentService } from '@/services/documentService';
 import { PdfService } from '@/services/pdfService';
-import { EmailService, EmailConfig } from '@/services/emailService';
+import { EmailService } from '@/services/emailService';
 import { createStorageService } from '@/services/storageService';
 import { createStorageAdapter } from '@/config/storage';
 import { createScheduledSendService } from '@/services/scheduledSendService';
 import { createEmailLogService } from '@/services/emailLogService';
+import { getSettingsService } from '@/services/settingsService';
 
 export const createDocumentRouter = (pool: Pool): Router => {
   const router = Router();
@@ -35,25 +36,15 @@ export const createDocumentRouter = (pool: Pool): Router => {
   const storageService = createStorageService(storageAdapter);
   const documentService = new DocumentService(pool, storageService);
 
-  const emailUser = process.env.EMAIL_SMTP_USER || '';
-  const emailPass = process.env.EMAIL_SMTP_PASS || '';
-
-  const emailConfig: EmailConfig = {
-    host: process.env.EMAIL_SMTP_HOST || 'smtp.example.com',
-    port: parseInt(process.env.EMAIL_SMTP_PORT || '587'),
-    secure: process.env.EMAIL_SMTP_SECURE === 'true',
-    auth: emailUser && emailPass ? {
-      user: emailUser,
-      pass: emailPass,
-    } : undefined,
-    from: process.env.EMAIL_FROM || 'noreply@ezsign.com',
-  };
-
-  const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
-
-  // Initialize email log service and email service with logging
+  // Initialize email log service and email service. Config (SMTP + app URL)
+  // is resolved fresh from instance settings (DB -> env -> default) on every
+  // send - see settingsService.getEmailConfig() - so an admin changing SMTP
+  // settings in the UI takes effect without a restart.
   const emailLogService = createEmailLogService(pool);
-  const emailService = new EmailService(emailConfig, baseUrl, emailLogService);
+  const emailService = EmailService.withProvider(
+    () => getSettingsService(pool).getEmailConfig(),
+    emailLogService
+  );
 
   // Initialize field group service and controller
   const fieldGroupService = new FieldGroupService(pool);

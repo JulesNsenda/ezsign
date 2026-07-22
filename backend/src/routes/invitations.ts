@@ -4,41 +4,22 @@
 import { Router } from 'express';
 import { Pool } from 'pg';
 import { InvitationController } from '@/controllers/invitationController';
-import { EmailService, EmailConfig } from '@/services/emailService';
+import { EmailService } from '@/services/emailService';
+import { createEmailLogService } from '@/services/emailLogService';
+import { getSettingsService } from '@/services/settingsService';
 import { authenticate } from '@/middleware/auth';
 
 /**
- * Create email service for invitation emails
+ * Create email service for invitation emails. Config (SMTP + app URL) is
+ * resolved fresh from instance settings (DB -> env -> default) on every send
+ * - see settingsService.getEmailConfig(). Every setting has a default, so
+ * this is always usable (no more "undefined when SMTP isn't configured" -
+ * an unreachable default SMTP host just fails the send, which callers
+ * already handle).
  */
-const createEmailService = (): EmailService | undefined => {
-  const smtpHost = process.env.EMAIL_SMTP_HOST;
-  const smtpPort = process.env.EMAIL_SMTP_PORT;
-  const smtpUser = process.env.EMAIL_SMTP_USER;
-  const smtpPass = process.env.EMAIL_SMTP_PASS;
-  const smtpFrom = process.env.EMAIL_SMTP_FROM;
-  const baseUrl = process.env.APP_URL || 'http://localhost:3002';
-
-  // Only create email service if SMTP is configured
-  if (!smtpHost || !smtpPort || !smtpFrom) {
-    return undefined;
-  }
-
-  const emailConfig: EmailConfig = {
-    host: smtpHost,
-    port: parseInt(smtpPort, 10),
-    secure: parseInt(smtpPort, 10) === 465,
-    from: smtpFrom,
-  };
-
-  // Add auth if credentials are provided
-  if (smtpUser && smtpPass) {
-    emailConfig.auth = {
-      user: smtpUser,
-      pass: smtpPass,
-    };
-  }
-
-  return new EmailService(emailConfig, baseUrl);
+const createEmailService = (pool: Pool): EmailService => {
+  const emailLogService = createEmailLogService(pool);
+  return EmailService.withProvider(() => getSettingsService(pool).getEmailConfig(), emailLogService);
 };
 
 /**
@@ -46,7 +27,7 @@ const createEmailService = (): EmailService | undefined => {
  */
 export const createTeamInvitationsRouter = (pool: Pool): Router => {
   const router = Router({ mergeParams: true }); // mergeParams to access :teamId from parent
-  const emailService = createEmailService();
+  const emailService = createEmailService(pool);
   const invitationController = new InvitationController(pool, emailService);
 
   // All routes require authentication
@@ -72,7 +53,7 @@ export const createTeamInvitationsRouter = (pool: Pool): Router => {
  */
 export const createInvitationsRouter = (pool: Pool): Router => {
   const router = Router();
-  const emailService = createEmailService();
+  const emailService = createEmailService(pool);
   const invitationController = new InvitationController(pool, emailService);
 
   // Get invitation details by token (public - for accept page)

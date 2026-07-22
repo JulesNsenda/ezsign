@@ -1,6 +1,7 @@
 import nodemailer, { Transporter } from 'nodemailer';
 import logger from '@/services/loggerService';
 import { EmailLogService, EmailType } from '@/services/emailLogService';
+import { buildSigningUrl, buildDownloadUrl } from '@/utils/urlBuilder';
 
 export interface EmailConfig {
   host: string;
@@ -11,6 +12,26 @@ export interface EmailConfig {
     pass: string;
   };
   from: string;
+}
+
+/**
+ * Async config resolver for provider-mode EmailService instances (see
+ * `EmailService.withProvider`). Called fresh on every send so a config
+ * change (e.g. an admin editing SMTP settings in the UI) takes effect
+ * without restarting the process - typically backed by
+ * `settingsService.getEmailConfig()`.
+ */
+export type EmailConfigProvider = () => Promise<EmailConfig & { baseUrl: string }>;
+
+/**
+ * Raw email payload for `EmailService.sendCustomEmail` - used by callers
+ * that build their own HTML/text outside the built-in templates.
+ */
+export interface CustomEmailData {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
 }
 
 export interface EmailContext {
@@ -102,13 +123,57 @@ export interface PasswordChangeEmailData {
 }
 
 export class EmailService {
-  private transporter: Transporter;
-  private fromEmail: string;
-  private baseUrl: string;
+  // Legacy (fixed-config) mode - all three set together in the legacy
+  // constructor path, all `undefined` in provider mode.
+  private transporter?: Transporter;
+  private fromEmail?: string;
+  private baseUrl?: string;
+  // Provider mode - resolves config + builds the transporter fresh on every
+  // send (see `resolveSendConfig`), so a settings change takes effect
+  // without a restart. Cheap: nodemailer transporter construction does no
+  // I/O, it just holds config until `sendMail`/`verify` is called.
+  private configProvider?: EmailConfigProvider;
   private emailLogService?: EmailLogService;
 
-  constructor(config: EmailConfig, baseUrl: string, emailLogService?: EmailLogService) {
-    this.transporter = nodemailer.createTransport({
+  /** Legacy: fixed config + baseUrl resolved once at construction time. */
+  constructor(config: EmailConfig, baseUrl: string, emailLogService?: EmailLogService);
+  /** Provider mode: config + baseUrl resolved fresh on every send. */
+  constructor(provider: EmailConfigProvider, emailLogService?: EmailLogService);
+  constructor(
+    configOrProvider: EmailConfig | EmailConfigProvider,
+    baseUrlOrEmailLogService?: string | EmailLogService,
+    emailLogService?: EmailLogService
+  ) {
+    if (typeof configOrProvider === 'function') {
+      this.configProvider = configOrProvider;
+      this.emailLogService = baseUrlOrEmailLogService as EmailLogService | undefined;
+      return;
+    }
+
+    this.transporter = this.createTransporter(configOrProvider);
+    this.fromEmail = configOrProvider.from;
+    this.baseUrl = baseUrlOrEmailLogService as string;
+    this.emailLogService = emailLogService;
+  }
+
+  /**
+   * Preferred entry point for provider-mode construction - reads slightly
+   * cleaner than `new EmailService(provider, emailLogService)` at call
+   * sites. Equivalent to the provider-mode constructor overload.
+   */
+  static withProvider(provider: EmailConfigProvider, emailLogService?: EmailLogService): EmailService {
+    return new EmailService(provider, emailLogService);
+  }
+
+  /**
+   * Set the email log service (for dependency injection after construction)
+   */
+  setEmailLogService(service: EmailLogService): void {
+    this.emailLogService = service;
+  }
+
+  private createTransporter(config: EmailConfig): Transporter {
+    return nodemailer.createTransport({
       host: config.host,
       port: config.port,
       secure: config.secure,
@@ -119,20 +184,37 @@ export class EmailService {
         },
       }),
     });
-    this.fromEmail = config.from;
-    this.baseUrl = baseUrl;
-    this.emailLogService = emailLogService;
   }
 
   /**
-   * Set the email log service (for dependency injection after construction)
+   * Resolves the transporter/from-address/baseUrl to use for the send that
+   * is about to happen. In provider mode this calls the injected provider
+   * (e.g. `settingsService.getEmailConfig()`) and builds a fresh transporter
+   * every time - avoids ever caching a stale SMTP config. In legacy mode it
+   * just returns the values captured at construction.
    */
-  setEmailLogService(service: EmailLogService): void {
-    this.emailLogService = service;
+  private async resolveSendConfig(): Promise<{ transporter: Transporter; fromEmail: string; baseUrl: string }> {
+    if (this.configProvider) {
+      const config = await this.configProvider();
+      return {
+        transporter: this.createTransporter(config),
+        fromEmail: config.from,
+        baseUrl: config.baseUrl,
+      };
+    }
+
+    return {
+      transporter: this.transporter as Transporter,
+      fromEmail: this.fromEmail as string,
+      baseUrl: this.baseUrl as string,
+    };
   }
 
   /**
-   * Internal helper to send email with logging
+   * Internal helper to send email with logging. Resolves config itself
+   * unless the caller already resolved it (e.g. because it also needed
+   * `baseUrl` - see `sendEmailVerification`), in which case pass it in to
+   * avoid a second resolve.
    */
   private async sendWithLogging(
     recipientEmail: string,
@@ -140,8 +222,10 @@ export class EmailService {
     emailType: EmailType,
     html: string,
     text: string,
-    context: EmailContext = {}
+    context: EmailContext = {},
+    resolved?: { transporter: Transporter; fromEmail: string }
   ): Promise<void> {
+    const { transporter, fromEmail } = resolved ?? (await this.resolveSendConfig());
     let logId: string | undefined;
 
     // Create log entry if service is available
@@ -163,8 +247,8 @@ export class EmailService {
     }
 
     try {
-      const result = await this.transporter.sendMail({
-        from: this.fromEmail,
+      const result = await transporter.sendMail({
+        from: fromEmail,
         to: recipientEmail,
         subject,
         text,
@@ -703,7 +787,8 @@ If you have any concerns, please contact support.
    */
   async verifyConnection(): Promise<boolean> {
     try {
-      await this.transporter.verify();
+      const { transporter } = await this.resolveSendConfig();
+      await transporter.verify();
       return true;
     } catch (error) {
       logger.error('Email service verification failed', { error: (error as Error).message });
@@ -712,17 +797,54 @@ If you have any concerns, please contact support.
   }
 
   /**
-   * Generate signing URL for a signer
+   * Generate signing URL for a signer.
+   *
+   * Legacy (fixed-baseUrl) mode only - provider-mode instances have no
+   * single `baseUrl` to read synchronously. Provider-mode callers should
+   * resolve `baseUrl` via `settingsService.getAppUrl()` themselves and call
+   * `buildSigningUrl()` directly.
    */
   generateSigningUrl(accessToken: string): string {
-    return `${this.baseUrl}/sign/${accessToken}`;
+    if (this.baseUrl === undefined) {
+      throw new Error(
+        'EmailService.generateSigningUrl() is only available on legacy (fixed-baseUrl) instances; ' +
+          'resolve baseUrl via SettingsService.getAppUrl() and call buildSigningUrl() directly.'
+      );
+    }
+    return buildSigningUrl(this.baseUrl, accessToken);
   }
 
   /**
-   * Generate document download URL
+   * Generate document download URL.
+   *
+   * Legacy (fixed-baseUrl) mode only - see `generateSigningUrl` doc.
    */
   generateDownloadUrl(documentId: string): string {
-    return `${this.baseUrl}/api/documents/${documentId}/download`;
+    if (this.baseUrl === undefined) {
+      throw new Error(
+        'EmailService.generateDownloadUrl() is only available on legacy (fixed-baseUrl) instances; ' +
+          'resolve baseUrl via SettingsService.getAppUrl() and call buildDownloadUrl() directly.'
+      );
+    }
+    return buildDownloadUrl(this.baseUrl, documentId);
+  }
+
+  /**
+   * Sends a fully custom (non-templated) email using the resolved
+   * transporter/from-address. Replaces callers that used to reach into
+   * `(emailService as any).transporter`/`.fromEmail` directly (see
+   * InvitationController.sendInvitationEmail). No email log entry is
+   * created here, matching that caller's prior behavior.
+   */
+  async sendCustomEmail(data: CustomEmailData): Promise<void> {
+    const { transporter, fromEmail } = await this.resolveSendConfig();
+    await transporter.sendMail({
+      from: fromEmail,
+      to: data.to,
+      subject: data.subject,
+      text: data.text,
+      html: data.html,
+    });
   }
 
   /**
@@ -734,7 +856,8 @@ If you have any concerns, please contact support.
     verificationToken: string;
     userId?: string;
   }): Promise<void> {
-    const verificationUrl = `${this.baseUrl}/verify-email?token=${data.verificationToken}`;
+    const resolved = await this.resolveSendConfig();
+    const verificationUrl = `${resolved.baseUrl}/verify-email?token=${data.verificationToken}`;
     const subject = 'Verify your email address - EzSign';
 
     const html = this.generateEmailVerificationHtml(data.recipientName, verificationUrl);
@@ -748,7 +871,8 @@ If you have any concerns, please contact support.
       text,
       {
         userId: data.userId,
-      }
+      },
+      { transporter: resolved.transporter, fromEmail: resolved.fromEmail }
     );
   }
 

@@ -297,11 +297,13 @@ export class AuthController {
         userId: user.id,
         email: user.email,
         role: user.role,
+        ...(user.must_change_password && { mustChangePassword: true }),
       });
 
       res.status(200).json({
         message: 'Login successful',
         user: user.toJSON(),
+        mustChangePassword: user.must_change_password,
         ...tokens,
       });
     } catch (error) {
@@ -385,11 +387,13 @@ export class AuthController {
         userId: user.id,
         email: user.email,
         role: user.role,
+        ...(user.must_change_password && { mustChangePassword: true }),
       });
 
       res.status(200).json({
         message: 'Login successful',
         user: user.toJSON(),
+        mustChangePassword: user.must_change_password,
         ...tokens,
       });
     } catch (error) {
@@ -651,6 +655,39 @@ export class AuthController {
         return;
       }
 
+      // Check if the refresh token has been revoked (blacklisted or user session revoked).
+      // Best-effort: if Redis is unavailable, log a warning and continue rather than
+      // blocking token refresh (availability over strictness).
+      try {
+        if (decoded.jti) {
+          const isRevoked = await tokenBlacklistService.isBlacklisted(decoded.jti);
+          if (isRevoked) {
+            res.status(401).json({
+              error: 'Unauthorized',
+              message: 'Refresh token has been revoked',
+            });
+            return;
+          }
+
+          const isSessionRevoked = await tokenBlacklistService.isUserSessionRevoked(
+            decoded.userId,
+            decoded.iat
+          );
+          if (isSessionRevoked) {
+            res.status(401).json({
+              error: 'Unauthorized',
+              message: 'Session has been revoked. Please log in again.',
+            });
+            return;
+          }
+        }
+      } catch (error) {
+        logger.warn('Refresh token revocation check failed, continuing', {
+          error: (error as Error).message,
+          correlationId: req.correlationId,
+        });
+      }
+
       // Verify user still exists
       const user = await this.userService.findById(decoded.userId);
 
@@ -662,11 +699,12 @@ export class AuthController {
         return;
       }
 
-      // Generate new access token
+      // Generate new access token, re-stamping the claim from the current DB value
       const accessToken = tokenService.generateAccessToken({
         userId: user.id,
         email: user.email,
         role: user.role,
+        ...(user.must_change_password && { mustChangePassword: true }),
       });
 
       res.status(200).json({
@@ -798,15 +836,30 @@ export class AuthController {
       // Update password in database
       await this.userService.updatePassword(userId, newPassword);
 
+      // Clear the forced-password-change flag now that the password has been updated
+      await this.userService.clearMustChangePassword(userId);
+
       // Revoke all existing tokens for security
       // This forces all other sessions to log in again with the new password
-      await tokenBlacklistService.blacklistAllUserTokens(userId);
-      logger.info('All user tokens revoked after password change', {
-        userId,
-        correlationId: req.correlationId,
-      });
+      // Best-effort: the password has already changed at this point, so a Redis
+      // outage must not turn into a 500 for the caller.
+      try {
+        await tokenBlacklistService.blacklistAllUserTokens(userId);
+        logger.info('All user tokens revoked after password change', {
+          userId,
+          correlationId: req.correlationId,
+        });
+      } catch (error) {
+        logger.warn('Failed to revoke existing tokens after password change, continuing', {
+          userId,
+          error: (error as Error).message,
+          correlationId: req.correlationId,
+        });
+      }
 
-      // Generate new access and refresh tokens
+      // Generate new access and refresh tokens. The forced-change claim is intentionally
+      // omitted here (not read from the stale pre-update in-memory `user`) since the
+      // flag was just cleared above.
       const tokens = tokenService.generateTokenPair({
         userId: user.id,
         email: user.email,

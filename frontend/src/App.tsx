@@ -14,6 +14,7 @@ import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
+import ForcePasswordChange from './pages/ForcePasswordChange';
 import Documents from './pages/Documents';
 import PrepareDocument from './pages/PrepareDocument';
 import Sign from './pages/Sign';
@@ -89,6 +90,14 @@ function App() {
                 <Route path="/" element={<HomePage />} />
 
                 {/* Protected routes */}
+                <Route
+                  path="/change-password-required"
+                  element={
+                    <ProtectedRoute>
+                      <ForcePasswordChange />
+                    </ProtectedRoute>
+                  }
+                />
                 <Route
                   path="/documents"
                   element={

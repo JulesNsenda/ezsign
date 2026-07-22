@@ -22,6 +22,7 @@ import { createTwoFactorRouter } from '@/routes/twoFactor';
 import { createEmailLogRouter, createEmailWebhookRouter } from '@/routes/emailLogRoutes';
 import { createAdminDlqRouter } from '@/routes/adminDlqRoutes';
 import { createAdminStatsRouter } from '@/routes/adminStatsRoutes';
+import { createAdminSettingsRouter } from '@/routes/adminSettingsRoutes';
 import { createBrandingRouter, createPublicBrandingRouter } from '@/routes/brandingRoutes';
 import { createTeamInvitationsRouter, createInvitationsRouter } from '@/routes/invitations';
 import utilityRoutes from '@/routes/utilityRoutes';
@@ -41,6 +42,7 @@ import { tokenBlacklistService } from '@/services/tokenBlacklistService';
 import { closeRateLimitRedis } from '@/middleware/rateLimiter';
 import { createMonitoredPool, logQueryStatsSummary } from '@/services/databaseService';
 import { initializeFieldTableService } from '@/services/fieldTableService';
+import { ensureAdminExists } from '@/services/adminBootstrapService';
 import logger from '@/services/loggerService';
 
 // Environment variables
@@ -48,16 +50,38 @@ const PORT = process.env.PORT || 3001;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Database configuration
-const dbConfig = {
-  host: process.env.DATABASE_HOST || 'localhost',
-  port: parseInt(process.env.DATABASE_PORT || '5432'),
-  database: process.env.DATABASE_NAME || 'ezsign',
-  user: process.env.DATABASE_USER || 'ezsign',
-  password: process.env.DATABASE_PASSWORD || 'ezsign_password',
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-};
+// Prefer DATABASE_URL (e.g. injected by a hosting platform) over discrete vars
+//
+// TLS verification defaults to ON (rejectUnauthorized: true) when
+// DATABASE_SSL=true: use DATABASE_CA to pin the server's CA cert (common for
+// managed Postgres), or set DATABASE_SSL_REJECT_UNAUTHORIZED=false as an
+// explicit escape hatch (e.g. for a self-signed cert you can't pin) - never
+// silently disabled.
+const databaseSsl =
+  process.env.DATABASE_SSL === 'true'
+    ? process.env.DATABASE_CA
+      ? { ca: process.env.DATABASE_CA }
+      : { rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false' }
+    : undefined;
+
+const dbConfig = process.env.DATABASE_URL
+  ? {
+      connectionString: process.env.DATABASE_URL,
+      ssl: databaseSsl,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+    }
+  : {
+      host: process.env.DATABASE_HOST || 'localhost',
+      port: parseInt(process.env.DATABASE_PORT || '5432'),
+      database: process.env.DATABASE_NAME || 'ezsign',
+      user: process.env.DATABASE_USER || 'ezsign',
+      password: process.env.DATABASE_PASSWORD || 'ezsign_password',
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+    };
 
 // Initialize database connection pool with monitoring
 const rawPool = new Pool(dbConfig);
@@ -76,6 +100,10 @@ pool.connect((err, _client, release) => {
     release();
   }
 });
+
+// Ensure a super admin user exists (first-boot bootstrap). Fire-and-forget:
+// the lock inside makes ordering relative to server startup irrelevant.
+ensureAdminExists(pool).catch((err) => logger.error('Admin bootstrap failed', err));
 
 // Initialize webhook worker for background delivery processing
 const webhookWorker = createWebhookWorker(pool);
@@ -197,6 +225,7 @@ app.use('/api/signing', createSigningRouter(pool)); // Public signing links
 app.use('/api/admin/emails', createEmailLogRouter(pool)); // Email logs (admin)
 app.use('/api/admin/dlq', createAdminDlqRouter(pool)); // Dead Letter Queue (admin)
 app.use('/api/admin/stats', createAdminStatsRouter(pool)); // Query performance stats (admin)
+app.use('/api/admin/settings', createAdminSettingsRouter(pool)); // Instance settings (admin)
 app.use('/api/util', utilityRoutes); // Utility endpoints (public)
 
 // API documentation placeholder

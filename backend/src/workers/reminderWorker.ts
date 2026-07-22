@@ -8,10 +8,12 @@ import { Pool } from 'pg';
 import { Worker, Job } from 'bullmq';
 import { getRedisConnection, QueueName, defaultWorkerOptions, getQueueTimeoutConfig, shouldMoveToDeadLetterQueue, moveToDeadLetterQueue } from '@/config/queue';
 import { createReminderService, ReminderJobData } from '@/services/reminderService';
-import { EmailService, EmailConfig, EmailBranding } from '@/services/emailService';
+import { EmailService, EmailBranding } from '@/services/emailService';
 import { createEmailLogService } from '@/services/emailLogService';
 import { BrandingService } from '@/services/brandingService';
 import { Branding } from '@/models/Branding';
+import { getSettingsService } from '@/services/settingsService';
+import { buildSigningUrl } from '@/utils/urlBuilder';
 import logger from '@/services/loggerService';
 
 /**
@@ -41,23 +43,15 @@ export const createReminderWorker = (pool: Pool): Worker<ReminderJobData> => {
   const reminderService = createReminderService(pool);
   const brandingService = new BrandingService(pool);
 
-  const emailUser = process.env.EMAIL_SMTP_USER || '';
-  const emailPass = process.env.EMAIL_SMTP_PASS || '';
-
-  const emailConfig: EmailConfig = {
-    host: process.env.EMAIL_SMTP_HOST || 'smtp.example.com',
-    port: parseInt(process.env.EMAIL_SMTP_PORT || '587'),
-    secure: process.env.EMAIL_SMTP_SECURE === 'true',
-    auth: emailUser && emailPass ? {
-      user: emailUser,
-      pass: emailPass,
-    } : undefined,
-    from: process.env.EMAIL_FROM || 'noreply@ezsign.com',
-  };
-
-  const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
+  // Email config (SMTP + app URL) is resolved fresh from instance settings
+  // (DB -> env -> default) on every send - see settingsService.getEmailConfig().
+  // This worker is long-lived, so a settings change takes effect on the very
+  // next job without a process restart.
   const emailLogService = createEmailLogService(pool);
-  const emailService = new EmailService(emailConfig, baseUrl, emailLogService);
+  const emailService = EmailService.withProvider(
+    () => getSettingsService(pool).getEmailConfig(),
+    emailLogService
+  );
 
   const timeoutConfig = getQueueTimeoutConfig(QueueName.DEADLINE_REMINDERS);
 
@@ -133,6 +127,9 @@ export const createReminderWorker = (pool: Pool): Worker<ReminderJobData> => {
         const now = new Date();
         const daysRemaining = Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
+        // Resolve app base URL fresh (per send) from instance settings
+        const baseUrl = await getSettingsService(pool).getAppUrl();
+
         // Fetch branding for email customization
         let emailBranding: EmailBranding | undefined;
         if (doc.team_id) {
@@ -150,7 +147,7 @@ export const createReminderWorker = (pool: Pool): Worker<ReminderJobData> => {
         }
 
         // Send reminder email
-        const signingUrl = emailService.generateSigningUrl(signer.access_token);
+        const signingUrl = buildSigningUrl(baseUrl, signer.access_token);
 
         await emailService.sendReminder({
           recipientEmail: signer.email,

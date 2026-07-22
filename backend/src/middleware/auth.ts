@@ -39,8 +39,10 @@ export const authenticate = async (
     logger.debug('Authentication attempt', { path: req.path, hasAuthHeader: !!authHeader, correlationId: req.correlationId });
     let token = tokenService.extractTokenFromHeader(authHeader);
 
-    // If no token in header, try query parameter (for PDF loading etc.)
-    if (!token && req.query.token) {
+    // If no token in header, try query parameter (for PDF loading etc.).
+    // Admin routes never accept a query-string token - header only.
+    const isAdminPath = (req.baseUrl + req.path).toLowerCase().startsWith('/api/admin');
+    if (!token && req.query.token && !isAdminPath) {
       token = req.query.token as string;
     }
 
@@ -92,6 +94,22 @@ export const authenticate = async (
     };
 
     logger.debug('User authenticated', { email: req.user.email, role: req.user.role, correlationId: req.correlationId });
+
+    // Enforce forced password change: while the claim is set, only the
+    // change-password and me endpoints remain reachable.
+    if (decoded.mustChangePassword === true) {
+      const fullPath = (req.baseUrl + req.path).replace(/\/+$/, '');
+      if (fullPath !== '/api/auth/change-password' && fullPath !== '/api/auth/me') {
+        logger.debug('Blocked request pending forced password change', { path: fullPath, correlationId: req.correlationId });
+        res.status(403).json({
+          error: 'Forbidden',
+          message: 'Password change required before accessing this resource',
+          code: 'PASSWORD_CHANGE_REQUIRED',
+        });
+        return;
+      }
+    }
+
     next();
   } catch (error) {
     logger.debug('Token verification failed', { error: (error as Error).message, correlationId: req.correlationId });

@@ -13,6 +13,7 @@ export interface UserData {
   email_verification_expires: Date | null;
   password_reset_token: string | null;
   password_reset_expires: Date | null;
+  must_change_password: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -21,6 +22,7 @@ export interface CreateUserData {
   email: string;
   password: string;
   role?: UserRole;
+  mustChangePassword?: boolean;
 }
 
 export interface UpdateUserData {
@@ -39,6 +41,7 @@ export class User {
   email_verification_expires: Date | null;
   password_reset_token: string | null;
   password_reset_expires: Date | null;
+  must_change_password: boolean;
   created_at: Date;
   updated_at: Date;
 
@@ -52,6 +55,7 @@ export class User {
     this.email_verification_expires = data.email_verification_expires;
     this.password_reset_token = data.password_reset_token;
     this.password_reset_expires = data.password_reset_expires;
+    this.must_change_password = data.must_change_password;
     this.created_at = data.created_at;
     this.updated_at = data.updated_at;
   }
@@ -199,6 +203,7 @@ export class User {
       email_verified: this.email_verified,
       email_verification_expires: this.email_verification_expires,
       password_reset_expires: this.password_reset_expires,
+      must_change_password: this.must_change_password,
       created_at: this.created_at,
       updated_at: this.updated_at,
     };

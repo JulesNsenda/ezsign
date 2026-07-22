@@ -4,6 +4,7 @@ import { AuthController } from '@/controllers/authController';
 import { UserService } from '@/services/userService';
 import { TeamService } from '@/services/teamService';
 import { tokenService } from '@/services/tokenService';
+import { tokenBlacklistService } from '@/services/tokenBlacklistService';
 
 // Mock dependencies
 jest.mock('@/services/userService');
@@ -438,6 +439,46 @@ describe('AuthController', () => {
         message: 'Invalid email or password',
       });
     });
+
+    it('stamps the mustChangePassword claim on the access token when the user is flagged', async () => {
+      mockRequest.body = {
+        email: 'admin@example.com',
+        password: 'password123',
+      };
+
+      const mockUser = {
+        id: '123',
+        email: 'admin@example.com',
+        role: 'admin',
+        must_change_password: true,
+        verifyPassword: jest.fn().mockResolvedValue(true),
+        toJSON: jest.fn().mockReturnValue({
+          id: '123',
+          email: 'admin@example.com',
+          role: 'admin',
+          must_change_password: true,
+        }),
+      } as any;
+
+      mockUserService.findByEmail = jest.fn().mockResolvedValue(mockUser);
+
+      (tokenService.generateTokenPair as jest.Mock) = jest.fn().mockReturnValue({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+      });
+
+      await authController.login(
+        mockRequest as Request,
+        mockResponse as Response
+      );
+
+      expect(tokenService.generateTokenPair).toHaveBeenCalledWith(
+        expect.objectContaining({ mustChangePassword: true })
+      );
+      expect(responseJson).toHaveBeenCalledWith(
+        expect.objectContaining({ mustChangePassword: true })
+      );
+    });
   });
 
   describe('logout', () => {
@@ -521,12 +562,187 @@ describe('AuthController', () => {
         message: 'Invalid refresh token',
       });
     });
+
+    it('re-derives the mustChangePassword claim from the DB user, not the refresh token', async () => {
+      mockRequest.body = { refreshToken: 'valid-refresh-token' };
+
+      // The presented refresh token has no claim...
+      (tokenService.verifyRefreshToken as jest.Mock) = jest.fn().mockReturnValue({
+        userId: '123',
+        email: 'admin@example.com',
+        role: 'admin',
+        jti: 'refresh-jti-1',
+        iat: Math.floor(Date.now() / 1000),
+      });
+
+      // ...but the current DB state says the user is flagged.
+      const mockUser = {
+        id: '123',
+        email: 'admin@example.com',
+        role: 'admin',
+        must_change_password: true,
+      } as any;
+      mockUserService.findById = jest.fn().mockResolvedValue(mockUser);
+
+      (tokenService.generateAccessToken as jest.Mock) = jest.fn().mockReturnValue('new-access-token');
+
+      await authController.refresh(
+        mockRequest as Request,
+        mockResponse as Response
+      );
+
+      expect(tokenService.generateAccessToken).toHaveBeenCalledWith(
+        expect.objectContaining({ mustChangePassword: true })
+      );
+      expect(responseStatus).toHaveBeenCalledWith(200);
+    });
+
+    it('does not stamp the claim when the DB user is not flagged, even if requested', async () => {
+      mockRequest.body = { refreshToken: 'valid-refresh-token' };
+
+      (tokenService.verifyRefreshToken as jest.Mock) = jest.fn().mockReturnValue({
+        userId: '123',
+        email: 'user@example.com',
+        role: 'creator',
+        jti: 'refresh-jti-2',
+        iat: Math.floor(Date.now() / 1000),
+      });
+
+      const mockUser = {
+        id: '123',
+        email: 'user@example.com',
+        role: 'creator',
+        must_change_password: false,
+      } as any;
+      mockUserService.findById = jest.fn().mockResolvedValue(mockUser);
+
+      (tokenService.generateAccessToken as jest.Mock) = jest.fn().mockReturnValue('new-access-token');
+
+      await authController.refresh(
+        mockRequest as Request,
+        mockResponse as Response
+      );
+
+      const callArg = (tokenService.generateAccessToken as jest.Mock).mock.calls[0]?.[0];
+      expect(callArg.mustChangePassword).toBeUndefined();
+    });
+
+    it('rejects a blacklisted refresh token with 401 and does not mint a new access token', async () => {
+      mockRequest.body = { refreshToken: 'blacklisted-refresh-token' };
+
+      (tokenService.verifyRefreshToken as jest.Mock) = jest.fn().mockReturnValue({
+        userId: '123',
+        email: 'admin@example.com',
+        role: 'admin',
+        jti: 'revoked-jti',
+        iat: Math.floor(Date.now() / 1000),
+      });
+
+      (tokenBlacklistService.isBlacklisted as jest.Mock).mockResolvedValueOnce(true);
+
+      await authController.refresh(
+        mockRequest as Request,
+        mockResponse as Response
+      );
+
+      expect(responseStatus).toHaveBeenCalledWith(401);
+      expect(responseJson).toHaveBeenCalledWith({
+        error: 'Unauthorized',
+        message: 'Refresh token has been revoked',
+      });
+      expect(mockUserService.findById).not.toHaveBeenCalled();
+      expect(tokenService.generateAccessToken).not.toHaveBeenCalled();
+    });
   });
 
   describe('changePassword', () => {
     beforeEach(() => {
       // Add userId to request (simulating authenticate middleware)
       (mockRequest as any).user = { userId: '123' };
+    });
+
+    it('clears the must_change_password flag and mints tokens without the claim', async () => {
+      mockRequest.body = {
+        currentPassword: 'OldPassword123',
+        newPassword: 'NewPassword456',
+      };
+
+      const mockUser = {
+        id: '123',
+        email: 'admin@example.com',
+        role: 'admin',
+        must_change_password: true,
+        verifyPassword: jest.fn().mockResolvedValue(true),
+      } as any;
+
+      mockUserService.findById = jest.fn().mockResolvedValue(mockUser);
+      mockUserService.updatePassword = jest.fn().mockResolvedValue(undefined);
+      mockUserService.clearMustChangePassword = jest.fn().mockResolvedValue(undefined);
+
+      (tokenService.generateTokenPair as jest.Mock) = jest.fn().mockReturnValue({
+        accessToken: 'new-access-token',
+        refreshToken: 'new-refresh-token',
+      });
+
+      await authController.changePassword(
+        mockRequest as Request,
+        mockResponse as Response
+      );
+
+      expect(mockUserService.clearMustChangePassword).toHaveBeenCalledWith('123');
+      // Explicitly omitted, not read from the stale pre-update in-memory user.
+      const callArg = (tokenService.generateTokenPair as jest.Mock).mock.calls[0]?.[0];
+      expect(callArg.mustChangePassword).toBeUndefined();
+      expect(responseStatus).toHaveBeenCalledWith(200);
+      expect(responseJson).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accessToken: 'new-access-token',
+          refreshToken: 'new-refresh-token',
+        })
+      );
+    });
+
+    it('still succeeds (does not 500) when revoking existing tokens fails (Redis down)', async () => {
+      mockRequest.body = {
+        currentPassword: 'OldPassword123',
+        newPassword: 'NewPassword456',
+      };
+
+      const mockUser = {
+        id: '123',
+        email: 'test@example.com',
+        role: 'creator',
+        must_change_password: false,
+        verifyPassword: jest.fn().mockResolvedValue(true),
+      } as any;
+
+      mockUserService.findById = jest.fn().mockResolvedValue(mockUser);
+      mockUserService.updatePassword = jest.fn().mockResolvedValue(undefined);
+      mockUserService.clearMustChangePassword = jest.fn().mockResolvedValue(undefined);
+
+      (tokenBlacklistService.blacklistAllUserTokens as jest.Mock).mockRejectedValueOnce(
+        new Error('Redis connection refused')
+      );
+
+      (tokenService.generateTokenPair as jest.Mock) = jest.fn().mockReturnValue({
+        accessToken: 'new-access-token',
+        refreshToken: 'new-refresh-token',
+      });
+
+      await authController.changePassword(
+        mockRequest as Request,
+        mockResponse as Response
+      );
+
+      expect(mockUserService.updatePassword).toHaveBeenCalledWith('123', 'NewPassword456');
+      expect(responseStatus).toHaveBeenCalledWith(200);
+      expect(responseJson).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Password changed successfully',
+          accessToken: 'new-access-token',
+          refreshToken: 'new-refresh-token',
+        })
+      );
     });
 
     it('should change password successfully', async () => {
