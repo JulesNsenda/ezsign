@@ -92,6 +92,7 @@ RUN npm ci --only=production && \
 # Copy built application from build stage
 COPY --from=build --chown=nodejs:nodejs /app/dist ./dist
 COPY --from=build --chown=nodejs:nodejs /app/node_modules ./node_modules
+COPY --from=build --chown=nodejs:nodejs /app/scripts ./scripts
 
 # Create necessary directories
 RUN mkdir -p storage logs && \
@@ -110,5 +111,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start application
-CMD ["node", "dist/server.js"]
+# Run migrations then start the application (the platform never runs
+# migrations separately, so the container must do it on boot)
+CMD ["npm", "run", "start:prod"]

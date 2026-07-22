@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc && tsc-alias",
     "start": "node dist/server.js",
+    "start:prod": "node scripts/start-prod.js",
     "dev": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/server.ts",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -54,6 +55,7 @@
     "ioredis": "^5.8.1",
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
+    "node-pg-migrate": "^8.0.3",
     "nodemailer": "^7.0.9",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.296",
@@ -94,7 +96,6 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "jest": "^30.2.0",
-    "node-pg-migrate": "^8.0.3",
     "prettier": "^3.6.2",
     "ts-jest": "^29.4.4",
     "ts-node": "^10.9.2",
