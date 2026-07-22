@@ -7,7 +7,7 @@ import Documents from './Documents';
 // Mock the auth hook
 vi.mock('@/hooks/useAuth', () => ({
   useAuth: vi.fn(() => ({
-    user: { id: '1', email: 'test@example.com', role: 'user' },
+    user: { id: '1', email: 'test@example.com', role: 'creator', must_change_password: false },
     isAuthenticated: true,
     logout: vi.fn(),
   })),

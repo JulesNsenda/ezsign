@@ -12,7 +12,7 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -31,6 +31,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   if (!isAuthenticated) {
     // Redirect to login, but save the location they were trying to access
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Force a password change before allowing access to any other protected
+  // route. Guard against redirecting to itself to avoid a navigation loop.
+  if (user?.must_change_password && location.pathname !== '/change-password-required') {
+    return <Navigate to="/change-password-required" replace />;
   }
 
   return <>{children}</>;

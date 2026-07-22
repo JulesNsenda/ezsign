@@ -72,6 +72,12 @@ export const Login: React.FC = () => {
         return;
       }
 
+      // Forced password change takes priority over the normal redirect
+      if (response.mustChangePassword || response.user?.must_change_password) {
+        navigate('/change-password-required', { replace: true });
+        return;
+      }
+
       // No 2FA, redirect
       redirectAfterLogin();
     } catch (err: any) {
@@ -88,10 +94,16 @@ export const Login: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      await verify2fa({
+      const response = await verify2fa({
         twoFactorToken: twoFactorState.twoFactorToken,
         code,
       });
+
+      if (response.mustChangePassword || response.user?.must_change_password) {
+        navigate('/change-password-required', { replace: true });
+        return;
+      }
+
       redirectAfterLogin();
     } catch (err: any) {
       setError(err.response?.data?.error?.message || 'Invalid verification code');
@@ -107,11 +119,17 @@ export const Login: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      await verify2fa({
+      const response = await verify2fa({
         twoFactorToken: twoFactorState.twoFactorToken,
         code,
         isBackupCode: true,
       });
+
+      if (response.mustChangePassword || response.user?.must_change_password) {
+        navigate('/change-password-required', { replace: true });
+        return;
+      }
+
       redirectAfterLogin();
     } catch (err: any) {
       setError(err.response?.data?.error?.message || 'Invalid backup code');

@@ -12,7 +12,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (data: LoginData) => Promise<AuthResponse>;
-  verify2fa: (data: TwoFactorLoginData) => Promise<void>;
+  verify2fa: (data: TwoFactorLoginData) => Promise<AuthResponse>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -65,10 +65,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   /**
    * Complete 2FA verification
+   * Returns the response so caller can check if a forced password change is required
    */
-  const verify2fa = async (data: TwoFactorLoginData): Promise<void> => {
+  const verify2fa = async (data: TwoFactorLoginData): Promise<AuthResponse> => {
     const response = await authService.verify2fa(data);
     setUser(response.user);
+    return response;
   };
 
   /**
