@@ -14,17 +14,18 @@ export class UserService {
   async createUser(data: CreateUserData): Promise<User> {
     const passwordHash = await User.hashPassword(data.password);
     const role = data.role || 'creator';
+    const mustChangePassword = data.mustChangePassword ?? false;
 
     const query = `
-      INSERT INTO users (email, password_hash, role)
-      VALUES ($1, $2, $3)
+      INSERT INTO users (email, password_hash, role, must_change_password)
+      VALUES ($1, $2, $3, $4)
       RETURNING id, email, password_hash, role, email_verified,
                 email_verification_token, email_verification_expires,
                 password_reset_token, password_reset_expires,
-                created_at, updated_at
+                must_change_password, created_at, updated_at
     `;
 
-    const values = [data.email, passwordHash, role];
+    const values = [data.email, passwordHash, role, mustChangePassword];
     const result = await this.pool.query<UserData>(query, values);
 
     if (!result.rows[0]) {
@@ -42,7 +43,7 @@ export class UserService {
       SELECT id, email, password_hash, role, email_verified,
              email_verification_token, email_verification_expires,
              password_reset_token, password_reset_expires,
-             created_at, updated_at
+             must_change_password, created_at, updated_at
       FROM users
       WHERE id = $1
     `;
@@ -64,7 +65,7 @@ export class UserService {
       SELECT id, email, password_hash, role, email_verified,
              email_verification_token, email_verification_expires,
              password_reset_token, password_reset_expires,
-             created_at, updated_at
+             must_change_password, created_at, updated_at
       FROM users
       WHERE email = $1
     `;
@@ -114,7 +115,7 @@ export class UserService {
       RETURNING id, email, password_hash, role, email_verified,
                 email_verification_token, email_verification_expires,
                 password_reset_token, password_reset_expires,
-                created_at, updated_at
+                must_change_password, created_at, updated_at
     `;
 
     const result = await this.pool.query<UserData>(query, values);
@@ -192,6 +193,20 @@ export class UserService {
     `;
 
     await this.pool.query(query, [passwordHash, id]);
+  }
+
+  /**
+   * Clear the must-change-password flag (e.g. after a forced password change)
+   */
+  async clearMustChangePassword(userId: string): Promise<void> {
+    const query = `
+      UPDATE users
+      SET must_change_password = false,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `;
+
+    await this.pool.query(query, [userId]);
   }
 
   /**
