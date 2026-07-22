@@ -14,6 +14,7 @@ interface JwtPayload {
   email: string;
   role: string;
   teamId?: string | null;
+  mustChangePassword?: boolean;
 }
 
 // Event types for type safety
@@ -83,6 +84,15 @@ class SocketService {
         }
 
         const decoded = jwt.verify(token, jwtSecret) as JwtPayload;
+
+        if (decoded.mustChangePassword === true) {
+          logger.debug('Socket auth blocked pending forced password change', {
+            socketId: socket.id,
+            userId: decoded.userId,
+          });
+          return next(new Error('Password change required'));
+        }
+
         socket.userId = decoded.userId;
         socket.teamId = decoded.teamId;
 

@@ -6,6 +6,7 @@ export interface JwtPayload {
   userId: string;
   email: string;
   role: UserRole;
+  mustChangePassword?: boolean;
 }
 
 export interface TokenPair {
@@ -162,22 +163,6 @@ export class TokenService {
     }
 
     return parts[1] || null;
-  }
-
-  /**
-   * Refresh an access token using a refresh token
-   */
-  refreshAccessToken(refreshToken: string): string {
-    const decoded = this.verifyRefreshToken(refreshToken);
-
-    // Create a new access token with the same payload
-    const payload: JwtPayload = {
-      userId: decoded.userId,
-      email: decoded.email,
-      role: decoded.role,
-    };
-
-    return this.generateAccessToken(payload);
   }
 
   /**
