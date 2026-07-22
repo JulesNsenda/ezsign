@@ -416,23 +416,41 @@ npm run migrate:create migration-name  # Create new migration
 - `audit_events` - Complete audit trail
 - `webhooks` & `webhook_events` - Webhook configuration
 
+### First-Run Admin Bootstrap
+
+On startup, if no admin account exists, EzSign creates one automatically:
+
+- Email: `ADMIN_EMAIL` env var (default `admin@ezsign.local`)
+- Password: `ADMIN_PASSWORD` env var if set; otherwise a one-time password is **generated and printed once to the backend logs** in a prominent box
+- The admin must change this password at first login before anything else works — until then all other API calls return `403 PASSWORD_CHANGE_REQUIRED`
+
+Because the generated password is printed to stdout, treat backend logs/console output as sensitive and access-control them accordingly; set `ADMIN_PASSWORD` explicitly to skip generation and avoid the password ever being printed.
+
+After logging in, the admin configures SMTP, the sender address, and the application URL from **Settings → Instance** — no env vars required. Values set in the UI are stored in the database (secrets encrypted with AES-256-GCM) and take precedence over env vars; unset values fall back to env, then to defaults. A minimal deployment therefore needs only `JWT_SECRET` and `DATABASE_URL`.
+
 ### Environment Variables
 
 Key environment variables to configure:
 
 **Backend (`backend/.env`):**
-- `DATABASE_URL`: PostgreSQL connection string
+- `DATABASE_URL`: PostgreSQL connection string (takes precedence over the discrete `DATABASE_HOST`/`DATABASE_PORT`/... vars; `DATABASE_SSL=true` enables SSL)
 - `REDIS_URL`: Redis connection string
 - `JWT_SECRET`: Secret key for JWT tokens
 - `API_KEY_SECRET`: Secret key for API key hashing
-- `EMAIL_SMTP_HOST`: SMTP server hostname (use `localhost` for MailHog in development)
-- `EMAIL_SMTP_PORT`: SMTP server port (use `1025` for MailHog in development)
-- `EMAIL_SMTP_USER`: SMTP username (leave empty for MailHog)
-- `EMAIL_SMTP_PASS`: SMTP password (leave empty for MailHog)
-- `EMAIL_SMTP_SECURE`: Use TLS/SSL (set to `false` for MailHog)
+- `ADMIN_EMAIL`: Email for the first-run admin account (default `admin@ezsign.local`)
+- `ADMIN_PASSWORD`: Optional fixed password for the first-run admin (if unset, one is generated and printed to logs once)
+- `SETTINGS_ENCRYPTION_KEY`: Key for encrypting instance settings secrets at rest (falls back to `JWT_SECRET`; set a dedicated value in production)
+- `EMAIL_SMTP_HOST`: SMTP server hostname (use `localhost` for MailHog in development) — *configurable in Settings → Instance*
+- `EMAIL_SMTP_PORT`: SMTP server port (use `1025` for MailHog in development) — *configurable in Settings → Instance*
+- `EMAIL_SMTP_USER`: SMTP username (leave empty for MailHog) — *configurable in Settings → Instance*
+- `EMAIL_SMTP_PASS`: SMTP password (leave empty for MailHog) — *configurable in Settings → Instance*
+- `EMAIL_SMTP_SECURE`: Use TLS/SSL (set to `false` for MailHog) — *configurable in Settings → Instance*
+- `EMAIL_FROM`: Sender address for outgoing email (legacy aliases `EMAIL_FROM_ADDRESS` and `EMAIL_SMTP_FROM` still honored) — *configurable in Settings → Instance*
 - `FILE_STORAGE_PATH`: Path for document storage
-- `APP_URL`: Application base URL
+- `APP_URL`: Application base URL — *configurable in Settings → Instance*
 - `WEBHOOK_SECRET`: Secret for webhook signatures
+
+Database migrations run automatically before the server starts in the production Docker image (`npm run start:prod`).
 
 **Email Testing in Development:**
 - MailHog is automatically configured in Docker development environment
