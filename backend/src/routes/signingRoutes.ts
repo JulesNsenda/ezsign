@@ -3,12 +3,13 @@ import { Pool } from 'pg';
 import { SigningController } from '@/controllers/signingController';
 import { authenticate } from '@/middleware/auth';
 import { embedSecurity } from '@/middleware/embedSecurity';
-import { EmailService, EmailConfig } from '@/services/emailService';
+import { EmailService } from '@/services/emailService';
 import { PdfService } from '@/services/pdfService';
 import { createStorageService } from '@/services/storageService';
 import { createStorageAdapter } from '@/config/storage';
 import { createEmailLogService } from '@/services/emailLogService';
 import { createReminderService } from '@/services/reminderService';
+import { getSettingsService } from '@/services/settingsService';
 
 export const createSigningRouter = (pool: Pool): Router => {
   const router = Router();
@@ -18,25 +19,14 @@ export const createSigningRouter = (pool: Pool): Router => {
   const storageService = createStorageService(storageAdapter);
   const pdfService = new PdfService();
 
-  const emailUser = process.env.EMAIL_SMTP_USER || '';
-  const emailPass = process.env.EMAIL_SMTP_PASS || '';
-
-  const emailConfig: EmailConfig = {
-    host: process.env.EMAIL_SMTP_HOST || 'smtp.example.com',
-    port: parseInt(process.env.EMAIL_SMTP_PORT || '587'),
-    secure: process.env.EMAIL_SMTP_SECURE === 'true',
-    auth: emailUser && emailPass ? {
-      user: emailUser,
-      pass: emailPass,
-    } : undefined,
-    from: process.env.EMAIL_FROM || 'noreply@ezsign.com',
-  };
-
-  const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
-
-  // Initialize email log service and email service with logging
+  // Initialize email log service and email service. Config (SMTP + app URL)
+  // is resolved fresh from instance settings (DB -> env -> default) on every
+  // send - see settingsService.getEmailConfig().
   const emailLogService = createEmailLogService(pool);
-  const emailService = new EmailService(emailConfig, baseUrl, emailLogService);
+  const emailService = EmailService.withProvider(
+    () => getSettingsService(pool).getEmailConfig(),
+    emailLogService
+  );
 
   // Initialize reminder service for deadline reminders
   const reminderService = createReminderService(pool);
@@ -60,25 +50,14 @@ export const createDocumentSigningRouter = (pool: Pool): Router => {
   const storageService = createStorageService(storageAdapter);
   const pdfService = new PdfService();
 
-  const emailUser = process.env.EMAIL_SMTP_USER || '';
-  const emailPass = process.env.EMAIL_SMTP_PASS || '';
-
-  const emailConfig: EmailConfig = {
-    host: process.env.EMAIL_SMTP_HOST || 'smtp.example.com',
-    port: parseInt(process.env.EMAIL_SMTP_PORT || '587'),
-    secure: process.env.EMAIL_SMTP_SECURE === 'true',
-    auth: emailUser && emailPass ? {
-      user: emailUser,
-      pass: emailPass,
-    } : undefined,
-    from: process.env.EMAIL_FROM || 'noreply@ezsign.com',
-  };
-
-  const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
-
-  // Initialize email log service and email service with logging
+  // Initialize email log service and email service. Config (SMTP + app URL)
+  // is resolved fresh from instance settings (DB -> env -> default) on every
+  // send - see settingsService.getEmailConfig().
   const emailLogService = createEmailLogService(pool);
-  const emailService = new EmailService(emailConfig, baseUrl, emailLogService);
+  const emailService = EmailService.withProvider(
+    () => getSettingsService(pool).getEmailConfig(),
+    emailLogService
+  );
 
   // Initialize reminder service for deadline reminders
   const reminderService = createReminderService(pool);

@@ -8,15 +8,18 @@ import { TeamService } from '@/services/teamService';
 import { UserService } from '@/services/userService';
 import { AuthenticatedRequest } from '@/middleware/auth';
 import { EmailService } from '@/services/emailService';
+import { getSettingsService } from '@/services/settingsService';
 import logger from '@/services/loggerService';
 
 export class InvitationController {
+  private pool: Pool;
   private invitationService: InvitationService;
   private teamService: TeamService;
   private userService: UserService;
   private emailService: EmailService | null;
 
   constructor(pool: Pool, emailService?: EmailService) {
+    this.pool = pool;
     this.invitationService = new InvitationService(pool);
     this.teamService = new TeamService(pool);
     this.userService = new UserService(pool);
@@ -134,7 +137,7 @@ export class InvitationController {
 
       // Send invitation email
       if (this.emailService) {
-        const appUrl = process.env.APP_URL || 'http://localhost:3002';
+        const appUrl = await getSettingsService(this.pool).getAppUrl();
         const inviteUrl = `${appUrl}/accept-invitation/${invitation.token}`;
 
         try {
@@ -472,7 +475,7 @@ export class InvitationController {
       if (this.emailService) {
         const team = await this.teamService.findById(teamId);
         const inviter = await this.userService.findById(userId);
-        const appUrl = process.env.APP_URL || 'http://localhost:3002';
+        const appUrl = await getSettingsService(this.pool).getAppUrl();
         const inviteUrl = `${appUrl}/accept-invitation/${updatedInvitation.token}`;
 
         try {
@@ -565,7 +568,8 @@ export class InvitationController {
     inviteUrl: string,
     isReminder: boolean
   ): Promise<void> {
-    if (!this.emailService) return;
+    const emailService = this.emailService;
+    if (!emailService) return;
 
     const subject = isReminder
       ? `Reminder: You've been invited to join ${teamName} on EzSign`
@@ -606,13 +610,6 @@ If you didn't expect this invitation, you can safely ignore this email.
 EzSign - Document Signing Made Easy
     `.trim();
 
-    // Use a simple sendMail approach since EmailService is configured for transporter
-    await (this.emailService as any).transporter.sendMail({
-      from: (this.emailService as any).fromEmail,
-      to: email,
-      subject,
-      text,
-      html,
-    });
+    await emailService.sendCustomEmail({ to: email, subject, text, html });
   }
 }

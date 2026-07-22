@@ -1,30 +1,23 @@
 import { Router } from 'express';
 import { Pool } from 'pg';
 import { AuthController } from '@/controllers/authController';
-import { EmailService, EmailConfig } from '@/services/emailService';
+import { EmailService } from '@/services/emailService';
+import { createEmailLogService } from '@/services/emailLogService';
+import { getSettingsService } from '@/services/settingsService';
 import { authenticate } from '@/middleware/auth';
 import { passwordChangeLimiter, twoFactorLimiter } from '@/middleware/rateLimiter';
 
 export const createAuthRouter = (pool: Pool): Router => {
   const router = Router();
 
-  // Initialize email service
-  const emailUser = process.env.EMAIL_SMTP_USER || '';
-  const emailPass = process.env.EMAIL_SMTP_PASS || '';
-
-  const emailConfig: EmailConfig = {
-    host: process.env.EMAIL_SMTP_HOST || 'localhost',
-    port: parseInt(process.env.EMAIL_SMTP_PORT || '1025'),
-    secure: process.env.EMAIL_SMTP_SECURE === 'true',
-    auth: emailUser && emailPass ? {
-      user: emailUser,
-      pass: emailPass,
-    } : undefined,
-    from: process.env.EMAIL_FROM_ADDRESS || 'noreply@ezsign.local',
-  };
-
-  const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
-  const emailService = new EmailService(emailConfig, baseUrl);
+  // Initialize email service. Config (SMTP + app URL) is resolved fresh from
+  // instance settings (DB -> env -> default) on every send - see
+  // settingsService.getEmailConfig().
+  const emailLogService = createEmailLogService(pool);
+  const emailService = EmailService.withProvider(
+    () => getSettingsService(pool).getEmailConfig(),
+    emailLogService
+  );
 
   const authController = new AuthController(pool, emailService);
 

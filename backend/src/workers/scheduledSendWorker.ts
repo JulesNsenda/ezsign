@@ -3,10 +3,13 @@ import { Pool } from 'pg';
 import { createWorker, QueueName, shouldMoveToDeadLetterQueue, moveToDeadLetterQueue } from '@/config/queue';
 import { Signer, SignerData } from '@/models/Signer';
 import { Branding } from '@/models/Branding';
-import { EmailService, EmailConfig, EmailBranding } from '@/services/emailService';
+import { EmailService, EmailBranding } from '@/services/emailService';
 import { BrandingService } from '@/services/brandingService';
 import { ScheduledSendJobData } from '@/services/scheduledSendService';
 import { socketService } from '@/services/socketService';
+import { createEmailLogService } from '@/services/emailLogService';
+import { getSettingsService } from '@/services/settingsService';
+import { buildSigningUrl } from '@/utils/urlBuilder';
 import logger from '@/services/loggerService';
 
 /**
@@ -18,24 +21,20 @@ export class ScheduledSendWorker {
   private pool: Pool;
   private emailService: EmailService;
   private brandingService: BrandingService;
-  private baseUrl: string;
 
   constructor(pool: Pool) {
     this.pool = pool;
     this.brandingService = new BrandingService(pool);
 
-    // Initialize email service
-    const emailUser = process.env.EMAIL_SMTP_USER || '';
-    const emailPass = process.env.EMAIL_SMTP_PASS || '';
-    const emailConfig: EmailConfig = {
-      host: process.env.EMAIL_SMTP_HOST || 'smtp.example.com',
-      port: parseInt(process.env.EMAIL_SMTP_PORT || '587'),
-      secure: process.env.EMAIL_SMTP_SECURE === 'true',
-      auth: emailUser && emailPass ? { user: emailUser, pass: emailPass } : undefined,
-      from: process.env.EMAIL_FROM || 'noreply@ezsign.com',
-    };
-    this.baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
-    this.emailService = new EmailService(emailConfig, this.baseUrl);
+    // Initialize email service. Config (SMTP + app URL) is resolved fresh
+    // from instance settings (DB -> env -> default) on every send - see
+    // settingsService.getEmailConfig(). This worker is long-lived, so a
+    // settings change takes effect on the very next job without a restart.
+    const emailLogService = createEmailLogService(pool);
+    this.emailService = EmailService.withProvider(
+      () => getSettingsService(pool).getEmailConfig(),
+      emailLogService
+    );
 
     this.worker = createWorker<ScheduledSendJobData>(
       QueueName.SCHEDULED_SEND,
@@ -146,19 +145,22 @@ export class ScheduledSendWorker {
 
       const workflowType = docRow.workflow_type || 'parallel';
 
+      // Resolve app base URL fresh (per send) from instance settings
+      const baseUrl = await getSettingsService(this.pool).getAppUrl();
+
       // Fetch branding for email customization
-      const emailBranding = await this.getEmailBranding(docRow.team_id);
+      const emailBranding = await this.getEmailBranding(docRow.team_id, baseUrl);
 
       if (workflowType === 'sequential') {
         // For sequential workflow, only send to first pending signer
         const firstSigner = signers.find((s) => s.status === 'pending' && s.signing_order === 0) || signers[0];
         if (firstSigner) {
-          await this.sendSigningEmail(firstSigner, docRow.title, senderName, emailBranding);
+          await this.sendSigningEmail(firstSigner, docRow.title, senderName, baseUrl, emailBranding);
         }
       } else {
         // For parallel workflow, send to all signers
         await Promise.all(
-          signers.map((signer) => this.sendSigningEmail(signer, docRow.title, senderName, emailBranding))
+          signers.map((signer) => this.sendSigningEmail(signer, docRow.title, senderName, baseUrl, emailBranding))
         );
       }
 
@@ -195,10 +197,10 @@ export class ScheduledSendWorker {
   /**
    * Convert Branding model to EmailBranding interface
    */
-  private convertToEmailBranding(branding: Branding): EmailBranding {
+  private convertToEmailBranding(branding: Branding, baseUrl: string): EmailBranding {
     return {
       companyName: branding.company_name,
-      logoUrl: branding.getLogoUrl(this.baseUrl),
+      logoUrl: branding.getLogoUrl(baseUrl),
       primaryColor: branding.primary_color,
       secondaryColor: branding.secondary_color,
       footerText: branding.email_footer_text,
@@ -214,7 +216,7 @@ export class ScheduledSendWorker {
   /**
    * Get email branding for a document based on its team_id
    */
-  private async getEmailBranding(teamId: string | null | undefined): Promise<EmailBranding | undefined> {
+  private async getEmailBranding(teamId: string | null | undefined, baseUrl: string): Promise<EmailBranding | undefined> {
     if (!teamId) {
       return undefined;
     }
@@ -222,7 +224,7 @@ export class ScheduledSendWorker {
     try {
       const branding = await this.brandingService.getByTeamId(teamId);
       if (branding) {
-        return this.convertToEmailBranding(branding);
+        return this.convertToEmailBranding(branding, baseUrl);
       }
     } catch (error) {
       logger.warn('Failed to fetch branding for scheduled send email', {
@@ -241,6 +243,7 @@ export class ScheduledSendWorker {
     signer: Signer,
     documentTitle: string,
     senderName: string,
+    baseUrl: string,
     branding?: EmailBranding
   ): Promise<void> {
     try {
@@ -249,7 +252,7 @@ export class ScheduledSendWorker {
         recipientName: signer.name || signer.email,
         documentTitle,
         senderName,
-        signingUrl: `${this.baseUrl}/sign/${signer.access_token}`,
+        signingUrl: buildSigningUrl(baseUrl, signer.access_token),
         branding,
       });
 
