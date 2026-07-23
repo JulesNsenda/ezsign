@@ -11,7 +11,7 @@ module.exports = {
   // Test match patterns
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
 
-  // Exclude integration tests from default run (require database/redis)
+  // Exclude integration tests from default run (require a live database)
   // Run with: npm run test:integration
   testPathIgnorePatterns: ['/node_modules/', '/__tests__/integration/'],
 
@@ -49,6 +49,9 @@ module.exports = {
 
   // Module name mapper for path aliases and .js extension stripping
   moduleNameMapper: {
+    // pg-boss ships ESM-only, which ts-jest cannot parse; suites that need
+    // real queue behavior override this with an explicit jest.mock('pg-boss')
+    '^pg-boss$': '<rootDir>/src/test/pgBossStub.ts',
     // Strip .js extension from relative imports (ESM-style imports in source)
     '^(\\.{1,2}/.*)\\.js$': '$1',
     // Path aliases

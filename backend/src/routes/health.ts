@@ -27,7 +27,7 @@ export const createHealthRoutes = (healthService: HealthService): Router => {
   /**
    * GET /health/ready
    * Readiness probe - checks if app can handle requests
-   * Verifies database and Redis connectivity
+   * Verifies database connectivity
    * Returns 503 if any critical dependency is down
    */
   router.get('/ready', async (_req: Request, res: Response) => {
@@ -41,7 +41,6 @@ export const createHealthRoutes = (healthService: HealthService): Router => {
         timestamp: new Date().toISOString(),
         checks: {
           database: 'down',
-          redis: 'down',
         },
         error: 'Failed to check health status',
       });
@@ -67,7 +66,6 @@ export const createHealthRoutes = (healthService: HealthService): Router => {
         version: process.env.npm_package_version || '1.0.0',
         checks: {
           database: { status: 'down', error: 'Failed to check' },
-          redis: { status: 'down', error: 'Failed to check' },
           storage: { status: 'down', error: 'Failed to check' },
         },
         error: 'Failed to retrieve detailed health status',

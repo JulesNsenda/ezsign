@@ -33,13 +33,12 @@ import { apiLimiter } from '@/middleware/rateLimiter';
 import { correlationIdMiddleware } from '@/middleware/correlationId';
 import { createWebhookWorker } from '@/workers/webhookWorker';
 import { createPdfWorker } from '@/workers/pdfWorker';
-import { createCleanupWorker, createCleanupQueue, scheduleCleanupJobs } from '@/workers/cleanupWorker';
+import { createCleanupWorker } from '@/workers/cleanupWorker';
 import { createScheduledSendWorker } from '@/workers/scheduledSendWorker';
 import { createReminderWorker } from '@/workers/reminderWorker';
-import { getRedisConnection } from '@/config/queue';
+import { startQueues, stopQueues } from '@/config/queue';
 import { shutdownManager } from '@/services/shutdownManager';
 import { tokenBlacklistService } from '@/services/tokenBlacklistService';
-import { closeRateLimitRedis } from '@/middleware/rateLimiter';
 import { createMonitoredPool, logQueryStatsSummary } from '@/services/databaseService';
 import { initializeFieldTableService } from '@/services/fieldTableService';
 import { ensureAdminExists } from '@/services/adminBootstrapService';
@@ -87,6 +86,9 @@ const dbConfig = process.env.DATABASE_URL
 const rawPool = new Pool(dbConfig);
 const pool = createMonitoredPool(rawPool);
 
+// Token revocation store (Postgres-backed; reads fail closed)
+tokenBlacklistService.init(pool);
+
 // Initialize field table service
 initializeFieldTableService(pool);
 
@@ -105,38 +107,28 @@ pool.connect((err, _client, release) => {
 // the lock inside makes ordering relative to server startup irrelevant.
 ensureAdminExists(pool).catch((err) => logger.error('Admin bootstrap failed', err));
 
-// Initialize webhook worker for background delivery processing
-const webhookWorker = createWebhookWorker(pool);
-logger.info('Webhook worker initialized');
-
-// Initialize PDF worker for background PDF processing
-const pdfWorker = createPdfWorker(pool);
-logger.info('PDF worker initialized');
-
-// Initialize cleanup worker for file cleanup
-const cleanupWorker = createCleanupWorker(pool);
-const cleanupQueue = createCleanupQueue();
-logger.info('Cleanup worker initialized');
-
-// Initialize scheduled send worker for delayed document sending
-const scheduledSendWorker = createScheduledSendWorker(pool);
-logger.info('Scheduled send worker initialized');
-
-// Initialize reminder worker for deadline reminders
-const reminderWorker = createReminderWorker(pool);
-logger.info('Reminder worker initialized');
-
-// Schedule cleanup jobs (async, don't await - let server start)
-scheduleCleanupJobs(cleanupQueue).catch((error) => {
-  logger.error('Failed to schedule cleanup jobs', { error: (error as Error).message });
+// Start the pg-boss queue system (creates queues + cron schedules), then
+// register all workers. Fire-and-forget like the bootstrap above: HTTP can
+// serve before queues are up, but a startup failure is loud in the logs.
+(async () => {
+  await startQueues(pool);
+  await Promise.all([
+    createWebhookWorker(pool),
+    createPdfWorker(pool),
+    createCleanupWorker(pool),
+    createScheduledSendWorker(pool),
+    createReminderWorker(pool),
+  ]);
+  logger.info('Queue system started: 5 workers registered (pg-boss)');
+})().catch((err) => {
+  logger.error('Queue system failed to start - background jobs are DOWN', {
+    error: (err as Error).message,
+    stack: (err as Error).stack,
+  });
 });
 
-// Initialize Redis connection for health checks
-const healthRedis = getRedisConnection();
-logger.info('Redis connection for health checks initialized');
-
 // Initialize health service
-const healthService = new HealthService(pool, healthRedis);
+const healthService = new HealthService(pool);
 logger.info('Health service initialized');
 
 // Initialize Express app
@@ -303,41 +295,12 @@ shutdownManager.register({
   },
 });
 
-// Priority 50: Background workers (let them finish current jobs)
+// Priority 50: Queue system (graceful drain of in-flight jobs; must complete
+// before the shared DB pool closes at priority 0)
 shutdownManager.register({
-  name: 'Webhook Worker',
+  name: 'Queue System (pg-boss)',
   priority: 50,
-  close: () => webhookWorker.close(),
-});
-
-shutdownManager.register({
-  name: 'PDF Worker',
-  priority: 50,
-  close: () => pdfWorker.close(),
-});
-
-shutdownManager.register({
-  name: 'Cleanup Worker',
-  priority: 50,
-  close: () => cleanupWorker.close(),
-});
-
-shutdownManager.register({
-  name: 'Cleanup Queue',
-  priority: 50,
-  close: () => cleanupQueue.close(),
-});
-
-shutdownManager.register({
-  name: 'Scheduled Send Worker',
-  priority: 50,
-  close: () => scheduledSendWorker.close(),
-});
-
-shutdownManager.register({
-  name: 'Reminder Worker',
-  priority: 50,
-  close: () => reminderWorker.close(),
+  close: () => stopQueues(),
 });
 
 // Priority 25: Application services
@@ -345,21 +308,6 @@ shutdownManager.register({
   name: 'Token Blacklist Service',
   priority: 25,
   close: () => tokenBlacklistService.close(),
-});
-
-shutdownManager.register({
-  name: 'Rate Limit Redis',
-  priority: 25,
-  close: () => closeRateLimitRedis(),
-});
-
-// Priority 10: Redis connections
-shutdownManager.register({
-  name: 'Health Redis',
-  priority: 10,
-  close: async () => {
-    await healthRedis.quit();
-  },
 });
 
 // Priority 0: Database (close last)

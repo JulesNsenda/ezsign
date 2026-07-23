@@ -37,7 +37,6 @@ export interface EffectiveSetting {
 /** Read-only deployment facts returned alongside `settings`. */
 export interface InstanceSystemInfo {
   storagePath: string;
-  redisConfigured: boolean;
   databaseConfigured: boolean;
 }
 

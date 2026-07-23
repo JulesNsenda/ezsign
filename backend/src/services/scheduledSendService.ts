@@ -1,6 +1,5 @@
-import { Queue, Job } from 'bullmq';
 import { Pool } from 'pg';
-import { createQueue, QueueName } from '@/config/queue';
+import { enqueue, cancelJob, QueueName } from '@/config/queue';
 import logger from '@/services/loggerService';
 
 /**
@@ -14,20 +13,107 @@ export interface ScheduledSendJobData {
 }
 
 /**
+ * Per-job retry override for the scheduled-send queue (decision 9: BullMQ's
+ * `attempts: 3` -> pg-boss `retryLimit: 2`, off-by-one; the original code
+ * also set an explicit 60s initial backoff delay here, overriding the
+ * queue-level default set in `startQueues`).
+ */
+const SCHEDULED_SEND_RETRY_LIMIT = 2;
+const SCHEDULED_SEND_RETRY_DELAY_SECONDS = 60;
+
+/**
  * Scheduled Send Service
- * Manages scheduled document sending with BullMQ delayed jobs
+ * Manages scheduled document sending via pg-boss delayed jobs.
+ *
+ * pg-boss job ids are server-generated UUIDs (decision 8) - there is no
+ * BullMQ-style deterministic `jobId` to reuse. Instead this service:
+ *  - dedupes per document via `singletonKey: 'scheduled-send-' + documentId`
+ *  - persists the pg-boss-returned UUID into `documents.schedule_job_id` so
+ *    a later reschedule/cancel can address the exact job by id
  */
 export class ScheduledSendService {
-  private queue: Queue<ScheduledSendJobData>;
   private pool: Pool;
 
   constructor(pool: Pool) {
     this.pool = pool;
-    this.queue = createQueue(QueueName.SCHEDULED_SEND);
+  }
+
+  private singletonKeyFor(documentId: string): string {
+    return `scheduled-send-${documentId}`;
   }
 
   /**
-   * Schedule a document to be sent at a specific time
+   * Cancel a pg-boss job by id, tolerating the cases where there is nothing
+   * left to cancel: the job no longer exists, or it already reached a
+   * terminal state (completed/failed/cancelled) - pg-boss's own `cancel`
+   * only touches non-terminal rows and silently no-ops otherwise, but a
+   * stale/malformed id (e.g. a leftover BullMQ-era value from before this
+   * migration) can still throw at the DB layer, so this is a real try/catch,
+   * not just documentation.
+   */
+  private async cancelJobTolerant(jobId: string, documentId: string): Promise<void> {
+    try {
+      await cancelJob(QueueName.SCHEDULED_SEND, jobId);
+    } catch (error) {
+      logger.debug('Scheduled send cancelJob no-op (job missing, terminal, or stale id)', {
+        documentId,
+        jobId,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  /**
+   * Enqueue the scheduled-send job, resolving a `singletonKey` conflict once
+   * if the caller's stale job (persisted from a previous schedule call)
+   * hadn't finished being cancelled yet. `enqueue` returns `null` when
+   * pg-boss's singletonKey dedupe suppresses the send (decision 8).
+   */
+  private async enqueueWithConflictRetry(
+    documentId: string,
+    data: ScheduledSendJobData,
+    sendAt: Date,
+    singletonKey: string,
+    staleJobId: string | undefined
+  ): Promise<string> {
+    const options = {
+      startAfter: sendAt,
+      singletonKey,
+      retryLimit: SCHEDULED_SEND_RETRY_LIMIT,
+      retryDelay: SCHEDULED_SEND_RETRY_DELAY_SECONDS,
+    };
+
+    const firstAttempt = await enqueue(QueueName.SCHEDULED_SEND, data, options);
+    if (firstAttempt) {
+      return firstAttempt;
+    }
+
+    logger.warn('Scheduled send singletonKey conflict, retrying after cancel', {
+      documentId,
+      singletonKey,
+      staleJobId,
+    });
+
+    if (staleJobId) {
+      await this.cancelJobTolerant(staleJobId, documentId);
+    }
+
+    const retryAttempt = await enqueue(QueueName.SCHEDULED_SEND, data, options);
+    if (retryAttempt) {
+      return retryAttempt;
+    }
+
+    throw new Error(
+      `Failed to schedule document ${documentId}: a conflicting scheduled-send job still ` +
+        `holds singletonKey "${singletonKey}" after cancel-and-retry`
+    );
+  }
+
+  /**
+   * Schedule a document to be sent at a specific time. Also used to
+   * reschedule an already-scheduled document: any previously persisted job
+   * is cancelled first, then a fresh job is enqueued and its returned UUID
+   * replaces the old one in `documents.schedule_job_id`.
    */
   async scheduleDocumentSend(
     documentId: string,
@@ -35,45 +121,38 @@ export class ScheduledSendService {
     sendAt: Date,
     timezone: string
   ): Promise<{ jobId: string }> {
-    const delay = sendAt.getTime() - Date.now();
-
-    if (delay <= 0) {
+    if (sendAt.getTime() <= Date.now()) {
       throw new Error('Scheduled time must be in the future');
     }
 
-    // Create unique job ID for this document
-    const jobId = `scheduled-send-${documentId}`;
+    // Cancel any existing scheduled job for this document first (reschedule
+    // path). Tolerant of the job already being gone.
+    const existing = await this.pool.query(
+      'SELECT schedule_job_id FROM documents WHERE id = $1',
+      [documentId]
+    );
+    const staleJobId: string | undefined = existing.rows[0]?.schedule_job_id ?? undefined;
 
-    // Remove any existing scheduled job for this document
-    const existingJob = await Job.fromId(this.queue, jobId);
-    if (existingJob) {
-      await existingJob.remove();
-      logger.info('Removed existing scheduled job', { documentId, jobId });
+    if (staleJobId) {
+      await this.cancelJobTolerant(staleJobId, documentId);
+      logger.info('Cancelled existing scheduled job before reschedule', {
+        documentId,
+        staleJobId,
+      });
     }
 
-    // Create delayed job
-    const job = await this.queue.add(
-      'send-document',
-      {
-        documentId,
-        scheduledAt: sendAt.toISOString(),
-        timezone,
-        userId,
-      },
-      {
-        delay,
-        jobId,
-        removeOnComplete: true,
-        removeOnFail: false,
-        attempts: 3,
-        backoff: {
-          type: 'exponential',
-          delay: 60000, // 1 minute initial delay on failure
-        },
-      }
-    );
+    const singletonKey = this.singletonKeyFor(documentId);
+    const data: ScheduledSendJobData = {
+      documentId,
+      scheduledAt: sendAt.toISOString(),
+      timezone,
+      userId,
+    };
 
-    // Update document status in database
+    const jobId = await this.enqueueWithConflictRetry(documentId, data, sendAt, singletonKey, staleJobId);
+
+    // Persist the pg-boss-returned UUID (decision 8: this replaces the old
+    // deterministic BullMQ jobId as the sole way to address this job later).
     await this.pool.query(
       `UPDATE documents
        SET status = 'scheduled',
@@ -82,18 +161,17 @@ export class ScheduledSendService {
            schedule_job_id = $3,
            updated_at = NOW()
        WHERE id = $4`,
-      [sendAt, timezone, job.id, documentId]
+      [sendAt, timezone, jobId, documentId]
     );
 
     logger.info('Document scheduled for sending', {
       documentId,
-      jobId: job.id,
+      jobId,
       scheduledAt: sendAt.toISOString(),
       timezone,
-      delayMs: delay,
     });
 
-    return { jobId: job.id! };
+    return { jobId };
   }
 
   /**
@@ -109,12 +187,8 @@ export class ScheduledSendService {
     const jobId = result.rows[0]?.schedule_job_id;
 
     if (jobId) {
-      // Remove the job from queue
-      const job = await Job.fromId(this.queue, jobId);
-      if (job) {
-        await job.remove();
-        logger.info('Scheduled job removed', { documentId, jobId });
-      }
+      await this.cancelJobTolerant(jobId, documentId);
+      logger.info('Scheduled job cancelled', { documentId, jobId });
     }
 
     // Update document status back to draft
@@ -174,20 +248,6 @@ export class ScheduledSendService {
        WHERE id = $1`,
       [documentId]
     );
-  }
-
-  /**
-   * Get the queue instance (for worker use)
-   */
-  getQueue(): Queue<ScheduledSendJobData> {
-    return this.queue;
-  }
-
-  /**
-   * Close the queue connection
-   */
-  async close(): Promise<void> {
-    await this.queue.close();
   }
 }
 

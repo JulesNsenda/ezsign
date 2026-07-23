@@ -49,9 +49,6 @@ EMAIL_SMTP_SECURE=true
 EMAIL_SMTP_USER=resend
 EMAIL_SMTP_PASS=re_xxxxxxxxxxxx
 EMAIL_FROM_ADDRESS=noreply@yourdomain.com
-
-# Optional — Redis password
-REDIS_PASSWORD=<optional-redis-password>
 ```
 
 ### 3. Configure Domain

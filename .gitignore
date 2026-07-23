@@ -81,4 +81,4 @@ CLAUDE.md
 .claude*
 
 # Planning and workflow files (not part of app)
-.planning/
+.planning/frontend/playwright-report/

@@ -1,6 +1,5 @@
-import { Job } from 'bullmq';
 import { Pool } from 'pg';
-import { createWorker, QueueName, shouldMoveToDeadLetterQueue, moveToDeadLetterQueue } from '@/config/queue';
+import { registerWorker, QueueName, NormalizedJob } from '@/config/queue';
 import { WebhookDeliveryService } from '@/services/webhookDeliveryService';
 import logger from '@/services/loggerService';
 
@@ -12,120 +11,36 @@ export interface WebhookJobData {
 }
 
 /**
- * Webhook Worker
- * Processes webhook delivery jobs from the queue
+ * Create the webhook worker.
+ *
+ * Registers a pg-boss handler for the WEBHOOK_DELIVERY queue. Final-failure
+ * Dead Letter Queue writes are handled centrally by `registerWorker` in
+ * config/queue.ts (see its CONTRACT comment) - this handler must not
+ * duplicate that logic, it only needs to process the job and rethrow on
+ * failure so pg-boss can retry/fail it.
+ *
+ * NOTE: the old BullMQ limiter (100 req/s cap on this queue) has no pg-boss
+ * analog and is deliberately dropped (plan decision 11); `localConcurrency`
+ * below is the coarse replacement ceiling.
  */
-export class WebhookWorker {
-  private worker;
-  private webhookDeliveryService: WebhookDeliveryService;
-  private pool: Pool;
+export const createWebhookWorker = async (pool: Pool): Promise<void> => {
+  const webhookDeliveryService = new WebhookDeliveryService(pool);
 
-  constructor(pool: Pool) {
-    this.pool = pool;
-    this.webhookDeliveryService = new WebhookDeliveryService(pool);
+  await registerWorker(
+    QueueName.WEBHOOK_DELIVERY,
+    async (job: NormalizedJob): Promise<void> => {
+      const { eventId } = job.data as WebhookJobData;
 
-    this.worker = createWorker<WebhookJobData>(
-      QueueName.WEBHOOK_DELIVERY,
-      this.processJob.bind(this),
-      {
-        concurrency: 10, // Process 10 webhook deliveries concurrently
-        limiter: {
-          max: 100, // Max 100 requests per second
-          duration: 1000,
-        },
+      logger.debug('Processing webhook delivery job', { jobId: job.id, eventId });
+
+      try {
+        await webhookDeliveryService.processWebhookEvent(eventId);
+        logger.debug('Webhook delivery job completed', { jobId: job.id });
+      } catch (error) {
+        logger.error('Webhook delivery job failed', { jobId: job.id, error: (error as Error).message });
+        throw error;
       }
-    );
-
-    this.setupEventListeners();
-  }
-
-  /**
-   * Process webhook delivery job
-   */
-  private async processJob(job: Job<WebhookJobData>): Promise<void> {
-    logger.debug('Processing webhook delivery job', { jobId: job.id, eventId: job.data.eventId });
-
-    try {
-      await job.updateProgress(10);
-
-      // Process the webhook event
-      await this.webhookDeliveryService.processWebhookEvent(job.data.eventId);
-
-      await job.updateProgress(100);
-      logger.debug('Webhook delivery job completed', { jobId: job.id });
-    } catch (error) {
-      logger.error('Webhook delivery job failed', { jobId: job.id, error: (error as Error).message });
-      throw error;
-    }
-  }
-
-  /**
-   * Set up event listeners for the worker
-   */
-  private setupEventListeners(): void {
-    this.worker.on('completed', (job: Job<WebhookJobData>) => {
-      logger.debug('Webhook delivery job completed successfully', { jobId: job.id });
-    });
-
-    this.worker.on('failed', async (job: Job<WebhookJobData> | undefined, error: Error) => {
-      if (job) {
-        logger.error('Webhook delivery job failed', {
-          jobId: job.id,
-          attemptsMade: job.attemptsMade,
-          error: error.message,
-        });
-
-        // Move to Dead Letter Queue after all retries exhausted
-        if (shouldMoveToDeadLetterQueue(job)) {
-          try {
-            await moveToDeadLetterQueue(this.pool, job, error, QueueName.WEBHOOK_DELIVERY);
-            logger.info('Webhook job moved to Dead Letter Queue', { jobId: job.id });
-          } catch (dlqError) {
-            logger.error('Failed to move webhook job to DLQ', {
-              jobId: job.id,
-              error: (dlqError as Error).message,
-            });
-          }
-        }
-      } else {
-        logger.error('Webhook delivery job failed (job undefined)', { error: error.message });
-      }
-    });
-
-    this.worker.on('error', (error: Error) => {
-      logger.error('Webhook worker error', { error: error.message, stack: error.stack });
-    });
-
-    this.worker.on('stalled', (jobId: string) => {
-      logger.warn('Webhook job stalled (timeout exceeded)', {
-        jobId,
-        queueName: QueueName.WEBHOOK_DELIVERY,
-      });
-    });
-
-    this.worker.on('active', (job: Job<WebhookJobData>) => {
-      logger.debug('Webhook delivery job started', { jobId: job.id, eventId: job.data.eventId });
-    });
-
-    this.worker.on('progress', (job: Job<WebhookJobData>, progress) => {
-      logger.debug('Webhook delivery job progress', { jobId: job.id, progress });
-    });
-  }
-
-  /**
-   * Close worker connection
-   */
-  async close(): Promise<void> {
-    logger.info('Closing webhook worker...');
-    await this.worker.close();
-    logger.info('Webhook worker closed');
-  }
-}
-
-/**
- * Create webhook worker instance
- * Must be called with pool instance
- */
-export const createWebhookWorker = (pool: Pool): WebhookWorker => {
-  return new WebhookWorker(pool);
+    },
+    { localConcurrency: 10 }, // Process 10 webhook deliveries concurrently
+  );
 };

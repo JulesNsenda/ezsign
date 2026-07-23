@@ -26,6 +26,23 @@ export interface AuthenticatedRequest extends Request {
 }
 
 /**
+ * Gate 2 fix 4: the only error messages safe to return to the client
+ * verbatim from `authenticate`'s outer catch below. tokenService.ts's
+ * verifyAccessToken() already normalizes jwt.TokenExpiredError /
+ * jwt.JsonWebTokenError into plain `Error`s with exactly these two
+ * messages (tokenService.ts:97-104) - that normalization is how this
+ * codebase already distinguishes "expected JWT problem" from "anything
+ * else" by the time the error reaches here. Anything not in this set
+ * (e.g. TokenBlacklistService's "used before init(pool) was called", or
+ * any other unexpected internal error) must NOT be echoed back to the
+ * client - see the generic fallback message below.
+ */
+const EXPECTED_TOKEN_ERROR_MESSAGES = new Set<string>([
+  'Access token has expired',
+  'Invalid access token',
+]);
+
+/**
  * Middleware to authenticate JWT tokens
  * Extracts token from Authorization header or query parameter and validates it
  */
@@ -58,8 +75,16 @@ export const authenticate = async (
     // Verify and decode the token
     const decoded = tokenService.verifyAccessToken(token);
 
-    // Check if token is blacklisted (by jti or user-wide revocation)
-    // Only check if the token has a jti (backward compatibility with old tokens)
+    // Check if token is blacklisted (by jti or user-wide revocation).
+    // Only check if the token has a jti (backward compatibility with old tokens).
+    //
+    // Fail-closed: tokenBlacklistService's read methods (isBlacklisted,
+    // isUserSessionRevoked) return true on a query error rather than
+    // throwing, so a Postgres blip surfaces here as isRevoked/isSessionRevoked
+    // === true -> 401 below. If the service was never initialized, the call
+    // throws instead, which is caught by this function's outer try/catch and
+    // also yields 401 (not 500/503) -- consistent handling for both failure
+    // shapes, since in both cases we cannot prove the token is still valid.
     if (decoded.jti) {
       const isRevoked = await tokenBlacklistService.isBlacklisted(decoded.jti);
       if (isRevoked) {
@@ -112,16 +137,28 @@ export const authenticate = async (
 
     next();
   } catch (error) {
-    logger.debug('Token verification failed', { error: (error as Error).message, correlationId: req.correlationId });
-    if (error instanceof Error) {
+    const message = error instanceof Error ? error.message : undefined;
+
+    // Gate 2 fix 4: only the two expected JWT-verification messages are
+    // safe to return verbatim (see EXPECTED_TOKEN_ERROR_MESSAGES above).
+    // Anything else - e.g. a TokenBlacklistService wiring bug, or any other
+    // unexpected throw reaching this outer catch - must not leak its
+    // internal details to the client; log it server-side and respond with a
+    // generic message instead.
+    if (message && EXPECTED_TOKEN_ERROR_MESSAGES.has(message)) {
+      logger.debug('Token verification failed', { error: message, correlationId: req.correlationId });
       res.status(401).json({
         error: 'Unauthorized',
-        message: error.message,
+        message,
       });
     } else {
+      logger.error('Authentication failed with an unexpected error', {
+        error: message ?? 'unknown error',
+        correlationId: req.correlationId,
+      });
       res.status(401).json({
         error: 'Unauthorized',
-        message: 'Invalid authentication token',
+        message: 'Authentication failed',
       });
     }
   }

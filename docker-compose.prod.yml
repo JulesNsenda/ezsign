@@ -14,10 +14,6 @@ services:
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
       POSTGRES_DB: ${DATABASE_NAME}
 
-  redis:
-    ports: !reset []  # Don't expose Redis publicly
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
-
   backend:
     ports: !reset []  # Only accessible via Caddy reverse proxy
     environment:
@@ -28,9 +24,6 @@ services:
       DATABASE_NAME: ${DATABASE_NAME}
       DATABASE_USER: ${DATABASE_USER}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       JWT_SECRET: ${JWT_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       API_KEY_SECRET: ${API_KEY_SECRET}

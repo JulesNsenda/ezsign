@@ -12,7 +12,6 @@ import logger from '@/services/loggerService';
 function getSystemInfo() {
   return {
     storagePath: process.env.FILE_STORAGE_PATH || './storage',
-    redisConfigured: !!process.env.REDIS_URL,
     databaseConfigured: true,
   };
 }

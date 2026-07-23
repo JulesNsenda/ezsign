@@ -1,9 +1,6 @@
 import rateLimit, { Options, RateLimitRequestHandler } from 'express-rate-limit';
-import { RedisStore } from 'rate-limit-redis';
-import { getRedisConnection } from '@/config/queue';
 import logger from '@/services/loggerService';
 import { Request, Response, NextFunction } from 'express';
-import Redis from 'ioredis';
 
 /**
  * Rate Limiting Configuration
@@ -51,60 +48,6 @@ export const RATE_LIMIT_TIERS = {
   anonymous: { windowMs: getConfig().windowMs, max: getConfig().anonymous },
   authenticated: { windowMs: getConfig().windowMs, max: getConfig().authenticated },
   apiKey: { windowMs: getConfig().windowMs, max: getConfig().apiKey },
-};
-
-/**
- * Lazy-initialized Redis connection for rate limiting
- */
-let rateLimitRedis: Redis | null = null;
-let redisStore: RedisStore | null = null;
-let redisAvailable = true;
-
-/**
- * Get or create Redis store for rate limiting
- * Falls back to in-memory store if Redis is unavailable
- */
-const getRedisStore = (): RedisStore | undefined => {
-  if (!redisAvailable) {
-    return undefined;
-  }
-
-  if (redisStore) {
-    return redisStore;
-  }
-
-  try {
-    rateLimitRedis = getRedisConnection();
-
-    // Test connection synchronously isn't possible, so we set up error handling
-    rateLimitRedis.on('error', (err) => {
-      logger.warn('Redis rate limit store error, falling back to in-memory', {
-        error: err.message,
-      });
-      redisAvailable = false;
-      redisStore = null;
-    });
-
-    rateLimitRedis.on('connect', () => {
-      logger.info('Redis rate limit store connected');
-      redisAvailable = true;
-    });
-
-    redisStore = new RedisStore({
-      // Use sendCommand for ioredis compatibility
-      // @ts-expect-error - ioredis call method is compatible but types differ slightly
-      sendCommand: (...args: string[]) => rateLimitRedis!.call(...args),
-      prefix: 'ratelimit:',
-    });
-
-    return redisStore;
-  } catch (error) {
-    logger.warn('Failed to create Redis rate limit store, using in-memory', {
-      error: (error as Error).message,
-    });
-    redisAvailable = false;
-    return undefined;
-  }
 };
 
 /**
@@ -181,7 +124,7 @@ const shouldSkipRateLimit = (req: Request): boolean => {
 };
 
 /**
- * Create a tiered rate limiter that uses Redis store and adjusts limits based on auth type
+ * Create a tiered rate limiter (in-memory store) that adjusts limits based on auth type
  */
 export const createTieredRateLimiter = (): RateLimitRequestHandler => {
   // If rate limiting is disabled, return a pass-through middleware
@@ -190,12 +133,7 @@ export const createTieredRateLimiter = (): RateLimitRequestHandler => {
     return ((_req: Request, _res: Response, next: NextFunction) => next()) as unknown as RateLimitRequestHandler;
   }
 
-  const store = getRedisStore();
   const config = getConfig();
-
-  if (!store) {
-    logger.warn('Rate limiting using in-memory store (not distributed)');
-  }
 
   logger.info('Rate limiting enabled', {
     windowMs: config.windowMs,
@@ -208,7 +146,6 @@ export const createTieredRateLimiter = (): RateLimitRequestHandler => {
     windowMs: config.windowMs,
     max: getMaxRequests,
     keyGenerator: getKeyGenerator,
-    store: store,
     message: {
       error: 'Too Many Requests',
       message: 'Rate limit exceeded. Please try again later.',
@@ -257,7 +194,6 @@ export const authLimiter = (() => {
     legacyHeaders: false,
     skipSuccessfulRequests: true,
     skip: (req) => req.method === 'OPTIONS', // Skip CORS preflight
-    store: getRedisStore(),
     keyGenerator: (req) => `auth:${req.ip || req.socket.remoteAddress || 'unknown'}`,
   });
 })();
@@ -283,7 +219,6 @@ export const uploadLimiter = (() => {
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => req.method === 'OPTIONS',
-    store: getRedisStore(),
     keyGenerator: (req) => {
       const user = (req as any).user;
       if (user?.userId) {
@@ -313,7 +248,6 @@ export const signingLimiter = (() => {
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => req.method === 'OPTIONS',
-    store: getRedisStore(),
     keyGenerator: (req) => `signing:${req.ip || req.socket.remoteAddress || 'unknown'}`,
   });
 })();
@@ -337,7 +271,6 @@ export const passwordChangeLimiter = (() => {
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => req.method === 'OPTIONS',
-    store: getRedisStore(),
     keyGenerator: (req) => {
       const user = (req as any).user;
       if (user?.userId) {
@@ -368,7 +301,6 @@ export const twoFactorLimiter = (() => {
     legacyHeaders: false,
     skipSuccessfulRequests: true,
     skip: (req) => req.method === 'OPTIONS',
-    store: getRedisStore(),
     keyGenerator: (req) => `2fa:${req.ip || req.socket.remoteAddress || 'unknown'}`,
   });
 })();
@@ -384,20 +316,7 @@ export const createRateLimiter = (options: Partial<Options>) => {
   return rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
-    store: getRedisStore(),
     skip: (req) => req.method === 'OPTIONS',
     ...options,
   });
-};
-
-/**
- * Close the rate limit Redis connection (for graceful shutdown)
- */
-export const closeRateLimitRedis = async (): Promise<void> => {
-  if (rateLimitRedis) {
-    await rateLimitRedis.quit();
-    rateLimitRedis = null;
-    redisStore = null;
-    logger.info('Rate limit Redis connection closed');
-  }
 };

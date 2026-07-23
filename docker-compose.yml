@@ -20,24 +20,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis Cache & Queue
-  redis:
-    image: redis:7-alpine
-    container_name: ezsign-redis
-    restart: unless-stopped
-    ports:
-      - '6379:6379'
-    command: redis-server --appendonly yes
-    volumes:
-      - redis_data:/data
-    networks:
-      - ezsign-network
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Backend API
   backend:
     build:
@@ -55,16 +37,12 @@ services:
       DATABASE_NAME: ${DATABASE_NAME:-ezsign}
       DATABASE_USER: ${DATABASE_USER:-ezsign}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-ezsign_password}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
     volumes:
       # Use named volumes for Windows compatibility
       - backend_storage:/app/storage
       - backend_logs:/app/logs
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     networks:
       - ezsign-network
@@ -97,8 +75,6 @@ networks:
 
 volumes:
   postgres_data:
-    driver: local
-  redis_data:
     driver: local
   backend_storage:
     driver: local

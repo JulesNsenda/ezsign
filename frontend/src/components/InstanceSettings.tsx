@@ -372,18 +372,10 @@ export const InstanceSettings: React.FC = () => {
 
       {/* System Section (read-only) */}
       <Card title="System" subtitle="Read-only deployment information">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <p className="text-sm font-medium text-base-content/70">Storage Path</p>
             <p className="text-sm mt-1 font-mono break-all">{data.system.storagePath}</p>
-          </div>
-          <div>
-            <p className="text-sm font-medium text-base-content/70">Redis</p>
-            <p
-              className={`text-sm mt-1 font-medium ${data.system.redisConfigured ? 'text-success' : 'text-warning'}`}
-            >
-              {data.system.redisConfigured ? 'Configured' : 'Not configured'}
-            </p>
           </div>
           <div>
             <p className="text-sm font-medium text-base-content/70">Database</p>

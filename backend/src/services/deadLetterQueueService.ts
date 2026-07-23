@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
-import { Job } from 'bullmq';
-import { QueueName, createQueue } from '@/config/queue';
+import { QueueName, enqueue } from '@/config/queue';
+import type { NormalizedJob } from '@/config/queue';
 import logger from '@/services/loggerService';
 
 /**
@@ -122,28 +122,27 @@ export class DeadLetterQueueService {
   }
 
   /**
-   * Add a failed BullMQ job to the DLQ
+   * Add a finally-failed pg-boss job (normalized shape) to the DLQ.
+   *
+   * pg-boss job ids are always UUID strings (never falsy), so the old
+   * `job.id || 'unknown'` BullMQ fallback is gone. `NormalizedJob` carries no
+   * timestamp/processedOn/finishedOn/opts equivalent, so `metadata` is left
+   * unset here (see config/queue.ts's CONTRACT comment on this method).
    */
   async addFailedJob(
-    job: Job,
+    job: NormalizedJob,
     error: Error,
     queueName: string
   ): Promise<DLQEntry> {
     return this.addToDLQ({
       queueName,
-      jobId: job.id || 'unknown',
+      jobId: job.id,
       jobName: job.name,
       jobData: job.data as Record<string, unknown>,
       errorMessage: error.message,
       errorStack: error.stack,
-      attemptsMade: job.attemptsMade,
-      maxAttempts: job.opts?.attempts || 3,
-      metadata: {
-        timestamp: job.timestamp,
-        processedOn: job.processedOn,
-        finishedOn: job.finishedOn,
-        opts: job.opts,
-      },
+      attemptsMade: job.retryCount,
+      maxAttempts: job.retryLimit,
     });
   }
 
@@ -272,21 +271,34 @@ export class DeadLetterQueueService {
       return { success: false, error: `Cannot retry job with status: ${entry.status}` };
     }
 
+    // Gate 2 fix 2: time-scheduled jobs cannot go through the normal
+    // re-enqueue path. `enqueue()` fires immediately (no `startAfter`), so a
+    // DLQ retry would send the reminder/document right now instead of at
+    // its scheduled time, would bypass the `singletonKey` dedup those
+    // queues rely on to prevent duplicate sends, and would orphan the
+    // now-stale job id persisted on the document/reminder row (which still
+    // points at the original, dead-lettered job).
+    if (
+      entry.queue_name === QueueName.SCHEDULED_SEND ||
+      entry.queue_name === QueueName.DEADLINE_REMINDERS
+    ) {
+      return {
+        success: false,
+        error:
+          'Time-scheduled jobs cannot be retried from the dead-letter queue - reschedule from the document instead',
+      };
+    }
+
     try {
       // Update status to retrying
       await this.updateStatus(id, 'retrying');
 
-      // Get the appropriate queue
+      // Re-enqueue against the same queue. New rows store `max_attempts` as a
+      // pg-boss retryLimit already, so it carries over as-is; only rows written
+      // before the pg-boss migration held BullMQ `attempts` (total tries).
       const queueName = entry.queue_name as QueueName;
-      const queue = createQueue(queueName);
-
-      // Add job back to the queue
-      const job = await queue.add(entry.job_name || 'retried-job', entry.job_data, {
-        attempts: entry.max_attempts,
-        backoff: {
-          type: 'exponential',
-          delay: 1000,
-        },
+      const newJobId = await enqueue(queueName, entry.job_data, {
+        retryLimit: Math.max(0, entry.max_attempts),
       });
 
       // Update DLQ entry
@@ -302,14 +314,11 @@ export class DeadLetterQueueService {
 
       logger.info('Job retried from DLQ', {
         dlqId: id,
-        newJobId: job.id,
+        newJobId,
         queueName: entry.queue_name,
       });
 
-      // Close the queue connection
-      await queue.close();
-
-      return { success: true, newJobId: job.id };
+      return { success: true, newJobId: newJobId ?? undefined };
     } catch (error) {
       // Revert status on failure
       await this.updateStatus(id, 'failed');

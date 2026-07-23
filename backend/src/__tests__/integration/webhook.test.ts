@@ -1,14 +1,22 @@
 import { Pool } from 'pg';
 import { WebhookService } from '@/services/webhookService';
 import { Webhook, WebhookEvent } from '@/models/Webhook';
+import { enqueue, QueueName } from '@/config/queue';
 
-// Mock BullMQ
-jest.mock('bullmq', () => ({
-  Queue: jest.fn().mockImplementation(() => ({
-    add: jest.fn().mockResolvedValue({ id: 'job-123' }),
-    close: jest.fn().mockResolvedValue(undefined),
-  })),
+// pg-boss ships ESM-only, so requireActual-ing '@/config/queue' below would
+// otherwise crash ts-jest trying to parse it - mock the package first (same
+// fix as src/config/queue.test.ts) so requireActual only pulls in the real
+// QueueName enum and friends, never pg-boss's own module.
+jest.mock('pg-boss', () => ({ PgBoss: jest.fn() }));
+
+// Mock the pg-boss queue hub (webhookService now calls `enqueue` directly
+// instead of holding its own BullMQ Queue instance)
+jest.mock('@/config/queue', () => ({
+  ...jest.requireActual('@/config/queue'),
+  enqueue: jest.fn().mockResolvedValue('job-123'),
 }));
+
+const mockedEnqueue = enqueue as jest.Mock;
 
 /**
  * Integration tests for webhook delivery
@@ -33,6 +41,10 @@ describe('Webhook Integration Tests', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // jest.config.js has resetMocks: true, which wipes mock implementations
+    // (including the one set at jest.fn(...) construction time in the
+    // jest.mock factory above) before every test - re-establish it here.
+    mockedEnqueue.mockResolvedValue('job-123');
   });
 
   describe('Webhook Configuration', () => {
@@ -187,8 +199,12 @@ describe('Webhook Integration Tests', () => {
 
       await webhookService.trigger(testUserId, 'document.completed', eventData);
 
-      // Verify webhook was queued (via mocked BullMQ)
       expect(pool.query).toHaveBeenCalled();
+
+      // Verify the event was queued via `enqueue` against the pg-boss hub,
+      // with the eventId returned by the webhook_events INSERT
+      expect(mockedEnqueue).toHaveBeenCalledTimes(1);
+      expect(mockedEnqueue).toHaveBeenCalledWith(QueueName.WEBHOOK_DELIVERY, { eventId: 'event-123' });
     });
 
     it('should not trigger for inactive webhooks', async () => {
@@ -205,6 +221,7 @@ describe('Webhook Integration Tests', () => {
 
       // Should only have the initial query, no event creation
       expect(pool.query).toHaveBeenCalledTimes(1);
+      expect(mockedEnqueue).not.toHaveBeenCalled();
     });
   });
 

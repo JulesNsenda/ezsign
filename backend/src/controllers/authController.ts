@@ -8,7 +8,45 @@ import { tokenService } from '@/services/tokenService';
 import { tokenBlacklistService } from '@/services/tokenBlacklistService';
 import logger from '@/services/loggerService';
 
-// Temporary token storage for 2FA login flow (in production, use Redis)
+/**
+ * Wait out the remainder of the current wall-clock second, plus a small
+ * scheduling-jitter buffer.
+ *
+ * Why this exists: tokenBlacklistService.isUserSessionRevoked() compares
+ * `iat <= floor(revoked_at)` -- inclusive, at whole-second granularity, by
+ * design (see the tokenBlacklistService revocation-tables migration /
+ * plan decision on closing the same-second revocation race). JWT `iat` is
+ * also whole-second. So a token minted immediately after
+ * blacklistAllUserTokens() writes `revoked_at = now()` will, in the
+ * overwhelming majority of calls, land on the *same* floored second as
+ * that revocation and be treated as revoked on arrival -- i.e. changePassword
+ * would silently hand back access/refresh tokens that fail on their very
+ * first use. Waiting past the current second guarantees the new tokens'
+ * `iat` is strictly later than the revocation's floored second, without
+ * loosening the revocation check itself (which still needs to catch other,
+ * genuinely stale sessions issued in that same second).
+ *
+ * The +50ms is a buffer for event-loop/setTimeout scheduling jitter between
+ * this wait and the subsequent tokenService call, NOT for clock skew:
+ * `revoked_at` is stamped by Postgres's clock (`now()`) and `iat` by the
+ * app process's clock (jsonwebtoken's own `Date.now()`), and this buffer is
+ * far too small to cover any real drift between the two. In practice this
+ * is safe because same-host docker-compose and cloud-managed Postgres
+ * deployments keep both clocks NTP-synced. If app/DB clocks were to drift
+ * by more than ~50ms in a given deployment, the symptom would be
+ * newly-issued tokens intermittently born-revoked right after
+ * change-password (not a security gap -- the fail-closed revocation check
+ * would just be more aggressive than intended).
+ */
+export const waitPastCurrentSecond = async (): Promise<void> => {
+  const msRemaining = 1000 - (Date.now() % 1000) + 50; // +50ms buffer for scheduling jitter, not clock skew
+  await new Promise((resolve) => setTimeout(resolve, msRemaining));
+};
+
+// Temporary token storage for 2FA login flow. Deliberately in-process (no
+// Redis/external store): EzSign is Postgres-only and single-instance by
+// design — see docs/plans/2026-07-22-remove-redis-postgres-only-r2.md
+// decision 12. Scaling to multiple instances would break this.
 const twoFactorPendingLogins = new Map<string, { userId: string; email: string; role: string; expiresAt: number }>();
 
 // Clean up expired pending logins periodically
@@ -656,8 +694,13 @@ export class AuthController {
       }
 
       // Check if the refresh token has been revoked (blacklisted or user session revoked).
-      // Best-effort: if Redis is unavailable, log a warning and continue rather than
-      // blocking token refresh (availability over strictness).
+      // Fail closed: tokenBlacklistService's read methods already return
+      // true (revoked) rather than throwing on a query error, which the
+      // isRevoked/isSessionRevoked checks below turn into a 401. This
+      // try/catch is therefore only reachable for an unexpected throw (e.g.
+      // the service was never initialized) -- reject the refresh in that
+      // case too, rather than the old behavior of logging and minting a new
+      // access token anyway.
       try {
         if (decoded.jti) {
           const isRevoked = await tokenBlacklistService.isBlacklisted(decoded.jti);
@@ -682,10 +725,15 @@ export class AuthController {
           }
         }
       } catch (error) {
-        logger.warn('Refresh token revocation check failed, continuing', {
+        logger.error('Refresh token revocation check failed unexpectedly', {
           error: (error as Error).message,
           correlationId: req.correlationId,
         });
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'Unable to verify token revocation status',
+        });
+        return;
       }
 
       // Verify user still exists
@@ -841,14 +889,26 @@ export class AuthController {
 
       // Revoke all existing tokens for security
       // This forces all other sessions to log in again with the new password
-      // Best-effort: the password has already changed at this point, so a Redis
-      // outage must not turn into a 500 for the caller.
+      // Best-effort: the password has already changed at this point, so a
+      // blacklist-store outage must not turn into a 500 for the caller.
+      // tokenBlacklistService.blacklistAllUserTokens() already swallows its
+      // own query errors internally (write methods are best-effort by
+      // design); this try/catch remains as a guard for an unexpected throw
+      // (e.g. the service was never initialized).
       try {
         await tokenBlacklistService.blacklistAllUserTokens(userId);
         logger.info('All user tokens revoked after password change', {
           userId,
           correlationId: req.correlationId,
         });
+
+        // See waitPastCurrentSecond()'s doc comment: without this, the
+        // tokens minted below would almost always be born-revoked by the
+        // blacklistAllUserTokens() call above. Only needed on this branch --
+        // if blacklistAllUserTokens() threw (the catch below), no
+        // revocation was written, so there's nothing for the new tokens to
+        // collide with and the wait would be pure wasted latency.
+        await waitPastCurrentSecond();
       } catch (error) {
         logger.warn('Failed to revoke existing tokens after password change, continuing', {
           userId,

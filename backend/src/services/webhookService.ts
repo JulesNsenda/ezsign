@@ -2,17 +2,15 @@ import { Pool } from 'pg';
 import crypto from 'crypto';
 import axios from 'axios';
 import { Webhook, WebhookData, WebhookEvent, WebhookEventData, CreateWebhookData, UpdateWebhookData } from '@/models/Webhook';
-import { createQueue, QueueName } from '@/config/queue';
+import { enqueue, QueueName } from '@/config/queue';
 import { WebhookJobData } from '@/workers/webhookWorker';
 import logger from '@/services/loggerService';
 
 export class WebhookService {
   private pool: Pool;
-  private queue;
 
   constructor(pool: Pool) {
     this.pool = pool;
-    this.queue = createQueue(QueueName.WEBHOOK_DELIVERY);
   }
 
   /**
@@ -147,8 +145,8 @@ export class WebhookService {
 
         const eventId = result.rows[0].id;
 
-        // Queue for background delivery
-        await this.queue.add('deliver-webhook', {
+        // Queue for background delivery (queue-level retry defaults apply)
+        await enqueue(QueueName.WEBHOOK_DELIVERY, {
           eventId,
         } as WebhookJobData);
 

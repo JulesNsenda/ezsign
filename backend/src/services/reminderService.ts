@@ -5,8 +5,7 @@
  */
 
 import { Pool } from 'pg';
-import { Queue } from 'bullmq';
-import { createQueue, QueueName } from '@/config/queue';
+import { enqueue, cancelJob, QueueName } from '@/config/queue';
 import logger from '@/services/loggerService';
 
 export type ReminderType = '1_day' | '3_day' | '7_day' | 'custom' | 'owner';
@@ -30,12 +29,30 @@ export interface ReminderJobData {
 }
 
 /**
+ * Cancel a pg-boss job by id, tolerating the cases where there is nothing
+ * left to cancel: the job no longer exists, or it already reached a
+ * terminal state (completed/failed/cancelled). pg-boss's own `cancel` only
+ * touches non-terminal rows and silently no-ops in that case, but a
+ * stale/malformed id (e.g. a leftover BullMQ-era value from before this
+ * migration) can still throw at the DB layer - swallow that too, since the
+ * caller's job here is deleting the reminder record either way.
+ */
+const cancelReminderJobTolerant = async (jobId: string, reminderId: string): Promise<void> => {
+  try {
+    await cancelJob(QueueName.DEADLINE_REMINDERS, jobId);
+  } catch (error) {
+    logger.debug('Reminder cancelJob no-op (job missing, terminal, or stale id)', {
+      reminderId,
+      jobId,
+      error: (error as Error).message,
+    });
+  }
+};
+
+/**
  * Create reminder service with database connection
  */
 export const createReminderService = (pool: Pool) => {
-  // Create the reminder queue
-  const reminderQueue: Queue<ReminderJobData> = createQueue(QueueName.DEADLINE_REMINDERS);
-
   /**
    * Schedule reminders for a document based on its expiration and reminder settings
    */
@@ -156,31 +173,38 @@ export const createReminderService = (pool: Pool) => {
 
     const reminder = mapRowToReminder(insertResult.rows[0]);
 
-    // Calculate delay in milliseconds
-    const delay = scheduledFor.getTime() - Date.now();
+    // Enqueue with the target send time. No singletonKey: the
+    // (document_id, signer_id, reminder_type) unique index above already
+    // guarantees at most one reminder row per signer/interval, so pg-boss
+    // dedupe is not needed here (decision 8 - reminder.id is unique per row).
+    const jobData: ReminderJobData = {
+      documentId,
+      signerId,
+      reminderType,
+      reminderId: reminder.id,
+    };
 
-    // Add job to queue with delay
-    const job = await reminderQueue.add(
-      'send-reminder',
-      {
-        documentId,
-        signerId,
-        reminderType,
-        reminderId: reminder.id,
-      },
-      {
-        delay: Math.max(0, delay),
-        jobId: `reminder-${reminder.id}`,
-      }
-    );
+    const jobId = await enqueue(QueueName.DEADLINE_REMINDERS, jobData, {
+      startAfter: scheduledFor,
+    });
 
-    // Update reminder with job ID
+    if (!jobId) {
+      // Without a singletonKey, enqueue should never suppress the send -
+      // treat a null return as an unexpected failure rather than leaving an
+      // orphaned reminder row with no job to ever fire or cancel.
+      await pool.query('DELETE FROM document_reminders WHERE id = $1', [reminder.id]);
+      throw new Error(`Failed to enqueue reminder ${reminder.id}: enqueue returned no job id`);
+    }
+
+    // Update reminder with the pg-boss-returned job ID (decision 8: this
+    // replaces the old deterministic BullMQ jobId as the sole way to
+    // cancel/track this job later).
     await pool.query(
       'UPDATE document_reminders SET job_id = $1 WHERE id = $2',
-      [job.id, reminder.id]
+      [jobId, reminder.id]
     );
 
-    reminder.jobId = job.id ?? null;
+    reminder.jobId = jobId;
 
     logger.debug('Reminder scheduled', {
       reminderId: reminder.id,
@@ -188,7 +212,7 @@ export const createReminderService = (pool: Pool) => {
       signerId,
       reminderType,
       scheduledFor,
-      jobId: job.id,
+      jobId,
     });
 
     return reminder;
@@ -209,12 +233,10 @@ export const createReminderService = (pool: Pool) => {
 
     for (const row of result.rows) {
       try {
-        // Remove job from queue if it exists
+        // Cancel the pg-boss job if one was persisted (tolerant of
+        // missing/already-terminal jobs - see cancelReminderJobTolerant).
         if (row.job_id) {
-          const job = await reminderQueue.getJob(row.job_id);
-          if (job) {
-            await job.remove();
-          }
+          await cancelReminderJobTolerant(row.job_id, row.id);
         }
 
         // Delete reminder record
@@ -248,10 +270,7 @@ export const createReminderService = (pool: Pool) => {
     for (const row of result.rows) {
       try {
         if (row.job_id) {
-          const job = await reminderQueue.getJob(row.job_id);
-          if (job) {
-            await job.remove();
-          }
+          await cancelReminderJobTolerant(row.job_id, row.id);
         }
         await pool.query('DELETE FROM document_reminders WHERE id = $1', [row.id]);
         cancelledCount++;
@@ -361,13 +380,6 @@ export const createReminderService = (pool: Pool) => {
     }));
   };
 
-  /**
-   * Get the reminder queue for external use (e.g., worker)
-   */
-  const getQueue = (): Queue<ReminderJobData> => {
-    return reminderQueue;
-  };
-
   return {
     scheduleRemindersForDocument,
     scheduleReminder,
@@ -378,7 +390,6 @@ export const createReminderService = (pool: Pool) => {
     getSentReminders,
     getReminderById,
     getExpiringSoonDocuments,
-    getQueue,
   };
 };
 

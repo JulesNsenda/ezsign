@@ -10,11 +10,6 @@ services:
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ezsign_dev']
 
-  # Redis - Development Override
-  redis:
-    ports:
-      - '6379:6379'
-
   # Backend API - Development Override
   backend:
     build:
@@ -31,9 +26,6 @@ services:
       DATABASE_NAME: ezsign_dev
       DATABASE_USER: ezsign_dev
       DATABASE_PASSWORD: dev_password
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_URL: redis://redis:6379
       LOG_LEVEL: debug
       DEBUG: 'true'
       WATCH: 'true'
@@ -114,18 +106,6 @@ services:
     environment:
       ADMINER_DEFAULT_SERVER: postgres
       ADMINER_DESIGN: pepa-linha
-
-  # Redis Commander - Redis Management Tool (Development Only)
-  redis-commander:
-    image: rediscommander/redis-commander:latest
-    container_name: ezsign-redis-commander
-    restart: unless-stopped
-    ports:
-      - '8081:8081'
-    networks:
-      - ezsign-network
-    environment:
-      REDIS_HOSTS: local:redis:6379
 
   # MailHog - Email Testing Tool (Development Only)
   mailhog:
