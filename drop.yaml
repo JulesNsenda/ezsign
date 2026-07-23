@@ -9,9 +9,10 @@
 #   * Redis: no longer needed. The backend is Postgres-only (queues run on
 #     pg-boss, rate limiting is in-memory, the JWT blacklist is a Postgres
 #     table) — a Drop deploy needs only JWT_SECRET + DATABASE_URL as secrets.
-#   * DB migrations: DROP provisions an empty Postgres and injects DATABASE_URL,
-#     but does not run app migrations — run `npm run migrate` against the
-#     provisioned DB (or wire migrations into the backend's startup).
+#   * DB migrations: run automatically at startup — `scripts/start-prod.js`
+#     executes node-pg-migrate against the injected DATABASE_URL before
+#     starting the server, then the app bootstraps the first admin (one-time
+#     password printed to the app logs).
 #   * build/start below require DROP to honor drop.yaml build/start overrides
 #     (a DROP-side fix — the TypeScript backend won't compile/start without it).
 name: ezsign
@@ -22,7 +23,7 @@ services:
     path: backend
     type: nodejs
     build: npm run build            # backend "build": "tsc"  -> dist/
-    start: node dist/server.js      # backend "main"/"start" entrypoint
+    start: node scripts/start-prod.js  # migrations first, then dist/server.js
     database: postgres              # DROP provisions Postgres and injects DATABASE_URL
     route:
       path: /api                    # -> ezsign.<domain>/api
