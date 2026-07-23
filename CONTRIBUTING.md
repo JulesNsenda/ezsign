@@ -44,9 +44,8 @@ By participating in this project, you agree to abide by our Code of Conduct:
 
 ### Prerequisites
 
-- Node.js 18.x or higher
+- Node.js 22.x or higher
 - PostgreSQL 15.x or higher
-- Redis 7.x or higher
 - Docker (optional)
 
 ### Setup Development Environment

@@ -73,7 +73,7 @@ export class PdfController {
 
       // Thumbnail doesn't exist, queue generation
       const filePath = path.join(this.storagePath, document.file_path);
-      const job = await pdfQueueService.addThumbnailJob({
+      const jobId = await pdfQueueService.addThumbnailJob({
         documentId,
         filePath,
         maxWidth: 200,
@@ -82,7 +82,7 @@ export class PdfController {
 
       res.status(202).json({
         message: 'Thumbnail generation queued',
-        jobId: job.id || 'unknown',
+        jobId: jobId || 'unknown',
       });
     } catch (error) {
       next(error);
@@ -116,7 +116,7 @@ export class PdfController {
       }
 
       const filePath = path.join(this.storagePath, document.file_path);
-      const job = await pdfQueueService.addThumbnailJob({
+      const jobId = await pdfQueueService.addThumbnailJob({
         documentId,
         filePath,
         maxWidth: 200,
@@ -125,7 +125,7 @@ export class PdfController {
 
       res.status(202).json({
         message: 'Thumbnail regeneration queued',
-        jobId: job.id || 'unknown',
+        jobId: jobId || 'unknown',
       });
     } catch (error) {
       next(error);
@@ -181,14 +181,14 @@ export class PdfController {
       }
 
       const filePath = path.join(this.storagePath, document.file_path);
-      const job = await pdfQueueService.addOptimizationJob({
+      const jobId = await pdfQueueService.addOptimizationJob({
         documentId,
         filePath,
       });
 
       res.status(202).json({
         message: 'PDF optimization queued',
-        jobId: job.id || 'unknown',
+        jobId: jobId || 'unknown',
         originalSize: document.file_size,
       });
     } catch (error) {
@@ -246,7 +246,7 @@ export class PdfController {
 
       // Queue watermark generation
       const filePath = path.join(this.storagePath, document.file_path);
-      const job = await pdfQueueService.addWatermarkJob({
+      const jobId = await pdfQueueService.addWatermarkJob({
         documentId,
         filePath,
         watermarkText,
@@ -259,7 +259,7 @@ export class PdfController {
 
       res.status(202).json({
         message: 'Watermarked preview generation queued',
-        jobId: job.id || 'unknown',
+        jobId: jobId || 'unknown',
       });
     } catch (error) {
       next(error);
@@ -269,6 +269,15 @@ export class PdfController {
   /**
    * Get job status
    * GET /api/pdf/jobs/:jobId
+   *
+   * Backed by pg-boss (see `pdfQueueService.getJobStatus`). Field names are
+   * unchanged from the BullMQ era, but two behave differently now:
+   *  - `status`: pg-boss job state mapped to the old BullMQ name -
+   *    created->waiting, retry->delayed, active->active,
+   *    completed->completed, failed/cancelled->failed.
+   *  - `progress`: always `null` - pg-boss has no per-job progress API
+   *    (accepted regression, see docs/plans/2026-07-22-remove-redis-postgres-only-r2.md
+   *    decision 11).
    */
   getJobStatus = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -301,7 +310,10 @@ export class PdfController {
    * Get queue metrics
    * GET /api/pdf/metrics
    *
-   * Admin endpoint for monitoring
+   * Admin endpoint for monitoring. Backed by pg-boss's `getQueueStats` (see
+   * `pdfQueueService.getMetrics`). The BullMQ-era `completed` count is gone
+   * - pg-boss has no equivalent - so the response now only contains
+   * `waiting`, `active`, `failed`, and `delayed`.
    */
   getQueueMetrics = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {

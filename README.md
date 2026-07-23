@@ -26,19 +26,18 @@ EzSign is a self-hosted, open-source document signing platform that enables indi
 
 EzSign is built as a monorepo with separate backend and frontend applications:
 
-- **Backend**: Node.js + NestJS + TypeScript + PostgreSQL + Redis
+- **Backend**: Node.js + NestJS + TypeScript + PostgreSQL
 - **Frontend**: React + TypeScript + Vite
 - **PDF Processing**: pdf-lib (manipulation) + PDF.js (rendering)
-- **Job Queue**: BullMQ for background processing
+- **Job Queue**: pg-boss (PostgreSQL-backed) for background processing
 
 ## 📋 Prerequisites
 
 Before you begin, ensure you have the following installed:
 
-- **Node.js** 20.x or higher (required for NestJS 11 and other dependencies)
+- **Node.js** 22.x or higher (required by pg-boss and other dependencies)
 - **npm** or **yarn**
 - **PostgreSQL** 15.x or higher
-- **Redis** 7.x or higher
 - **Docker** and **Docker Compose** (optional, for containerized deployment)
 - **Python** 3.x (required for building native modules like canvas)
 
@@ -62,11 +61,9 @@ docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 This will start:
 - PostgreSQL database (port 5432)
-- Redis cache (port 6379)
 - Backend API (port 3001)
 - Frontend app (port 3002)
 - Adminer database UI (port 8080)
-- Redis Commander (port 8081)
 - MailHog email testing tool (SMTP: 1025, Web UI: 8025)
 
 3. **Wait for services to be healthy:**
@@ -105,7 +102,6 @@ You should see 14 tables including users, documents, signers, templates, etc.
   - Username: ezsign_dev
   - Password: dev_password
   - Database: ezsign_dev
-- **Redis Commander**: http://localhost:8081
 - **MailHog (Email Testing)**: http://localhost:8025
   - View all emails sent by the application during development
   - No authentication required
@@ -224,9 +220,8 @@ For development without Docker, follow these steps:
 #### 1. Prerequisites
 
 Ensure you have installed:
-- Node.js 20.x or higher
+- Node.js 22.x or higher
 - PostgreSQL 15.x or higher
-- Redis 7.x or higher
 - Python 3.x (for building native modules)
 
 #### 2. Database Setup
@@ -239,9 +234,6 @@ Ensure you have installed:
 
 # Create a database
 createdb ezsign_dev
-
-# Start Redis server
-redis-server
 ```
 
 #### 3. Backend Setup
@@ -258,8 +250,6 @@ cp .env.example .env
 # Edit .env with your configuration
 # Required variables:
 # - DATABASE_URL=postgresql://username:password@localhost:5432/ezsign_dev
-# - REDIS_HOST=localhost
-# - REDIS_PORT=6379
 # - JWT_SECRET=your-secret-key-here
 # - JWT_REFRESH_SECRET=your-refresh-secret-here
 # - API_KEY_SECRET=your-api-key-secret-here
@@ -321,7 +311,7 @@ npm run migrate
 ```bash
 # Check all required environment variables are set
 # Verify Node.js version
-node --version  # Should be 20.x or higher
+node --version  # Should be 22.x or higher
 
 # Check for port conflicts
 netstat -ano | findstr :3001  # Windows
@@ -372,15 +362,6 @@ A lightweight database management tool for PostgreSQL.
 - Username: `ezsign_dev`
 - Password: `dev_password`
 - Database: `ezsign_dev`
-
-### Redis Commander - Redis Management
-
-**Access**: http://localhost:8081
-
-A Redis management and monitoring tool to view:
-- Job queues (email, webhook, PDF processing)
-- Cached data
-- Real-time statistics
 
 ## 🔧 Configuration
 
@@ -434,7 +415,6 @@ Key environment variables to configure:
 
 **Backend (`backend/.env`):**
 - `DATABASE_URL`: PostgreSQL connection string (takes precedence over the discrete `DATABASE_HOST`/`DATABASE_PORT`/... vars; `DATABASE_SSL=true` enables SSL)
-- `REDIS_URL`: Redis connection string
 - `JWT_SECRET`: Secret key for JWT tokens
 - `API_KEY_SECRET`: Secret key for API key hashing
 - `ADMIN_EMAIL`: Email for the first-run admin account (default `admin@ezsign.local`)
@@ -514,8 +494,8 @@ See [Deployment Guide](docs/deployment.md) for detailed instructions on deployin
 - All passwords are hashed using bcrypt
 - API keys are hashed before storage
 - Signing links use cryptographically secure tokens
-- **Token revocation system** - Redis-based blacklist for proper logout and session management
-- **Tiered rate limiting** - Redis-backed distributed rate limits (100/500/1000 requests per 15min for anonymous/authenticated/API key)
+- **Token revocation system** - Postgres-backed blacklist for proper logout and session management
+- **Tiered rate limiting** - In-memory, per-process rate limits (100/500/1000 requests per 15min for anonymous/authenticated/API key; single-instance deployments only)
 - CORS protection
 - Input validation and sanitization
 - Webhook payload signatures (HMAC-SHA256)
@@ -605,7 +585,7 @@ The following features are planned or partially implemented. **Contributions wel
 - [ ] **SSO Integration** (SAML, OAuth2)
 - [ ] **Advanced password policies**
 - [x] **Session management improvements** - Logout-all endpoint, token revocation on password change (v1.2.0)
-- [x] **Token blacklisting for logout** - Redis-based token revocation system (v1.2.0)
+- [x] **Token blacklisting for logout** - Postgres-based token revocation system (v1.2.0)
 
 ### Document Management
 - [ ] **Bulk Document Operations** - Send, delete, download multiple documents
@@ -830,7 +810,7 @@ Built with these amazing open-source projects:
 - [PostgreSQL](https://www.postgresql.org/)
 - [pdf-lib](https://pdf-lib.js.org/)
 - [PDF.js](https://mozilla.github.io/pdf.js/)
-- [BullMQ](https://docs.bullmq.io/)
+- [pg-boss](https://github.com/timgit/pg-boss)
 
 ---
 

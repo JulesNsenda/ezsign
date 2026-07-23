@@ -3,7 +3,11 @@ import { AuthController } from '@/controllers/authController';
 import { tokenService } from '@/services/tokenService';
 import { User } from '@/models/User';
 
-// Mock tokenBlacklistService to avoid Redis connections in tests
+// Mock tokenBlacklistService to avoid needing a live Postgres pool (and its
+// init(pool) wiring) in these controller-level tests. The real service reads
+// fail closed (return true/"revoked") on a query error and reject entirely
+// if used before init() -- neither of those paths is under test here, so a
+// plain resolved-value stub keeps these tests focused on the auth flows.
 jest.mock('@/services/tokenBlacklistService', () => ({
   tokenBlacklistService: {
     blacklistToken: jest.fn().mockResolvedValue(undefined),

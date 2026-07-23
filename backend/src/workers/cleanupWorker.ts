@@ -1,6 +1,5 @@
-import { Job, Worker, Queue } from 'bullmq';
 import { Pool } from 'pg';
-import { getRedisConnection, QueueName, getQueueTimeoutConfig } from '@/config/queue';
+import { registerWorker, enqueue, QueueName, NormalizedJob } from '@/config/queue';
 import { CleanupService } from '@/services/cleanupService';
 import logger from '@/services/loggerService';
 
@@ -23,17 +22,27 @@ export interface CleanupJobData {
 }
 
 /**
- * Create and return the cleanup worker
+ * Create and register the cleanup worker.
+ *
+ * The two recurring schedules (daily full cleanup at 3 AM, temp file
+ * cleanup every 6 hours) are no longer owned here - they are registered by
+ * `startQueues` in config/queue.ts via `boss.schedule()`. That code's
+ * payloads (`{ type: 'full_cleanup', maxAgeHours: 24 }` and
+ * `{ type: 'temp_files', maxAgeHours: 6 }`) match `CleanupJobType.FULL_CLEANUP`
+ * / `CleanupJobType.TEMP_FILES` exactly, so the handler below needs no
+ * adaptation to consume them.
+ *
+ * Final-failure Dead Letter Queue writes are handled centrally by
+ * `registerWorker` - this handler only needs to process the job and
+ * rethrow on failure.
  */
-export const createCleanupWorker = (pool: Pool): Worker<CleanupJobData> => {
+export const createCleanupWorker = async (pool: Pool): Promise<void> => {
   const cleanupService = new CleanupService(pool);
 
-  const timeoutConfig = getQueueTimeoutConfig(QueueName.CLEANUP);
-
-  const worker = new Worker<CleanupJobData>(
+  await registerWorker(
     QueueName.CLEANUP,
-    async (job: Job<CleanupJobData>) => {
-      const { type, maxAgeHours } = job.data;
+    async (job: NormalizedJob): Promise<unknown> => {
+      const { type, maxAgeHours } = job.data as CleanupJobData;
 
       logger.info('Processing cleanup job', { jobId: job.id, type, maxAgeHours });
 
@@ -63,115 +72,18 @@ export const createCleanupWorker = (pool: Pool): Worker<CleanupJobData> => {
         throw error;
       }
     },
-    {
-      connection: getRedisConnection(),
-      concurrency: 1, // Run one cleanup at a time to avoid conflicts
-      lockDuration: timeoutConfig.lockDuration,
-      stalledInterval: timeoutConfig.stalledInterval,
-    }
+    { localConcurrency: 1 }, // Run one cleanup at a time to avoid conflicts
   );
-
-  worker.on('completed', (job, result) => {
-    logger.info('Cleanup job completed', {
-      jobId: job.id,
-      type: job.data.type,
-      result,
-    });
-  });
-
-  worker.on('failed', (job, err) => {
-    logger.error('Cleanup job failed', {
-      jobId: job?.id,
-      type: job?.data.type,
-      error: err.message,
-    });
-  });
-
-  worker.on('stalled', (jobId: string) => {
-    logger.warn('Cleanup job stalled (timeout exceeded)', {
-      jobId,
-      queueName: QueueName.CLEANUP,
-    });
-  });
-
-  return worker;
 };
 
 /**
- * Create the cleanup queue
- */
-export const createCleanupQueue = (): Queue<CleanupJobData> => {
-  return new Queue<CleanupJobData>(QueueName.CLEANUP, {
-    connection: getRedisConnection(),
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: {
-        type: 'exponential',
-        delay: 60000, // 1 minute
-      },
-      removeOnComplete: {
-        count: 50,
-        age: 86400, // 24 hours
-      },
-      removeOnFail: {
-        count: 100,
-        age: 604800, // 7 days
-      },
-    },
-  });
-};
-
-/**
- * Schedule recurring cleanup jobs
- */
-export const scheduleCleanupJobs = async (queue: Queue<CleanupJobData>): Promise<void> => {
-  logger.info('Scheduling cleanup jobs');
-
-  // Remove existing repeatable jobs to avoid duplicates
-  const repeatableJobs = await queue.getRepeatableJobs();
-  for (const job of repeatableJobs) {
-    await queue.removeRepeatableByKey(job.key);
-  }
-
-  // Schedule full cleanup daily at 3 AM
-  await queue.add(
-    'daily-full-cleanup',
-    { type: CleanupJobType.FULL_CLEANUP, maxAgeHours: 24 },
-    {
-      repeat: {
-        pattern: '0 3 * * *', // 3 AM every day
-      },
-    }
-  );
-
-  // Schedule temp file cleanup every 6 hours
-  await queue.add(
-    'temp-cleanup-6h',
-    { type: CleanupJobType.TEMP_FILES, maxAgeHours: 6 },
-    {
-      repeat: {
-        pattern: '0 */6 * * *', // Every 6 hours
-      },
-    }
-  );
-
-  logger.info('Cleanup jobs scheduled', {
-    dailyFullCleanup: '3 AM daily',
-    tempCleanup: 'Every 6 hours',
-  });
-};
-
-/**
- * Trigger an immediate cleanup job
+ * Trigger an immediate, one-off cleanup job (e.g. from an admin endpoint).
+ * The recurring schedules live in config/queue.ts's `startQueues` now; this
+ * only enqueues a single manual run.
  */
 export const triggerCleanup = async (
-  queue: Queue<CleanupJobData>,
   type: CleanupJobType,
-  maxAgeHours?: number
-): Promise<Job<CleanupJobData>> => {
-  return queue.add(
-    `manual-${type}-${Date.now()}`,
-    { type, maxAgeHours },
-    { priority: 1 } // Higher priority for manual triggers
-  );
+  maxAgeHours?: number,
+): Promise<string | null> => {
+  return enqueue(QueueName.CLEANUP, { type, maxAgeHours }, { priority: 1 });
 };

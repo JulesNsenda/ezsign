@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for EzSign Backend
 
 # Stage 1: Development
-FROM node:20-alpine AS development
+FROM node:22-alpine AS development
 
 WORKDIR /app
 
@@ -33,7 +33,7 @@ CMD ["npm", "run", "dev"]
 
 
 # Stage 2: Build
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 
 WORKDIR /app
 
@@ -65,7 +65,7 @@ RUN npm prune --production
 
 
 # Stage 3: Production
-FROM node:20-alpine AS production
+FROM node:22-alpine AS production
 
 # Install runtime dependencies and dumb-init
 RUN apk add --no-cache \

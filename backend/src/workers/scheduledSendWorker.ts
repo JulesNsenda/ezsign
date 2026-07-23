@@ -1,6 +1,5 @@
-import { Job, Worker } from 'bullmq';
 import { Pool } from 'pg';
-import { createWorker, QueueName, shouldMoveToDeadLetterQueue, moveToDeadLetterQueue } from '@/config/queue';
+import { registerWorker, QueueName, NormalizedJob } from '@/config/queue';
 import { Signer, SignerData } from '@/models/Signer';
 import { Branding } from '@/models/Branding';
 import { EmailService, EmailBranding } from '@/services/emailService';
@@ -14,10 +13,15 @@ import logger from '@/services/loggerService';
 
 /**
  * Scheduled Send Worker
- * Processes scheduled document sending jobs from the queue
+ * Processes scheduled document sending jobs from the pg-boss queue.
+ *
+ * Final-failure Dead Letter Queue handling is owned by `registerWorker`
+ * (backend/src/config/queue.ts) - this worker only needs to throw on
+ * failure and let the shared wrapper detect `retryCount >= retryLimit` and
+ * write the DLQ entry. There is no per-job progress reporting or worker
+ * event stream in pg-boss the way BullMQ had it.
  */
 export class ScheduledSendWorker {
-  private worker: Worker<ScheduledSendJobData>;
   private pool: Pool;
   private emailService: EmailService;
   private brandingService: BrandingService;
@@ -35,28 +39,24 @@ export class ScheduledSendWorker {
       () => getSettingsService(pool).getEmailConfig(),
       emailLogService
     );
+  }
 
-    this.worker = createWorker<ScheduledSendJobData>(
-      QueueName.SCHEDULED_SEND,
-      this.processJob.bind(this),
-      {
-        concurrency: 5, // Process 5 scheduled sends concurrently
-        limiter: {
-          max: 10,
-          duration: 1000,
-        },
-      }
-    );
+  /**
+   * Register this worker's handler with pg-boss.
+   */
+  async register(): Promise<void> {
+    await registerWorker(QueueName.SCHEDULED_SEND, this.processJob.bind(this), {
+      localConcurrency: 5, // Process 5 scheduled sends concurrently
+    });
 
-    this.setupEventListeners();
     logger.info('Scheduled send worker initialized');
   }
 
   /**
    * Process scheduled send job
    */
-  private async processJob(job: Job<ScheduledSendJobData>): Promise<{ success: boolean; sentAt: string }> {
-    const { documentId, scheduledAt, userId } = job.data;
+  private async processJob(job: NormalizedJob): Promise<{ success: boolean; sentAt: string }> {
+    const { documentId, scheduledAt, userId } = job.data as ScheduledSendJobData;
 
     logger.info('Processing scheduled send', {
       jobId: job.id,
@@ -65,8 +65,6 @@ export class ScheduledSendWorker {
     });
 
     try {
-      await job.updateProgress(10);
-
       // Get document and verify it's still scheduled
       const docResult = await this.pool.query(
         'SELECT * FROM documents WHERE id = $1',
@@ -88,8 +86,6 @@ export class ScheduledSendWorker {
         return { success: false, sentAt: new Date().toISOString() };
       }
 
-      await job.updateProgress(20);
-
       // Get all signers
       const signersResult = await this.pool.query(
         'SELECT * FROM signers WHERE document_id = $1 ORDER BY signing_order ASC',
@@ -100,8 +96,6 @@ export class ScheduledSendWorker {
         logger.error('No signers found for scheduled document', { documentId });
         throw new Error('No signers found for document');
       }
-
-      await job.updateProgress(40);
 
       // Update document status to pending
       await this.pool.query(
@@ -114,8 +108,6 @@ export class ScheduledSendWorker {
          WHERE id = $1`,
         [documentId]
       );
-
-      await job.updateProgress(60);
 
       // Get sender info
       const userResult = await this.pool.query(
@@ -164,8 +156,6 @@ export class ScheduledSendWorker {
         );
       }
 
-      await job.updateProgress(80);
-
       // Emit WebSocket event
       socketService.emitDocumentUpdate({
         documentId,
@@ -174,8 +164,6 @@ export class ScheduledSendWorker {
         updatedBy: userId,
         ownerId: userId,
       });
-
-      await job.updateProgress(100);
 
       logger.info('Scheduled send completed successfully', {
         documentId,
@@ -275,77 +263,10 @@ export class ScheduledSendWorker {
       // Don't throw - continue with other signers
     }
   }
-
-  /**
-   * Set up event listeners for the worker
-   */
-  private setupEventListeners(): void {
-    this.worker.on('completed', (job: Job<ScheduledSendJobData>, result) => {
-      logger.info('Scheduled send job completed', {
-        jobId: job.id,
-        documentId: job.data.documentId,
-        result,
-      });
-    });
-
-    this.worker.on('failed', async (job: Job<ScheduledSendJobData> | undefined, error: Error) => {
-      if (job) {
-        logger.error('Scheduled send job failed', {
-          jobId: job.id,
-          documentId: job.data.documentId,
-          attemptsMade: job.attemptsMade,
-          error: error.message,
-        });
-
-        // Move to Dead Letter Queue after all retries exhausted
-        if (shouldMoveToDeadLetterQueue(job)) {
-          try {
-            await moveToDeadLetterQueue(this.pool, job, error, QueueName.SCHEDULED_SEND);
-            logger.info('Scheduled send job moved to Dead Letter Queue', { jobId: job.id });
-          } catch (dlqError) {
-            logger.error('Failed to move scheduled send job to DLQ', {
-              jobId: job.id,
-              error: (dlqError as Error).message,
-            });
-          }
-        }
-      } else {
-        logger.error('Scheduled send job failed (job undefined)', { error: error.message });
-      }
-    });
-
-    this.worker.on('stalled', (jobId: string) => {
-      logger.warn('Scheduled send job stalled (timeout exceeded)', {
-        jobId,
-        queueName: QueueName.SCHEDULED_SEND,
-      });
-    });
-
-    this.worker.on('error', (error: Error) => {
-      logger.error('Scheduled send worker error', {
-        error: error.message,
-        stack: error.stack,
-      });
-    });
-
-    this.worker.on('active', (job: Job<ScheduledSendJobData>) => {
-      logger.debug('Scheduled send job active', {
-        jobId: job.id,
-        documentId: job.data.documentId,
-      });
-    });
-  }
-
-  /**
-   * Close the worker
-   */
-  async close(): Promise<void> {
-    await this.worker.close();
-    logger.info('Scheduled send worker closed');
-  }
 }
 
-// Factory function to create worker instance
-export const createScheduledSendWorker = (pool: Pool): ScheduledSendWorker => {
-  return new ScheduledSendWorker(pool);
+// Factory function to create and register the worker
+export const createScheduledSendWorker = async (pool: Pool): Promise<void> => {
+  const worker = new ScheduledSendWorker(pool);
+  await worker.register();
 };

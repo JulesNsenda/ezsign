@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { authenticate } from './auth';
 import { tokenService } from '@/services/tokenService';
+import { tokenBlacklistService } from '@/services/tokenBlacklistService';
+import logger from '@/services/loggerService';
 
 jest.mock('@/services/tokenService', () => ({
   tokenService: {
@@ -179,6 +181,148 @@ describe('authenticate middleware', () => {
 
       expect(tokenService.verifyAccessToken).toHaveBeenCalledWith('pdf-loading-token');
       expect(mockNext).toHaveBeenCalled();
+    });
+  });
+
+  describe('revocation checks (fail-closed)', () => {
+    const decodedWithJti = {
+      userId: 'user-1',
+      email: 'user@example.com',
+      role: 'creator',
+      jti: 'jti-1',
+      iat: Math.floor(Date.now() / 1000),
+    };
+
+    beforeEach(() => {
+      (tokenService.verifyAccessToken as jest.Mock).mockReturnValue(decodedWithJti);
+      mockRequest = {
+        headers: { authorization: 'Bearer a-valid-token' },
+        query: {},
+        baseUrl: '',
+        path: '/api/documents',
+      };
+    });
+
+    it('returns 401 when isBlacklisted resolves true (the service already fails closed on its own query errors)', async () => {
+      (tokenBlacklistService.isBlacklisted as jest.Mock).mockResolvedValueOnce(true);
+
+      await authenticate(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(responseStatus).toHaveBeenCalledWith(401);
+      expect(responseJson).toHaveBeenCalledWith({
+        error: 'Unauthorized',
+        message: 'Token has been revoked',
+      });
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('returns 401 when isUserSessionRevoked resolves true', async () => {
+      (tokenBlacklistService.isBlacklisted as jest.Mock).mockResolvedValueOnce(false);
+      (tokenBlacklistService.isUserSessionRevoked as jest.Mock).mockResolvedValueOnce(true);
+
+      await authenticate(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(responseStatus).toHaveBeenCalledWith(401);
+      expect(responseJson).toHaveBeenCalledWith({
+        error: 'Unauthorized',
+        message: 'Session has been revoked. Please log in again.',
+      });
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('returns 401 (not 500/503) when the blacklist service throws unexpectedly (e.g. used before init)', async () => {
+      (tokenBlacklistService.isBlacklisted as jest.Mock).mockRejectedValueOnce(
+        new Error('TokenBlacklistService used before init(pool) was called')
+      );
+
+      await authenticate(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(responseStatus).toHaveBeenCalledWith(401);
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('allows the request through when neither check reports revocation', async () => {
+      (tokenBlacklistService.isBlacklisted as jest.Mock).mockResolvedValueOnce(false);
+      (tokenBlacklistService.isUserSessionRevoked as jest.Mock).mockResolvedValueOnce(false);
+
+      await authenticate(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalled();
+      expect(responseStatus).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('outer catch: internal error messages must not leak to the client (Gate 2 fix 4)', () => {
+    beforeEach(() => {
+      mockRequest = {
+        headers: { authorization: 'Bearer a-valid-token' },
+        query: {},
+        baseUrl: '',
+        path: '/api/documents',
+      };
+    });
+
+    it.each([['Access token has expired'], ['Invalid access token']])(
+      'returns the verbatim message for the expected JWT error %j',
+      async (message) => {
+        (tokenService.verifyAccessToken as jest.Mock).mockImplementation(() => {
+          throw new Error(message);
+        });
+
+        await authenticate(mockRequest as Request, mockResponse as Response, mockNext);
+
+        expect(responseStatus).toHaveBeenCalledWith(401);
+        expect(responseJson).toHaveBeenCalledWith({
+          error: 'Unauthorized',
+          message,
+        });
+        expect(mockNext).not.toHaveBeenCalled();
+      }
+    );
+
+    it('does not leak an unexpected internal error message (e.g. a TokenBlacklistService wiring bug) - responds with a generic message and logs the real error server-side', async () => {
+      const internalMessage = 'TokenBlacklistService used before init(pool) was called';
+      (tokenService.verifyAccessToken as jest.Mock).mockReturnValue({
+        userId: 'user-1',
+        email: 'user@example.com',
+        role: 'creator',
+        jti: 'jti-1',
+        iat: Math.floor(Date.now() / 1000),
+      });
+      (tokenBlacklistService.isBlacklisted as jest.Mock).mockRejectedValueOnce(
+        new Error(internalMessage)
+      );
+
+      await authenticate(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(responseStatus).toHaveBeenCalledWith(401);
+      expect(responseJson).toHaveBeenCalledWith({
+        error: 'Unauthorized',
+        message: 'Authentication failed',
+      });
+      expect(responseJson).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining('TokenBlacklistService') })
+      );
+      expect(logger.error).toHaveBeenCalledWith(
+        'Authentication failed with an unexpected error',
+        expect.objectContaining({ error: internalMessage })
+      );
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('responds with the generic message for a non-Error throw', async () => {
+      (tokenService.verifyAccessToken as jest.Mock).mockImplementation(() => {
+        // eslint-disable-next-line @typescript-eslint/no-throw-literal
+        throw 'not an Error instance';
+      });
+
+      await authenticate(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(responseStatus).toHaveBeenCalledWith(401);
+      expect(responseJson).toHaveBeenCalledWith({
+        error: 'Unauthorized',
+        message: 'Authentication failed',
+      });
     });
   });
 });

@@ -1,5 +1,4 @@
 import { Pool } from 'pg';
-import Redis from 'ioredis';
 import fs from 'fs/promises';
 import logger from '@/services/loggerService';
 
@@ -22,7 +21,6 @@ export interface HealthStatus {
   version: string;
   checks: {
     database: HealthCheck;
-    redis: HealthCheck;
     storage: HealthCheck;
   };
 }
@@ -35,7 +33,6 @@ export interface ReadinessStatus {
   timestamp: string;
   checks: {
     database: 'up' | 'down';
-    redis: 'up' | 'down';
   };
 }
 
@@ -45,7 +42,6 @@ export interface ReadinessStatus {
  */
 export class HealthService {
   private pool: Pool;
-  private redis: Redis;
   private storagePath: string;
 
   // Cache for health check results to prevent thundering herd
@@ -58,11 +54,9 @@ export class HealthService {
 
   // Timeouts for health checks
   private readonly DB_TIMEOUT = 5000; // 5 seconds
-  private readonly REDIS_TIMEOUT = 2000; // 2 seconds
 
-  constructor(pool: Pool, redis: Redis, storagePath?: string) {
+  constructor(pool: Pool, storagePath?: string) {
     this.pool = pool;
-    this.redis = redis;
     this.storagePath = storagePath || process.env.FILE_STORAGE_PATH || './storage';
   }
 
@@ -83,27 +77,6 @@ export class HealthService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.warn('Database health check failed', { error: errorMessage });
-      return { status: 'down', error: errorMessage, latency: Date.now() - start };
-    }
-  }
-
-  /**
-   * Check Redis connectivity
-   */
-  async checkRedis(): Promise<HealthCheck> {
-    const start = Date.now();
-    try {
-      // Use a promise race to implement timeout
-      const pingPromise = this.redis.ping();
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Redis timeout')), this.REDIS_TIMEOUT)
-      );
-
-      await Promise.race([pingPromise, timeoutPromise]);
-      return { status: 'up', latency: Date.now() - start };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      logger.warn('Redis health check failed', { error: errorMessage });
       return { status: 'down', error: errorMessage, latency: Date.now() - start };
     }
   }
@@ -135,19 +108,15 @@ export class HealthService {
       return cached.result;
     }
 
-    const [database, redis] = await Promise.all([
-      this.checkDatabase(),
-      this.checkRedis(),
-    ]);
+    const database = await this.checkDatabase();
 
-    const isReady = database.status === 'up' && redis.status === 'up';
+    const isReady = database.status === 'up';
 
     const result: ReadinessStatus = {
       status: isReady ? 'ready' : 'not_ready',
       timestamp: new Date().toISOString(),
       checks: {
         database: database.status,
-        redis: redis.status,
       },
     };
 
@@ -167,18 +136,14 @@ export class HealthService {
       return cached.result;
     }
 
-    const [database, redis, storage] = await Promise.all([
-      this.checkDatabase(),
-      this.checkRedis(),
-      this.checkStorage(),
-    ]);
+    const [database, storage] = await Promise.all([this.checkDatabase(), this.checkStorage()]);
 
     // Determine overall status
-    // Critical dependencies: database and redis
+    // Critical dependency: database
     // Non-critical: storage (app can work with degraded storage)
-    const criticalUp = database.status === 'up' && redis.status === 'up';
+    const criticalUp = database.status === 'up';
     const allUp = criticalUp && storage.status === 'up';
-    const criticalDown = database.status === 'down' || redis.status === 'down';
+    const criticalDown = database.status === 'down';
 
     let status: 'healthy' | 'degraded' | 'unhealthy';
     if (criticalDown) {
@@ -194,7 +159,7 @@ export class HealthService {
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       version: process.env.npm_package_version || '1.0.0',
-      checks: { database, redis, storage },
+      checks: { database, storage },
     };
 
     // Update cache

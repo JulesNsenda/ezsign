@@ -1,6 +1,6 @@
 # Development Dockerfile for EzSign Backend
 # Using Debian slim for better native module compatibility (canvas)
-FROM node:20-slim AS development
+FROM node:22-slim AS development
 
 # Install dumb-init and build dependencies for native modules (canvas)
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -653,6 +653,39 @@ describe('AuthController', () => {
       expect(mockUserService.findById).not.toHaveBeenCalled();
       expect(tokenService.generateAccessToken).not.toHaveBeenCalled();
     });
+
+    it('fails closed with 401 when the revocation check throws unexpectedly, instead of minting a new access token', async () => {
+      mockRequest.body = { refreshToken: 'valid-refresh-token' };
+
+      (tokenService.verifyRefreshToken as jest.Mock) = jest.fn().mockReturnValue({
+        userId: '123',
+        email: 'admin@example.com',
+        role: 'admin',
+        jti: 'jti-1',
+        iat: Math.floor(Date.now() / 1000),
+      });
+
+      // The service's read methods fail closed internally on query errors
+      // (they return true, not throw). A throw here models the one case
+      // that still reaches this catch: an unexpected failure such as the
+      // service being used before init().
+      (tokenBlacklistService.isBlacklisted as jest.Mock).mockRejectedValueOnce(
+        new Error('TokenBlacklistService used before init(pool) was called')
+      );
+
+      await authController.refresh(
+        mockRequest as Request,
+        mockResponse as Response
+      );
+
+      expect(responseStatus).toHaveBeenCalledWith(401);
+      expect(responseJson).toHaveBeenCalledWith({
+        error: 'Unauthorized',
+        message: 'Unable to verify token revocation status',
+      });
+      expect(mockUserService.findById).not.toHaveBeenCalled();
+      expect(tokenService.generateAccessToken).not.toHaveBeenCalled();
+    });
   });
 
   describe('changePassword', () => {
@@ -661,7 +694,27 @@ describe('AuthController', () => {
       (mockRequest as any).user = { userId: '123' };
     });
 
+    /**
+     * changePassword() waits out the remainder of the current wall-clock
+     * second (waitPastCurrentSecond()) between revoking existing tokens and
+     * minting new ones -- see that function's doc comment in
+     * authController.ts for why (tokenBlacklistService's inclusive
+     * `iat <= revoked_at` comparison would otherwise treat the freshly
+     * minted tokens as revoked on arrival, since both land in the same
+     * floored second in the overwhelming majority of calls). Use fake
+     * timers so these tests don't burn ~0.5-1s of real wall-clock time each.
+     */
+    const runChangePasswordWithFakeTimers = async (): Promise<void> => {
+      const promise = authController.changePassword(
+        mockRequest as Request,
+        mockResponse as Response
+      );
+      await jest.advanceTimersByTimeAsync(1100); // > worst-case 1050ms wait
+      await promise;
+    };
+
     it('clears the must_change_password flag and mints tokens without the claim', async () => {
+      jest.useFakeTimers();
       mockRequest.body = {
         currentPassword: 'OldPassword123',
         newPassword: 'NewPassword456',
@@ -684,10 +737,8 @@ describe('AuthController', () => {
         refreshToken: 'new-refresh-token',
       });
 
-      await authController.changePassword(
-        mockRequest as Request,
-        mockResponse as Response
-      );
+      await runChangePasswordWithFakeTimers();
+      jest.useRealTimers();
 
       expect(mockUserService.clearMustChangePassword).toHaveBeenCalledWith('123');
       // Explicitly omitted, not read from the stale pre-update in-memory user.
@@ -702,7 +753,51 @@ describe('AuthController', () => {
       );
     });
 
-    it('still succeeds (does not 500) when revoking existing tokens fails (Redis down)', async () => {
+    it('waits past the current second before minting tokens (so they are not born-revoked)', async () => {
+      jest.useFakeTimers();
+      mockRequest.body = {
+        currentPassword: 'OldPassword123',
+        newPassword: 'NewPassword456',
+      };
+
+      const mockUser = {
+        id: '123',
+        email: 'test@example.com',
+        role: 'creator',
+        verifyPassword: jest.fn().mockResolvedValue(true),
+      } as any;
+
+      mockUserService.findById = jest.fn().mockResolvedValue(mockUser);
+      mockUserService.updatePassword = jest.fn().mockResolvedValue(undefined);
+
+      (tokenService.generateTokenPair as jest.Mock) = jest.fn().mockReturnValue({
+        accessToken: 'new-access-token',
+        refreshToken: 'new-refresh-token',
+      });
+
+      const promise = authController.changePassword(
+        mockRequest as Request,
+        mockResponse as Response
+      );
+
+      // Let microtasks (bcrypt verify, the two DB writes, the revoke call)
+      // drain, but not the fake timer itself: minting must not have
+      // happened yet.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(tokenService.generateTokenPair).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(1100);
+      await promise;
+      jest.useRealTimers();
+
+      expect(tokenService.generateTokenPair).toHaveBeenCalled();
+      expect(responseStatus).toHaveBeenCalledWith(200);
+    });
+
+    it('still succeeds (does not 500) when revoking existing tokens fails (blacklist store down)', async () => {
+      jest.useFakeTimers();
       mockRequest.body = {
         currentPassword: 'OldPassword123',
         newPassword: 'NewPassword456',
@@ -721,7 +816,7 @@ describe('AuthController', () => {
       mockUserService.clearMustChangePassword = jest.fn().mockResolvedValue(undefined);
 
       (tokenBlacklistService.blacklistAllUserTokens as jest.Mock).mockRejectedValueOnce(
-        new Error('Redis connection refused')
+        new Error('connection refused')
       );
 
       (tokenService.generateTokenPair as jest.Mock) = jest.fn().mockReturnValue({
@@ -729,10 +824,8 @@ describe('AuthController', () => {
         refreshToken: 'new-refresh-token',
       });
 
-      await authController.changePassword(
-        mockRequest as Request,
-        mockResponse as Response
-      );
+      await runChangePasswordWithFakeTimers();
+      jest.useRealTimers();
 
       expect(mockUserService.updatePassword).toHaveBeenCalledWith('123', 'NewPassword456');
       expect(responseStatus).toHaveBeenCalledWith(200);
@@ -746,6 +839,7 @@ describe('AuthController', () => {
     });
 
     it('should change password successfully', async () => {
+      jest.useFakeTimers();
       mockRequest.body = {
         currentPassword: 'OldPassword123',
         newPassword: 'NewPassword456',
@@ -766,10 +860,8 @@ describe('AuthController', () => {
         refreshToken: 'new-refresh-token',
       });
 
-      await authController.changePassword(
-        mockRequest as Request,
-        mockResponse as Response
-      );
+      await runChangePasswordWithFakeTimers();
+      jest.useRealTimers();
 
       expect(mockUserService.findById).toHaveBeenCalledWith('123');
       expect(mockUser.verifyPassword).toHaveBeenCalledWith('OldPassword123');
