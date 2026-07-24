@@ -25,6 +25,14 @@ services:
     build: npm run build            # backend "build": "tsc"  -> dist/
     start: node scripts/start-prod.js  # migrations first, then dist/server.js
     database: postgres              # DROP provisions Postgres and injects DATABASE_URL
+    secrets:
+      # DROP auto-generates a strong value at first start and injects it as an
+      # env var (needs a DROP server with the required-secrets feature). It is
+      # generated only if unset, so it stays STABLE across redeploys (existing
+      # tokens keep working) and never has to be set by hand on a fresh deploy.
+      JWT_SECRET:
+        generate: random
+        description: Signing key for auth tokens (JWT)
     route:
       path: /api                    # -> ezsign.<domain>/api
     env:
