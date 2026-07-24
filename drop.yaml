@@ -35,6 +35,12 @@ services:
     path: frontend
     type: static                    # DROP builds it natively: npm install + npm run build -> serves dist/
     build_env:
-      VITE_API_URL: ""              # empty -> the client calls the same origin at /api (no CORS)
+      # Absolute origin ONLY - no trailing slash, no /api. client.ts does
+      # `baseURL: ${VITE_API_URL}/api`, and the frontend is served at this same
+      # origin, so API calls stay same-origin (no CORS).
+      # NOTE: "" does NOT work here - client.ts falls back with
+      # `import.meta.env.VITE_API_URL || 'http://localhost:3001'`, and an empty
+      # string is falsy, so it bakes in the localhost dev URL at build time.
+      VITE_API_URL: "https://ezsign.dropkit.sh"
     route:
       path: /                       # -> ezsign.<domain>
