@@ -18,14 +18,26 @@ export class SettingsValidationError extends Error {
 }
 
 export type SettingValueType = 'string' | 'number' | 'boolean';
-export type SettingSource = 'db' | 'env' | 'default';
+/**
+ * Where an effective value came from. `'invalid'` is distinct from
+ * `'default'`: it means a DB row or env var IS set for this key but failed
+ * to coerce (e.g. a hand-edited or corrupted boolean/number) - `value` is
+ * still the registry default for rendering, but a consumer needs to be able
+ * to tell "nothing configured" apart from "configured but broken" instead
+ * of both looking identically healthy (see getAll()).
+ */
+export type SettingSource = 'db' | 'env' | 'default' | 'invalid';
 
 export interface SettingDefinition {
   key: string;
   type: SettingValueType;
   isSecret: boolean;
-  /** Env vars checked in order; the first one that is set (non-empty) wins. */
-  envFallback: string[];
+  /**
+   * Env vars checked in order; the first one that is set (non-empty) wins.
+   * Omitted entirely (not just an empty array) for a key that must never
+   * resolve from the environment - see `registration.enabled` below.
+   */
+  envFallback?: string[];
   defaultValue: string | number | boolean;
   /** Validates/normalizes the already-primitive-typed value. */
   schema: z.ZodTypeAny;
@@ -139,10 +151,41 @@ export const SETTINGS_REGISTRY: Record<string, SettingDefinition> = {
     defaultValue: 'http://localhost:3002',
     schema: appUrlSchema,
   },
+  'registration.enabled': {
+    key: 'registration.enabled',
+    type: 'boolean',
+    isSecret: false,
+    // No envFallback - deliberate, DB -> default only. `set()` with `null`
+    // DELETEs the row and resolution falls through to envFallback (see
+    // resolveFromEnv below); if this key had one, an admin clearing the
+    // toggle in Settings -> Instance would silently reopen registration via
+    // an env var. This is the one setting whose entire purpose is to fail
+    // closed, so it must never fail open through an env fallback.
+    defaultValue: false,
+    schema: z.boolean(),
+  },
 };
 
 /** Keys whose change forces `smtp.pass` to be cleared (see `set()`). */
 const SMTP_TRANSPORT_KEYS = ['smtp.host', 'smtp.port', 'smtp.secure'];
+
+/** Accepted spellings for a stored/env boolean value - see `coerceFromStorage`. */
+const TRUTHY_BOOLEAN_STRINGS = new Set(['1', 'true', 'yes', 'on']);
+const FALSY_BOOLEAN_STRINGS = new Set(['0', 'false', 'no', 'off']);
+
+/**
+ * Coerces a trimmed, case-insensitive string to a boolean using the same
+ * accepted-spellings sets the read path (`coerceFromStorage`) uses - shared
+ * so the write path (`coercePrimitive`, below) can't drift from what a
+ * later read would accept. Returns `undefined` (not a default) for
+ * anything unrecognized so each caller can throw with its own message.
+ */
+function coerceBooleanString(raw: string): boolean | undefined {
+  const normalized = raw.trim().toLowerCase();
+  if (TRUTHY_BOOLEAN_STRINGS.has(normalized)) return true;
+  if (FALSY_BOOLEAN_STRINGS.has(normalized)) return false;
+  return undefined;
+}
 
 /**
  * Coerces a JSON-typed input value (string | number | boolean) to the
@@ -172,8 +215,10 @@ function coercePrimitive(
     }
     case 'boolean': {
       if (typeof raw === 'boolean') return raw;
-      if (raw === 'true') return true;
-      if (raw === 'false') return false;
+      if (typeof raw === 'string') {
+        const coerced = coerceBooleanString(raw);
+        if (coerced !== undefined) return coerced;
+      }
       throw new SettingsValidationError(`${key} must be a boolean value`);
     }
     default:
@@ -226,17 +271,53 @@ export class SettingsService {
           return { key, type: def.type, isSecret: true, value: null, isSet, source: 'db' as const };
         }
 
-        return {
-          key,
-          type: def.type,
-          isSecret: false,
-          value: this.coerceFromStorage(dbRow.value, def.type),
-          isSet: true,
-          source: 'db' as const,
-        };
+        try {
+          return {
+            key,
+            type: def.type,
+            isSecret: false,
+            value: this.coerceFromStorage(dbRow.value, def.type, key),
+            isSet: true,
+            source: 'db' as const,
+          };
+        } catch (error) {
+          // Malformed stored value (e.g. a hand-edited boolean row) - never
+          // throw here, so GET /settings never 500s because of it, but
+          // report it as `invalid` (not `default`): the row DOES exist and
+          // IS being read from, it just doesn't parse. Reporting `default`
+          // would render as indistinguishable from "nothing configured",
+          // hiding the exact case an admin needs to notice and fix.
+          logger.warn('Failed to coerce stored instance setting value; reporting as invalid', {
+            key,
+            error: (error as Error).message,
+          });
+          return { key, type: def.type, isSecret: false, value: def.defaultValue, isSet: true, source: 'invalid' as const };
+        }
       }
 
-      const envValue = this.resolveFromEnv(def);
+      let envValue: string | number | boolean | undefined;
+      let envInvalid = false;
+      try {
+        // Deliberately the strict variant, not `resolveFromEnv` - this
+        // method needs to observe the coercion failure itself (to report
+        // `invalid`), whereas `resolveFromEnv` exists specifically to
+        // swallow it for callers that must never throw (see its doc).
+        envValue = this.resolveFromEnvStrict(def);
+      } catch (error) {
+        logger.warn('Failed to coerce env-sourced instance setting value; reporting as invalid', {
+          key,
+          error: (error as Error).message,
+        });
+        envInvalid = true;
+      }
+
+      if (envInvalid) {
+        if (def.isSecret) {
+          return { key, type: def.type, isSecret: true, value: null, isSet: false, source: 'invalid' as const };
+        }
+        return { key, type: def.type, isSecret: false, value: def.defaultValue, isSet: true, source: 'invalid' as const };
+      }
+
       if (envValue !== undefined) {
         if (def.isSecret) {
           return {
@@ -283,7 +364,7 @@ export class SettingsService {
     const row = result.rows[0];
 
     if (row) {
-      return def.isSecret ? decryptSecret(row.value) : this.coerceFromStorage(row.value, def.type);
+      return def.isSecret ? decryptSecret(row.value) : this.coerceFromStorage(row.value, def.type, key);
     }
 
     const envValue = this.resolveFromEnv(def);
@@ -365,7 +446,27 @@ export class SettingsService {
     if (touchesTransport && !passExplicitlyTouched) {
       for (const w of toWrite) {
         if (!SMTP_TRANSPORT_KEYS.includes(w.key)) continue;
-        const currentEffective = await this.getValue(w.key);
+
+        let currentEffective: string | number | boolean;
+        try {
+          currentEffective = await this.getValue(w.key);
+        } catch (error) {
+          // The existing stored value is corrupt (see getAll()'s `invalid`
+          // source) - we can't prove the transport is unchanged, so treat
+          // it as changed. Safer to tombstone smtp.pass than to silently
+          // carry a stale password over to a host we can't confirm is the
+          // same one. Without this, a PUT that fixes the very key that's
+          // corrupt would itself throw here (read-before-write, against the
+          // still-corrupt row) and 400 - defeating the "the admin can still
+          // see and fix it via PUT /settings" recovery path.
+          logger.warn(
+            'Failed to resolve current value while checking for an SMTP transport change; treating as changed',
+            { key: w.key, error: (error as Error).message }
+          );
+          autoClearPass = true;
+          break;
+        }
+
         const newEffective = w.value === null ? this.resolveEffectiveWithoutDb(w.key) : w.value;
         if (currentEffective !== newEffective) {
           autoClearPass = true;
@@ -463,7 +564,7 @@ export class SettingsService {
       const def = SETTINGS_REGISTRY[key] as SettingDefinition;
       const dbRow = dbRows.get(key);
       if (dbRow) {
-        return def.isSecret ? decryptSecret(dbRow.value) : this.coerceFromStorage(dbRow.value, def.type);
+        return def.isSecret ? decryptSecret(dbRow.value) : this.coerceFromStorage(dbRow.value, def.type, key);
       }
       const envValue = this.resolveFromEnv(def);
       return envValue !== undefined ? envValue : def.defaultValue;
@@ -492,20 +593,78 @@ export class SettingsService {
     return value.replace(/\/+$/, '') || value;
   }
 
-  private coerceFromStorage(raw: string, type: SettingValueType): string | number | boolean {
-    if (type === 'number') return Number(raw);
-    if (type === 'boolean') return raw === 'true';
+  /**
+   * Coerces a stored/env string value to its registry-declared primitive
+   * type. `key` is only used to name the setting in the thrown error.
+   * Strict for both types it validates - throws rather than silently
+   * degrading, so a corrupt row is caught by a caller instead of quietly
+   * becoming a wrong value:
+   *
+   * Boolean values accept `1/true/yes/on` and `0/false/no/off`
+   * case-insensitively, trimmed - anything else throws rather than
+   * silently defaulting to `false` (the old `raw === 'true'` check meant
+   * `1`/`TRUE`/`yes` all silently became `false`).
+   *
+   * Number values throw on anything `Number()` can't parse, rather than
+   * silently returning `NaN` (which would otherwise sail through as a
+   * "valid" number - e.g. into nodemailer's `port`).
+   */
+  private coerceFromStorage(raw: string, type: SettingValueType, key: string): string | number | boolean {
+    if (type === 'number') {
+      const num = Number(raw);
+      if (Number.isNaN(num)) {
+        throw new SettingsValidationError(`${key} has an invalid stored numeric value: "${raw}"`);
+      }
+      return num;
+    }
+    if (type === 'boolean') {
+      const coerced = coerceBooleanString(raw);
+      if (coerced !== undefined) return coerced;
+      throw new SettingsValidationError(
+        `${key} has an invalid stored boolean value: "${raw}" (expected one of 1/true/yes/on or 0/false/no/off)`
+      );
+    }
     return raw;
   }
 
-  private resolveFromEnv(def: SettingDefinition): string | number | boolean | undefined {
-    for (const envVar of def.envFallback) {
+  /**
+   * Raw env-var resolution: returns undefined when no listed env var is set
+   * (or set to ''), otherwise coerces the first one found - and lets
+   * `coerceFromStorage`'s SettingsValidationError propagate on an
+   * unparseable value. Only `getAll()` calls this directly, so it can
+   * observe the failure and report the setting as `invalid` rather than
+   * silently `default`; every other caller goes through `resolveFromEnv`
+   * below, which must never throw.
+   */
+  private resolveFromEnvStrict(def: SettingDefinition): string | number | boolean | undefined {
+    for (const envVar of def.envFallback ?? []) {
       const raw = process.env[envVar];
       if (raw !== undefined && raw !== '') {
-        return this.coerceFromStorage(raw, def.type);
+        return this.coerceFromStorage(raw, def.type, def.key);
       }
     }
     return undefined;
+  }
+
+  /**
+   * Env resolution for callers that must never throw on a bad env value
+   * (getValue, getEmailConfig.resolve, resolveEffectiveWithoutDb - all
+   * reachable from a live mail send or a settings-change-detection check,
+   * not just an admin looking at a settings page). An operator typo (e.g.
+   * `EMAIL_SMTP_SECURE=ssl`) must not hard-fail a path the admin UI
+   * otherwise reports as healthy, so this logs a warning and falls through
+   * to the default instead of throwing.
+   */
+  private resolveFromEnv(def: SettingDefinition): string | number | boolean | undefined {
+    try {
+      return this.resolveFromEnvStrict(def);
+    } catch (error) {
+      logger.warn(
+        'Failed to coerce env-sourced instance setting value; falling through to default',
+        { key: def.key, error: (error as Error).message }
+      );
+      return undefined;
+    }
   }
 
   /** Env-or-default resolution only, used to detect an effective-value change when a DB row is being deleted (null). */

@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import nodemailer from 'nodemailer';
 import { getSettingsService, SettingsService, SettingsValidationError } from '@/services/settingsService';
 import { putSettingsSchema } from '@/validators/settingsSchemas';
+import { getStorageRoot } from '@/config/storage';
 import logger from '@/services/loggerService';
 
 /**
@@ -11,7 +12,7 @@ import logger from '@/services/loggerService';
  */
 function getSystemInfo() {
   return {
-    storagePath: process.env.FILE_STORAGE_PATH || './storage',
+    storagePath: getStorageRoot(),
     databaseConfigured: true,
   };
 }

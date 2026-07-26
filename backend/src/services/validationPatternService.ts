@@ -5,7 +5,23 @@
  * Includes regex patterns, input masks, examples, and descriptions.
  */
 
-import { ValidationPatternPreset, ValidationConfig, Field } from '@/models/Field';
+import { ValidationPatternPreset, ValidationConfig } from '@/models/Field';
+import logger from '@/services/loggerService';
+import { MAX_CUSTOM_REGEX_LENGTH, MAX_VALUE_LENGTH, hasNestedQuantifier } from '@/utils/regexGuard';
+
+/**
+ * Error thrown when attacker-controllable input to `validateValue`/
+ * `isValidRegex` is rejected before a regex is ever compiled or executed -
+ * over-length input or a nested-quantifier pattern that could cause
+ * catastrophic backtracking (ReDoS). Callers (the `/api/util` routes) catch
+ * this specifically and map it to a 400; it must never reach `.test()`.
+ */
+export class RegexValidationRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RegexValidationRejectedError';
+  }
+}
 
 /**
  * Complete information about a validation pattern preset
@@ -122,7 +138,15 @@ export const VALIDATION_PATTERNS: Record<ValidationPatternPreset, ValidationPatt
     id: 'url',
     name: 'URL',
     description: 'Web URL format',
-    regex: '^(https?:\\/\\/)?([\\da-z.-]+)\\.([a-z.]{2,6})([\\/\\w .-]*)*\\/?$',
+    // Gate 4/item-1 note: the trailing group used to be `([\/\w .-]*)*` -
+    // a group quantified by `*` repeated by an outer `*` is the classic
+    // catastrophic-backtracking shape (same class this file's
+    // `hasNestedQuantifier` rejects in custom patterns) and hangs the event
+    // loop on inputs a fraction of the 512-char cap (e.g. `a.aa/` + 40 `a`s
+    // + `!`). A single `([\/\w .-]*)` matches the exact same language -
+    // nothing here reads capture groups, only `.test()` - so this is
+    // semantics-preserving, not a behavior change.
+    regex: '^(https?:\\/\\/)?([\\da-z.-]+)\\.([a-z.]{2,6})([\\/\\w .-]*)\\/?$',
     example: 'https://example.com',
     category: 'format',
   },
@@ -190,19 +214,55 @@ export const validationPatternService = {
       return { valid: true }; // Empty values handled by required check
     }
 
+    if (value.length > MAX_VALUE_LENGTH) {
+      logger.warn('Rejected oversized value passed to validationPatternService.validateValue', {
+        length: value.length,
+        maxLength: MAX_VALUE_LENGTH,
+      });
+      throw new RegexValidationRejectedError(
+        `Value exceeds maximum length of ${MAX_VALUE_LENGTH} characters`
+      );
+    }
+
     let regex: RegExp;
 
     if (patternId === 'custom') {
       if (!customRegex) {
         return { valid: true }; // No custom regex defined
       }
+
+      if (customRegex.length > MAX_CUSTOM_REGEX_LENGTH) {
+        logger.warn('Rejected oversized custom pattern passed to validationPatternService.validateValue', {
+          length: customRegex.length,
+          maxLength: MAX_CUSTOM_REGEX_LENGTH,
+        });
+        throw new RegexValidationRejectedError(
+          `Custom pattern exceeds maximum length of ${MAX_CUSTOM_REGEX_LENGTH} characters`
+        );
+      }
+
+      if (hasNestedQuantifier(customRegex)) {
+        logger.warn('Rejected custom pattern with nested quantifiers in validationPatternService.validateValue');
+        throw new RegexValidationRejectedError(
+          'Custom pattern rejected: nested quantifiers can cause catastrophic backtracking'
+        );
+      }
+
       try {
         regex = new RegExp(customRegex);
       } catch {
         return { valid: false, message: 'Invalid custom pattern configuration' };
       }
     } else {
-      const pattern = VALIDATION_PATTERNS[patternId];
+      // `Object.prototype.hasOwnProperty` (not `VALIDATION_PATTERNS[patternId]`
+      // truthiness) - a patternId like 'constructor' is an inherited property
+      // of any plain object, so a naive lookup returns the truthy
+      // `Object` constructor rather than `undefined`. That skips the
+      // "unknown pattern" branch below, `pattern.regex` is then `undefined`,
+      // and `new RegExp(undefined)` compiles to `/(?:)/`, which matches
+      // every value - a fail-open bypass of whatever pattern was requested.
+      const hasPattern = Object.prototype.hasOwnProperty.call(VALIDATION_PATTERNS, patternId);
+      const pattern = hasPattern ? VALIDATION_PATTERNS[patternId] : undefined;
       if (!pattern) {
         return { valid: true }; // Unknown pattern, skip validation
       }
@@ -223,13 +283,6 @@ export const validationPatternService = {
   },
 
   /**
-   * Validate a field value using the field's validation config
-   */
-  validateFieldValue(field: Field, value: string): { valid: boolean; message?: string } {
-    return field.validateValue(value);
-  },
-
-  /**
    * Get input mask for a pattern
    */
   getMask(patternId: ValidationPatternPreset): string | undefined {
@@ -247,6 +300,23 @@ export const validationPatternService = {
    * Check if a custom regex is valid
    */
   isValidRegex(pattern: string): boolean {
+    if (pattern.length > MAX_CUSTOM_REGEX_LENGTH) {
+      logger.warn('Rejected oversized pattern passed to validationPatternService.isValidRegex', {
+        length: pattern.length,
+        maxLength: MAX_CUSTOM_REGEX_LENGTH,
+      });
+      throw new RegexValidationRejectedError(
+        `Pattern exceeds maximum length of ${MAX_CUSTOM_REGEX_LENGTH} characters`
+      );
+    }
+
+    if (hasNestedQuantifier(pattern)) {
+      logger.warn('Rejected pattern with nested quantifiers in validationPatternService.isValidRegex');
+      throw new RegexValidationRejectedError(
+        'Pattern rejected: nested quantifiers can cause catastrophic backtracking'
+      );
+    }
+
     try {
       new RegExp(pattern);
       return true;

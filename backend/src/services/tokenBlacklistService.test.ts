@@ -124,6 +124,12 @@ describe('TokenBlacklistService', () => {
         );
       });
 
+      it('resolves true on a successful write', async () => {
+        await expect(
+          tokenBlacklistService.blacklistAllUserTokens('user-1', 3600)
+        ).resolves.toBe(true);
+      });
+
       it('defaults the TTL to 7 days (604800s) when JWT_REFRESH_TOKEN_EXPIRY is unset, mirroring the refresh token lifetime', async () => {
         delete process.env.JWT_REFRESH_TOKEN_EXPIRY;
 
@@ -132,12 +138,12 @@ describe('TokenBlacklistService', () => {
         expect(mockPool.query).toHaveBeenCalledWith(expect.any(String), ['user-1', 7 * 24 * 60 * 60]);
       });
 
-      it('is best-effort: a query error is logged and swallowed, not thrown', async () => {
+      it('is best-effort: a query error is logged and swallowed, not thrown - resolves false so a caller that checks can tell', async () => {
         mockPool.query.mockRejectedValueOnce(new Error('connection refused'));
 
         await expect(
           tokenBlacklistService.blacklistAllUserTokens('user-1')
-        ).resolves.toBeUndefined();
+        ).resolves.toBe(false);
       });
 
       describe('TTL derived from JWT_REFRESH_TOKEN_EXPIRY (Gate 2 fix 3)', () => {

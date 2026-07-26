@@ -29,10 +29,13 @@ export const AcceptInvitation: React.FC = () => {
     }
   };
 
-  // If not authenticated, redirect to login with return URL
+  // If not authenticated, send them to register with the invitation token so
+  // the backend's invitation exemption applies even when registration is
+  // closed (see registration.enabled). Register's existing "Already have an
+  // account? Sign in" link is the path back for someone who already has one.
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      navigate(`/login?redirect=/accept-invitation/${token}`);
+    if (!isLoading && !isAuthenticated && token) {
+      navigate(`/register?invitationToken=${encodeURIComponent(token)}`);
     }
   }, [isLoading, isAuthenticated, navigate, token]);
 

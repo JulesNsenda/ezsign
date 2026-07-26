@@ -3,8 +3,8 @@ import { Pool } from 'pg';
 import { pdfQueueService } from '@/services/pdfQueueService';
 import { DocumentService } from '@/services/documentService';
 import { StorageService, createStorageService } from '@/services/storageService';
-import { createStorageAdapter, getStorageConfig } from '@/config/storage';
-import path from 'path';
+import { createStorageAdapter, getStorageConfig, getStorageRoot } from '@/config/storage';
+import { resolveWithinStorage } from '@/utils/storagePaths';
 
 /**
  * PDF Controller
@@ -20,7 +20,7 @@ export class PdfController {
     this.pool = pool;
     const storageConfig = getStorageConfig();
     // For local storage, use the configured path; for S3, use temp directory for local processing
-    this.storagePath = storageConfig.local?.basePath || process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
+    this.storagePath = storageConfig.local?.basePath || getStorageRoot();
     const storageAdapter = createStorageAdapter(storageConfig);
     this.storageService = createStorageService(storageAdapter);
     this.documentService = new DocumentService(pool, this.storageService);
@@ -72,7 +72,7 @@ export class PdfController {
       }
 
       // Thumbnail doesn't exist, queue generation
-      const filePath = path.join(this.storagePath, document.file_path);
+      const filePath = resolveWithinStorage(this.storagePath, document.file_path);
       const jobId = await pdfQueueService.addThumbnailJob({
         documentId,
         filePath,
@@ -115,7 +115,7 @@ export class PdfController {
         return;
       }
 
-      const filePath = path.join(this.storagePath, document.file_path);
+      const filePath = resolveWithinStorage(this.storagePath, document.file_path);
       const jobId = await pdfQueueService.addThumbnailJob({
         documentId,
         filePath,
@@ -180,7 +180,7 @@ export class PdfController {
         return;
       }
 
-      const filePath = path.join(this.storagePath, document.file_path);
+      const filePath = resolveWithinStorage(this.storagePath, document.file_path);
       const jobId = await pdfQueueService.addOptimizationJob({
         documentId,
         filePath,
@@ -245,7 +245,7 @@ export class PdfController {
       }
 
       // Queue watermark generation
-      const filePath = path.join(this.storagePath, document.file_path);
+      const filePath = resolveWithinStorage(this.storagePath, document.file_path);
       const jobId = await pdfQueueService.addWatermarkJob({
         documentId,
         filePath,

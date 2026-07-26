@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
-import { SignerService } from '@/services/signerService';
+import { SignerService, SignerNotFoundError } from '@/services/signerService';
 import { DocumentService } from '@/services/documentService';
 import { EmailService, EmailBranding } from '@/services/emailService';
 import { BrandingService } from '@/services/brandingService';
@@ -130,8 +130,9 @@ export class SignerController {
    */
   getSigner = async (req: Request, res: Response): Promise<void> => {
     try {
+      const documentId = req.params.id as string;
       const signerId = req.params.signerId as string;
-      const signer = await this.signerService.getSignerById(signerId);
+      const signer = await this.signerService.getSignerById(signerId, documentId);
 
       if (!signer) {
         res.status(404).json({
@@ -160,6 +161,7 @@ export class SignerController {
    */
   updateSigner = async (req: Request, res: Response): Promise<void> => {
     try {
+      const documentId = req.params.id as string;
       const signerId = req.params.signerId as string;
       const updateData: UpdateSignerData = {
         email: req.body.email,
@@ -168,13 +170,17 @@ export class SignerController {
         status: req.body.status,
       };
 
-      const signer = await this.signerService.updateSigner(signerId, updateData);
+      const signer = await this.signerService.updateSigner(signerId, documentId, updateData);
 
       res.status(200).json({
         success: true,
         data: signer.toPublicJSON(),
       });
     } catch (error) {
+      if (error instanceof SignerNotFoundError) {
+        res.status(404).json({ success: false, error: error.message });
+        return;
+      }
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(400).json({
         success: false,
@@ -189,8 +195,9 @@ export class SignerController {
    */
   deleteSigner = async (req: Request, res: Response): Promise<void> => {
     try {
+      const documentId = req.params.id as string;
       const signerId = req.params.signerId as string;
-      const deleted = await this.signerService.deleteSigner(signerId);
+      const deleted = await this.signerService.deleteSigner(signerId, documentId);
 
       if (!deleted) {
         res.status(404).json({
@@ -219,6 +226,7 @@ export class SignerController {
    */
   assignFields = async (req: Request, res: Response): Promise<void> => {
     try {
+      const documentId = req.params.id as string;
       const signerId = req.params.signerId as string;
       const fieldIds = req.body.field_ids;
 
@@ -230,13 +238,17 @@ export class SignerController {
         return;
       }
 
-      await this.signerService.assignFieldsToSigner(signerId, fieldIds);
+      await this.signerService.assignFieldsToSigner(signerId, documentId, fieldIds);
 
       res.status(200).json({
         success: true,
         message: 'Fields assigned successfully',
       });
     } catch (error) {
+      if (error instanceof SignerNotFoundError) {
+        res.status(404).json({ success: false, error: error.message });
+        return;
+      }
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(400).json({
         success: false,
@@ -275,8 +287,18 @@ export class SignerController {
    */
   canSign = async (req: Request, res: Response): Promise<void> => {
     try {
+      const documentId = req.params.id as string;
       const signerId = req.params.signerId as string;
-      const result = await this.signerService.canSignInSequentialWorkflow(signerId);
+      const result = await this.signerService.canSignInSequentialWorkflow(signerId, documentId);
+
+      // SEC-H3: the scoped lookup collapses "doesn't exist" and "belongs to
+      // another document" into the same result - surface both as 404 rather
+      // than a 200 that would otherwise leak that a same-shaped signer id
+      // exists at all.
+      if (result.reason === 'Signer not found') {
+        res.status(404).json({ success: false, error: 'Signer not found' });
+        return;
+      }
 
       res.status(200).json({
         success: true,
@@ -337,8 +359,8 @@ export class SignerController {
         return;
       }
 
-      // Get signer
-      const signer = await this.signerService.getSignerById(signerId as string);
+      // Get signer, scoped to this document (SEC-H3)
+      const signer = await this.signerService.getSignerById(signerId as string, documentId as string);
 
       if (!signer) {
         res.status(404).json({

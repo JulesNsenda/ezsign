@@ -4,6 +4,8 @@ import { UserService } from '@/services/userService';
 import { TeamService } from '@/services/teamService';
 import { EmailService } from '@/services/emailService';
 import { TwoFactorService } from '@/services/twoFactorService';
+import { getSettingsService, SettingsService } from '@/services/settingsService';
+import { InvitationService } from '@/services/invitationService';
 import { tokenService } from '@/services/tokenService';
 import { tokenBlacklistService } from '@/services/tokenBlacklistService';
 import logger from '@/services/loggerService';
@@ -64,12 +66,16 @@ export class AuthController {
   private teamService: TeamService;
   private emailService: EmailService | null;
   private twoFactorService: TwoFactorService;
+  private settingsService: SettingsService;
+  private invitationService: InvitationService;
 
   constructor(pool: Pool, emailService?: EmailService) {
     this.userService = new UserService(pool);
     this.teamService = new TeamService(pool);
     this.emailService = emailService || null;
     this.twoFactorService = new TwoFactorService(pool);
+    this.settingsService = getSettingsService(pool);
+    this.invitationService = new InvitationService(pool);
   }
 
   /**
@@ -78,7 +84,40 @@ export class AuthController {
    */
   register = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { email, password } = req.body;
+      // Single normalization point (registration-gate item 2 fix A1): the
+      // exemption check below, the findByEmail() duplicate check, and
+      // createUser() must all see the exact same value, or a case variant
+      // of an address authorized by an invitation (e.g. `Foo@bar.com` vs
+      // `foo@bar.com`) bypasses both the exemption's email match and the
+      // 409 duplicate check -- `users.email` is a plain `varchar(255)
+      // UNIQUE`, byte comparison, no `citext`. This lowercases every
+      // registration's email, not just invited ones -- a deliberate
+      // behaviour change (see PR notes).
+      const email = String(req.body?.email ?? '').trim().toLowerCase();
+      const { password, invitationToken } = req.body;
+
+      // Registration gate (items 2.2/2.3 of the registration-gate plan).
+      // The literal first check in the handler -- before any other
+      // validation, and critically before findByEmail() below, whose
+      // 409-vs-other differential is a live user-enumeration oracle that
+      // gating after it would keep exposed even with registration closed.
+      // getValue() resolves fresh on every call (no cache -- see
+      // SettingsService), so flipping the toggle takes effect without a
+      // restart, and registration.enabled has no env fallback (see
+      // settingsService.ts), so this can only come from the DB or the
+      // closed-by-default default value.
+      const registrationEnabled =
+        (await this.settingsService.getValue('registration.enabled')) === true;
+      if (!registrationEnabled) {
+        const exempt = await this.hasInvitationExemption(invitationToken, email);
+        if (!exempt) {
+          res.status(403).json({
+            error: 'Forbidden',
+            message: 'Registration is currently closed',
+          });
+          return;
+        }
+      }
 
       // Validate input
       if (!email || !password) {
@@ -120,11 +159,32 @@ export class AuthController {
 
       // Create user. Role is always server-assigned — never trust a client-supplied
       // role. Admin accounts are provisioned out-of-band (seed/CLI), not via public registration.
-      const user = await this.userService.createUser({
-        email,
-        password,
-        role: 'creator',
-      });
+      //
+      // The invitation exemption above deliberately does NOT consume the
+      // invitation (see hasInvitationExemption's doc) - the race it would
+      // otherwise leave open (two concurrent registrations racing the same
+      // exemption) is closed here instead, by the `users.email` UNIQUE
+      // constraint: only one of two concurrent inserts for the same
+      // (now-normalized) email can succeed, and the loser's unique
+      // violation is mapped to the same 409 findByEmail() returns above,
+      // rather than surfacing as a raw 500.
+      let user;
+      try {
+        user = await this.userService.createUser({
+          email,
+          password,
+          role: 'creator',
+        });
+      } catch (createUserError) {
+        if (this.isDuplicateEmailError(createUserError)) {
+          res.status(409).json({
+            error: 'Conflict',
+            message: 'Email already registered',
+          });
+          return;
+        }
+        throw createUserError;
+      }
 
       // Auto-create a personal team for the new user
       let team;
@@ -189,6 +249,81 @@ export class AuthController {
       });
     }
   };
+
+  /**
+   * Registration-gate exemption (item 2.3): with the global toggle off, a
+   * still-valid team invitation whose email matches the submitted address
+   * is still allowed to register -- otherwise closing registration would
+   * permanently strand the team-invite feature (routes, emails, controller,
+   * and page all shipped; InvitationService.accept() never creates a user,
+   * so an un-registerable invitee has no way to onboard). Reuses
+   * InvitationService's existing token lookup and
+   * TeamInvitation.isValid() (status === 'pending' && !isExpired()) rather
+   * than a second, differently-scoped query.
+   *
+   * A missing/malformed token, an unknown token, an expired one, an
+   * already-accepted one, and an email mismatch are all indistinguishable
+   * to the caller (all resolve to `false`, and the caller returns the same
+   * 403 for all of them) -- otherwise a leaked invitation token could be
+   * used to probe which invitations exist or which email each targets.
+   *
+   * Deliberately does NOT mark the invitation consumed. Any status change
+   * (accepted/cancelled/etc.) would make TeamInvitation.canAccept() false,
+   * which would break the very next step of the flow this exists to
+   * unstrand: register() returns a live session, and the invited user's
+   * browser is expected to hit the authenticated `POST
+   * /invitations/:token/accept` moments later to actually join the team
+   * (that endpoint - not this one - is the one that's supposed to add the
+   * team_members row). Consuming the invitation here would leave the user
+   * with an account but no way to ever join the team it was for.
+   *
+   * The exemption is instead bounded by the caller (register()) mapping a
+   * `users.email` UNIQUE-constraint violation to the same 409 findByEmail()
+   * returns for a pre-existing account: since the exemption only ever
+   * authorizes the one address on the invitation, and every registration
+   * for that address (this one included) stores the same normalized email,
+   * at most one account can ever exist for it at a time. See the caller's
+   * comment and the implementation report for the residual this leaves
+   * (an invitation stays usable again if that one account is later
+   * deleted) and why that's an accepted, narrower scope than "single-use".
+   */
+  private async hasInvitationExemption(
+    invitationToken: unknown,
+    normalizedEmail: string
+  ): Promise<boolean> {
+    if (typeof invitationToken !== 'string' || invitationToken.length === 0) {
+      return false;
+    }
+
+    // TeamInvitation.generateToken() always produces 64 hex chars; req.body
+    // is read from a much larger (50 MB) body-size limit, so bound the
+    // value before it reaches `WHERE token = $1` in findByToken().
+    if (invitationToken.length > 128) {
+      return false;
+    }
+
+    const invitation = await this.invitationService.findByToken(invitationToken);
+    if (!invitation || !invitation.isValid()) {
+      return false;
+    }
+
+    return normalizedEmail.length > 0 && invitation.email === normalizedEmail;
+  }
+
+  /**
+   * True for a Postgres unique-violation error (SQLSTATE 23505) - the
+   * shape node-postgres surfaces for a concurrent `INSERT` racing the
+   * `users.email` UNIQUE constraint. Used by register() to map the loser of
+   * that race to the same 409 findByEmail() returns for a pre-existing
+   * account, instead of a generic 500.
+   */
+  private isDuplicateEmailError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      (error as { code?: string }).code === '23505'
+    );
+  }
 
   /**
    * Verify email with token

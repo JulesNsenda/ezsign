@@ -1,5 +1,17 @@
 import { Pool } from 'pg';
-import { User, UserData, CreateUserData, UpdateUserData } from '@/models/User';
+import { User, UserData, CreateUserData, UpdateUserData, UserRole } from '@/models/User';
+
+export interface AccountAuditSummary {
+  id: string;
+  email: string;
+  role: UserRole;
+  created_at: Date;
+}
+
+export interface AccountAuditPage {
+  accounts: AccountAuditSummary[];
+  total: number;
+}
 
 export class UserService {
   private pool: Pool;
@@ -58,7 +70,22 @@ export class UserService {
   }
 
   /**
-   * Find a user by email
+   * Find a user by email.
+   *
+   * Matched case-insensitively. `register` normalizes to lowercase on write,
+   * but rows created before that change may hold mixed case, and users type
+   * their address with whatever casing they like at login. A case-sensitive
+   * `email = $1` would therefore (a) lock a user out of an account they had
+   * just created with capitals, and (b) let the registration duplicate check
+   * miss, so `Foo@bar.com` and `foo@bar.com` became two accounts -- which is
+   * what let one invitation token authorize an unbounded number of them.
+   *
+   * `LOWER(email)` does not use the plain `users_email_unique` index. The
+   * durable fix is a `UNIQUE INDEX ON users (LOWER(email))` migration, which
+   * also makes the duplicate check enforceable at the DB level; that needs a
+   * data audit first (rows differing only by case would block the index), so
+   * it is deliberately left out of this change. `ORDER BY created_at` keeps
+   * the result deterministic if such rows already exist.
    */
   async findByEmail(email: string): Promise<User | null> {
     const query = `
@@ -67,7 +94,9 @@ export class UserService {
              password_reset_token, password_reset_expires,
              must_change_password, created_at, updated_at
       FROM users
-      WHERE email = $1
+      WHERE LOWER(email) = LOWER($1)
+      ORDER BY created_at
+      LIMIT 1
     `;
 
     const result = await this.pool.query<UserData>(query, [email]);
@@ -221,6 +250,34 @@ export class UserService {
     const result = await this.pool.query(query, [id]);
 
     return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  /**
+   * Lists accounts (id, email, role, created_at only - no password hash or
+   * tokens), paginated. Backs the admin account-audit endpoint (see
+   * registration-gate plan item 2.5): closing registration is prospective
+   * only, so an operator needs a way to find anyone who registered during
+   * an open window and revoke their sessions.
+   *
+   * Deliberately includes admin accounts (no `role != 'admin'` filter): an
+   * account created during the open window and later promoted to admin is
+   * the highest-value case to catch, and excluding it would make it
+   * invisible to the one audit meant to find it. `role` is returned so the
+   * caller can render/filter it instead.
+   */
+  async listAccountsForAudit(options: { limit: number; offset: number }): Promise<AccountAuditPage> {
+    const countResult = await this.pool.query<{ count: string }>('SELECT COUNT(*) FROM users');
+    const total = parseInt(countResult.rows[0]?.count ?? '0', 10);
+
+    const query = `
+      SELECT id, email, role, created_at
+      FROM users
+      ORDER BY created_at
+      LIMIT $1 OFFSET $2
+    `;
+
+    const result = await this.pool.query<AccountAuditSummary>(query, [options.limit, options.offset]);
+    return { accounts: result.rows, total };
   }
 
   /**

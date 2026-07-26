@@ -1,3 +1,5 @@
+import { MAX_CUSTOM_REGEX_LENGTH, MAX_VALUE_LENGTH, hasNestedQuantifier } from '@/utils/regexGuard';
+
 export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox' | 'radio' | 'dropdown' | 'textarea';
 
 export interface RadioOption {
@@ -662,6 +664,16 @@ export class Field {
     if (config.pattern === 'custom') {
       if (!config.customRegex) {
         errors.push('Custom validation pattern requires a customRegex');
+      } else if (config.customRegex.length > MAX_CUSTOM_REGEX_LENGTH) {
+        // This is the ingress for customRegex (reachable via
+        // fieldService.createField/updateField) - refuse an over-length
+        // pattern here so it's never persisted, rather than only catching it
+        // later when validateValue reads it back. See @/utils/regexGuard.
+        errors.push(`Custom regex exceeds maximum length of ${MAX_CUSTOM_REGEX_LENGTH} characters`);
+      } else if (hasNestedQuantifier(config.customRegex)) {
+        // Same rationale: refuse the classic (X+)+ ReDoS shape before it can
+        // be stored, not just when it's compiled/tested for validation.
+        errors.push('Custom regex rejected: nested quantifiers can cause catastrophic backtracking');
       } else {
         // Validate that the regex is valid
         try {
@@ -942,14 +954,30 @@ export class Field {
       return { valid: true };
     }
 
-    // Get the regex pattern
-    const regex = this.getValidationRegex(validation);
-    if (!regex) {
-      return { valid: true };
+    // Reject oversized values before compiling/testing any regex - even the
+    // guarded patterns below are O(n) or worse in the value length, and an
+    // unbounded value is itself a resource-exhaustion vector. See
+    // @/utils/regexGuard.
+    if (value.length > MAX_VALUE_LENGTH) {
+      return {
+        valid: false,
+        message: `Value exceeds maximum length of ${MAX_VALUE_LENGTH} characters`,
+      };
+    }
+
+    // Get the regex pattern, or the reason a configured pattern was refused
+    const patternResult = this.getValidationRegex(validation);
+    if ('refused' in patternResult) {
+      // Fail closed: a pattern was configured but couldn't be used (over
+      // length, nested-quantifier ReDoS shape, or - for data written before
+      // validateValidationConfig guarded the write path - simply
+      // uncompilable). Silently returning valid here would let a required
+      // field accept anything.
+      return { valid: false, message: validation.message || patternResult.refused };
     }
 
     // Test the value
-    if (!regex.test(value)) {
+    if (!patternResult.regex.test(value)) {
       const message = validation.message || this.getDefaultValidationMessage(validation.pattern);
       return { valid: false, message };
     }
@@ -958,18 +986,39 @@ export class Field {
   }
 
   /**
-   * Get the regex for a validation config
+   * Get the regex for a validation config, or the reason it was refused.
+   *
+   * `customRegex` is attacker-controllable (set via the field's own
+   * validation config). `validateValidationConfig` is the write-path ingress
+   * guard and should keep a bad pattern from ever being persisted, but this
+   * read path applies the same guard as defence in depth (e.g. for data
+   * written before that guard existed) - an over-length pattern or a
+   * nested-quantifier shape that could cause catastrophic backtracking
+   * (ReDoS) is treated the same as an uncompilable pattern: refused before
+   * ever reaching `new RegExp()`'s `.test()` call. See `@/utils/regexGuard`
+   * for why this is a shared check rather than a second copy.
    */
-  private getValidationRegex(config: ValidationConfig): RegExp | null {
+  private getValidationRegex(
+    config: ValidationConfig
+  ): { regex: RegExp } | { refused: string } {
     if (config.pattern === 'custom' && config.customRegex) {
+      if (config.customRegex.length > MAX_CUSTOM_REGEX_LENGTH) {
+        return { refused: `Custom pattern exceeds maximum length of ${MAX_CUSTOM_REGEX_LENGTH} characters` };
+      }
+
+      if (hasNestedQuantifier(config.customRegex)) {
+        return { refused: 'Custom pattern rejected: nested quantifiers can cause catastrophic backtracking' };
+      }
+
       try {
-        return new RegExp(config.customRegex);
+        return { regex: new RegExp(config.customRegex) };
       } catch {
-        return null;
+        return { refused: 'Invalid custom pattern configuration' };
       }
     }
 
-    return Field.getPresetPatternRegex(config.pattern);
+    const preset = Field.getPresetPatternRegex(config.pattern);
+    return preset ? { regex: preset } : { refused: 'Unknown validation pattern' };
   }
 
   /**
@@ -990,7 +1039,15 @@ export class Field {
       number: /^-?\d*\.?\d+$/,
       alpha: /^[a-zA-Z\s]+$/,
       alphanumeric: /^[a-zA-Z0-9\s]+$/,
-      url: /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/,
+      // The trailing group used to be `([/\w .-]*)*` - a group quantified by
+      // `*` repeated by an outer `*` is the classic catastrophic-
+      // backtracking shape (same one `hasNestedQuantifier` rejects for
+      // custom patterns, see @/utils/regexGuard) and hangs the event loop on
+      // inputs a fraction of MAX_CUSTOM_REGEX_LENGTH (e.g. `a.aa/` + 40 `a`s
+      // + `!`). A single `([/\w .-]*)` matches the exact same language -
+      // nothing here reads capture groups, only `.test()` - so this is
+      // semantics-preserving, not a behavior change.
+      url: /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)\/?$/,
       date_iso: /^\d{4}-\d{2}-\d{2}$/,
       currency: /^-?\$?\d{1,3}(,\d{3})*(\.\d{2})?$/,
       custom: /.*/,  // Custom patterns use customRegex

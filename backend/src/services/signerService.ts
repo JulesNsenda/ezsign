@@ -1,6 +1,21 @@
 import { Pool } from 'pg';
 import { Signer, CreateSignerData, UpdateSignerData, SignerData } from '@/models/Signer';
 
+/**
+ * SEC-H3 (pulled forward as an Item 4 dependency): thrown by the
+ * document-scoped signer lookups/mutations below when the signer doesn't
+ * exist or belongs to a different document. Callers respond 404 - kept
+ * distinct from the generic validation `Error`s this service otherwise
+ * throws (which callers map to 400), mirroring `SigningContextError` in
+ * `signingContextService.ts`.
+ */
+export class SignerNotFoundError extends Error {
+  constructor(message = 'Signer not found') {
+    super(message);
+    this.name = 'SignerNotFoundError';
+  }
+}
+
 export class SignerService {
   private pool: Pool;
 
@@ -98,10 +113,17 @@ export class SignerService {
   }
 
   /**
-   * Get a single signer by ID
+   * Get a single signer by ID, scoped to the document it must belong to
+   * (SEC-H3). Returns `null` - rather than a different tenant's/document's
+   * signer - both when the id doesn't exist at all and when it exists but
+   * belongs to another document, so the two cases are indistinguishable to
+   * a caller probing IDs.
    */
-  async getSignerById(signerId: string): Promise<Signer | null> {
-    const result = await this.pool.query('SELECT * FROM signers WHERE id = $1', [signerId]);
+  async getSignerById(signerId: string, documentId: string): Promise<Signer | null> {
+    const result = await this.pool.query(
+      'SELECT * FROM signers WHERE id = $1 AND document_id = $2',
+      [signerId, documentId]
+    );
 
     if (result.rows.length === 0) {
       return null;
@@ -127,13 +149,29 @@ export class SignerService {
   }
 
   /**
-   * Update a signer
+   * Update a signer, scoped to the document it must belong to (SEC-H3).
    */
-  async updateSigner(signerId: string, data: UpdateSignerData): Promise<Signer> {
-    // Get existing signer
-    const existingSigner = await this.getSignerById(signerId);
+  async updateSigner(signerId: string, documentId: string, data: UpdateSignerData): Promise<Signer> {
+    // Get existing signer, scoped to this document
+    const existingSigner = await this.getSignerById(signerId, documentId);
     if (!existingSigner) {
-      throw new Error('Signer not found');
+      throw new SignerNotFoundError();
+    }
+
+    // SEC-H3: signing_order/status can rewrite the sequential signing order
+    // or force a signature state - restrict both to documents still in
+    // draft, mirroring `Document.canEdit()`. Otherwise a signer with access
+    // to their own (unrelated) draft document could target another
+    // document's pending signer, e.g. `{"signing_order": 0}` to jump the
+    // sequential queue or `{"status": "signed"}` to force completion.
+    if (data.signing_order !== undefined || data.status !== undefined) {
+      const documentResult = await this.pool.query(
+        'SELECT status FROM documents WHERE id = $1',
+        [documentId]
+      );
+      if (documentResult.rows[0]?.status !== 'draft') {
+        throw new Error('Signing order and status can only be changed while the document is still in draft');
+      }
     }
 
     // Validate email if being updated
@@ -205,45 +243,63 @@ export class SignerService {
       return existingSigner;
     }
 
-    values.push(signerId);
+    values.push(signerId, documentId);
 
     const result = await this.pool.query(
-      `UPDATE signers SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramIndex} RETURNING *`,
+      `UPDATE signers SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramIndex} AND document_id = $${paramIndex + 1} RETURNING *`,
       values
     );
+
+    if (result.rows.length === 0) {
+      throw new SignerNotFoundError();
+    }
 
     return new Signer(this.mapRowToSignerData(result.rows[0]));
   }
 
   /**
-   * Delete a signer
+   * Delete a signer, scoped to the document it must belong to (SEC-H3).
+   * Returns `false` (not found) for a signer that exists but belongs to a
+   * different document - the caller already treats a `false` return as 404.
    */
-  async deleteSigner(signerId: string): Promise<boolean> {
+  async deleteSigner(signerId: string, documentId: string): Promise<boolean> {
     // Also update fields assigned to this signer
-    const signer = await this.getSignerById(signerId);
-    if (signer) {
-      await this.pool.query(
-        'UPDATE fields SET signer_email = NULL WHERE document_id = $1 AND signer_email = $2',
-        [signer.document_id, signer.email]
-      );
+    const signer = await this.getSignerById(signerId, documentId);
+    if (!signer) {
+      return false;
     }
 
-    const result = await this.pool.query('DELETE FROM signers WHERE id = $1', [signerId]);
+    await this.pool.query(
+      'UPDATE fields SET signer_email = NULL WHERE document_id = $1 AND signer_email = $2',
+      [signer.document_id, signer.email]
+    );
+
+    const result = await this.pool.query(
+      'DELETE FROM signers WHERE id = $1 AND document_id = $2',
+      [signerId, documentId]
+    );
     return result.rowCount !== null && result.rowCount > 0;
   }
 
   /**
    * Mark signer as signed
+   *
+   * Note: unused in the app today (the actual signing write path is
+   * `signingController.submitSignature`, which updates `signers` directly) -
+   * kept as a document-unscoped raw lookup rather than widened to take
+   * `documentId` for SEC-H3, since that scoping is for the routes in
+   * `signerController`/`documentRoutes.ts`, not this dead call path.
    */
   async markAsSigned(
     signerId: string,
     ipAddress?: string,
     userAgent?: string
   ): Promise<Signer> {
-    const signer = await this.getSignerById(signerId);
-    if (!signer) {
+    const signerResult = await this.pool.query('SELECT * FROM signers WHERE id = $1', [signerId]);
+    if (signerResult.rows.length === 0) {
       throw new Error('Signer not found');
     }
+    const signer = new Signer(this.mapRowToSignerData(signerResult.rows[0]));
 
     if (!signer.canSign()) {
       throw new Error('Signer cannot sign in current state');
@@ -261,14 +317,15 @@ export class SignerService {
   }
 
   /**
-   * Validate signing order for sequential workflow
+   * Validate signing order for sequential workflow, scoped to the document
+   * the signer must belong to (SEC-H3).
    * Returns true if this signer can sign now
    */
-  async canSignInSequentialWorkflow(signerId: string): Promise<{
+  async canSignInSequentialWorkflow(signerId: string, documentId: string): Promise<{
     canSign: boolean;
     reason?: string;
   }> {
-    const signer = await this.getSignerById(signerId);
+    const signer = await this.getSignerById(signerId, documentId);
     if (!signer) {
       return { canSign: false, reason: 'Signer not found' };
     }
@@ -392,15 +449,18 @@ export class SignerService {
   }
 
   /**
-   * Assign fields to a signer by updating signer_email
+   * Assign fields to a signer by updating signer_email, scoped to the
+   * document the signer must belong to (SEC-H3) - this is the write path
+   * onto `fields.signer_email`, the column Item 4 made security-critical.
    */
   async assignFieldsToSigner(
     signerId: string,
+    documentId: string,
     fieldIds: string[]
   ): Promise<void> {
-    const signer = await this.getSignerById(signerId);
+    const signer = await this.getSignerById(signerId, documentId);
     if (!signer) {
-      throw new Error('Signer not found');
+      throw new SignerNotFoundError();
     }
 
     // Validate that all fields belong to the same document
@@ -419,10 +479,11 @@ export class SignerService {
       }
     }
 
-    // Update fields with signer email
+    // Update fields with signer email, scoped to the document as
+    // defence-in-depth alongside the per-field check above.
     await this.pool.query(
-      'UPDATE fields SET signer_email = $1 WHERE id = ANY($2::uuid[])',
-      [signer.email, fieldIds]
+      'UPDATE fields SET signer_email = $1 WHERE id = ANY($2::uuid[]) AND document_id = $3',
+      [signer.email, fieldIds, signer.document_id]
     );
   }
 

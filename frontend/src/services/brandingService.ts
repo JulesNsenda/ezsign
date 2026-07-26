@@ -22,6 +22,16 @@ export interface PublicBrandingResponse {
   isDefault: boolean;
 }
 
+/**
+ * `GET /branding/default` also carries `registrationEnabled` - the only
+ * unauthenticated, DB-backed endpoint Landing/Login/PublicNavbar already
+ * poll, so it doubles as the public config surface for the registration
+ * gate instead of a dedicated `/api/config` route.
+ */
+export interface DefaultBrandingResponse extends PublicBrandingResponse {
+  registrationEnabled: boolean;
+}
+
 export const brandingService = {
   /**
    * Get branding settings for a team
@@ -98,10 +108,12 @@ export const brandingService = {
   },
 
   /**
-   * Get default branding for public pages (login, register - no auth required)
+   * Get default branding for public pages (login, register - no auth
+   * required). Also carries `registrationEnabled` - see
+   * `DefaultBrandingResponse`.
    */
-  async getDefaultBranding(): Promise<PublicBrandingResponse> {
-    const response = await apiClient.get<PublicBrandingResponse>(
+  async getDefaultBranding(): Promise<DefaultBrandingResponse> {
+    const response = await apiClient.get<DefaultBrandingResponse>(
       `/branding/default`
     );
     return response.data;

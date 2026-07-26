@@ -1,9 +1,28 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type APIRequestContext } from '@playwright/test';
 
 /**
  * Authentication E2E Tests
  * Tests the login, registration, and logout flows
  */
+
+const API_URL = process.env.VITE_API_URL || 'http://localhost:3001';
+
+/**
+ * Registration is closed by default (see the `registration.enabled` instance
+ * setting) - fetch the live flag so the sign-up-dependent cases below can
+ * gate themselves instead of assuming either state. Falls back to "closed"
+ * (skip) if the backend can't be reached at all, rather than turning every
+ * gated case into a hard failure.
+ */
+async function isRegistrationEnabled(request: APIRequestContext): Promise<boolean> {
+  try {
+    const response = await request.get(`${API_URL}/api/branding/default`);
+    const body = await response.json();
+    return Boolean(body.registrationEnabled);
+  } catch {
+    return false;
+  }
+}
 
 test.describe('Authentication', () => {
   test.describe('Login Flow', () => {
@@ -50,7 +69,8 @@ test.describe('Authentication', () => {
       await expect(page).toHaveURL(/.*forgot-password/);
     });
 
-    test('should navigate to registration page', async ({ page }) => {
+    test('should navigate to registration page', async ({ page, request }) => {
+      test.skip(!(await isRegistrationEnabled(request)), 'Registration is closed - sign-up link is hidden');
       await page.getByRole('link', { name: /sign up/i }).click();
       await expect(page).toHaveURL(/.*register/);
     });
@@ -75,13 +95,15 @@ test.describe('Authentication', () => {
       await page.goto('/register');
     });
 
-    test('should display registration form', async ({ page }) => {
+    test('should display registration form', async ({ page, request }) => {
+      test.skip(!(await isRegistrationEnabled(request)), 'Registration is closed - form is replaced by a closed state');
       await expect(page.getByRole('heading', { name: /create account|sign up|register/i })).toBeVisible();
       await expect(page.getByPlaceholder(/email/i)).toBeVisible();
       await expect(page.getByPlaceholder(/password/i).first()).toBeVisible();
     });
 
-    test('should show validation errors for invalid inputs', async ({ page }) => {
+    test('should show validation errors for invalid inputs', async ({ page, request }) => {
+      test.skip(!(await isRegistrationEnabled(request)), 'Registration is closed - form is replaced by a closed state');
       // Try to submit with invalid email
       const emailInput = page.getByPlaceholder(/email/i);
       await emailInput.fill('invalid-email');

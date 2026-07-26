@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { LocalStorageAdapter } from '@/adapters/LocalStorageAdapter';
 import { S3StorageAdapter, S3Config } from '@/adapters/S3StorageAdapter';
 import { StorageAdapter, StorageService, createStorageService } from '@/services/storageService';
@@ -11,6 +12,78 @@ export interface StorageConfig {
     basePath: string;
   };
   s3?: S3Config;
+}
+
+// Logged at most once so a hot path resolving the root repeatedly (e.g. per
+// request) doesn't flood the logs with the same relocation notice.
+let storagePathDivergenceLogged = false;
+
+/**
+ * The single canonical local storage root (SEC-C2 prerequisite -- a
+ * containment guard anchored on one root cannot constrain modules that
+ * resolve a different one). `STORAGE_PATH` is accepted as a deprecated
+ * alias of `FILE_STORAGE_PATH`; every module that previously read either
+ * env var directly should call this instead.
+ *
+ * F4/F4b: unifying the two vars behind one function is a real storage-root
+ * *relocation* for any instance that had `STORAGE_PATH` set, because before
+ * this existed some modules (`documentController`, `pdfController`,
+ * `cleanupService`, `pdfWorker`) read `STORAGE_PATH` directly while the main
+ * document/template/logo/signed-PDF adapter (`getStorageConfig()`) read
+ * only `FILE_STORAGE_PATH` and otherwise defaulted to `<cwd>/storage`. So:
+ *  - `STORAGE_PATH` set, `FILE_STORAGE_PATH` unset -- `STORAGE_PATH` is now
+ *    honoured everywhere, including the main adapter, which previously
+ *    ignored it and defaulted to `<cwd>/storage`. Existing files there are
+ *    orphaned.
+ *  - Both set, to different values -- `FILE_STORAGE_PATH` wins everywhere
+ *    now, including the four modules above that previously read
+ *    `STORAGE_PATH` directly. Their effective root silently changes too.
+ * Either case must be loud, not a routine deprecation notice: log at error,
+ * not warn, and name both roots plus a one-line migration command.
+ */
+export function getStorageRoot(): string {
+  const fileStoragePath = process.env.FILE_STORAGE_PATH;
+  const storagePathAlias = process.env.STORAGE_PATH;
+
+  if (storagePathAlias && storagePathAlias !== fileStoragePath && !storagePathDivergenceLogged) {
+    storagePathDivergenceLogged = true;
+
+    if (!fileStoragePath) {
+      const previousRoot = path.join(process.cwd(), 'storage');
+      logger.error(
+        'STORAGE_PATH is set (FILE_STORAGE_PATH is not) -- the storage root is relocating for every module, ' +
+          'including the main document/template/logo/signed-PDF adapter, which previously ignored STORAGE_PATH ' +
+          'and defaulted here. Existing files will 404 as missing until moved.',
+        {
+          previousRoot,
+          newRoot: storagePathAlias,
+          migrationCommand: `mv ${previousRoot}/* ${storagePathAlias}/`,
+        }
+      );
+    } else {
+      logger.error(
+        'STORAGE_PATH and FILE_STORAGE_PATH are both set, to different values -- FILE_STORAGE_PATH wins ' +
+          'everywhere now, including modules that previously read STORAGE_PATH directly (documentController, ' +
+          'pdfController, cleanupService, pdfWorker). Existing files under STORAGE_PATH will 404 as missing ' +
+          'until moved, or unset STORAGE_PATH if this divergence is unintentional.',
+        {
+          fileStoragePath,
+          storagePathAlias,
+          migrationCommand: `mv ${storagePathAlias}/* ${fileStoragePath}/`,
+        }
+      );
+    }
+  }
+
+  if (fileStoragePath) {
+    return fileStoragePath;
+  }
+
+  if (storagePathAlias) {
+    return storagePathAlias;
+  }
+
+  return './storage';
 }
 
 /**
@@ -43,7 +116,7 @@ export function getStorageConfig(): StorageConfig {
   return {
     type: 'local',
     local: {
-      basePath: process.env.FILE_STORAGE_PATH || './storage',
+      basePath: getStorageRoot(),
     },
   };
 }

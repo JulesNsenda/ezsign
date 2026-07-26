@@ -245,6 +245,10 @@ const HeroDocumentPreview: React.FC = () => (
 export const Landing: React.FC = () => {
   const { data: brandingData } = useDefaultBranding();
   const branding = brandingData?.branding;
+  // Hides the sign-up CTAs when registration is closed. Fetch failure just
+  // means they stay hidden - courtesy only, the backend 403 is the real gate
+  // on /register.
+  const registrationEnabled = brandingData?.registrationEnabled ?? false;
 
   const displayName = branding?.company_name || 'EzSign';
   const logoUrl = branding?.logo_url || null;
@@ -288,11 +292,13 @@ export const Landing: React.FC = () => {
                 per-document fees. Your documents, on your own server.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
-                <Link to="/register">
-                  <Button variant="primary" size="lg" className="px-8">
-                    Start Signing for Free
-                  </Button>
-                </Link>
+                {registrationEnabled && (
+                  <Link to="/register">
+                    <Button variant="primary" size="lg" className="px-8">
+                      Start Signing for Free
+                    </Button>
+                  </Link>
+                )}
                 <a href="#how-it-works">
                   <Button variant="outline" size="lg" className="px-8">
                     See How It Works
@@ -434,36 +440,40 @@ export const Landing: React.FC = () => {
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="py-20 sm:py-24">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="relative overflow-hidden rounded-3xl bg-neutral px-6 py-16 sm:px-16 sm:py-20 text-center">
-            <div
-              className="absolute -top-24 -left-16 w-72 h-72 bg-secondary/20 rounded-full blur-3xl pointer-events-none"
-              aria-hidden="true"
-            />
-            <div
-              className="absolute -bottom-24 -right-16 w-72 h-72 bg-accent/20 rounded-full blur-3xl pointer-events-none"
-              aria-hidden="true"
-            />
-            <div className="relative">
-              <h2 className="text-3xl sm:text-4xl font-bold text-base-100 tracking-tight mb-4">
-                Ready to get documents signed?
-              </h2>
-              <p className="text-lg text-base-100/70 mb-8 max-w-2xl mx-auto">
-                Create your free account and send your first document for signing in minutes.
-              </p>
-              <Link
-                to="/register"
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-base-100 px-10 py-3 text-lg font-medium text-neutral shadow-sm transition-all duration-200 hover:shadow-md hover:bg-base-100/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-base-100/50"
-              >
-                Get Started for Free
-              </Link>
-              <p className="text-sm text-base-100/50 mt-6">No credit card required. Free to use.</p>
+      {/* CTA - hidden entirely (not just the link) when registration is
+          closed, since the copy is a sign-up pitch with nothing else under
+          it */}
+      {registrationEnabled && (
+        <section className="py-20 sm:py-24">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="relative overflow-hidden rounded-3xl bg-neutral px-6 py-16 sm:px-16 sm:py-20 text-center">
+              <div
+                className="absolute -top-24 -left-16 w-72 h-72 bg-secondary/20 rounded-full blur-3xl pointer-events-none"
+                aria-hidden="true"
+              />
+              <div
+                className="absolute -bottom-24 -right-16 w-72 h-72 bg-accent/20 rounded-full blur-3xl pointer-events-none"
+                aria-hidden="true"
+              />
+              <div className="relative">
+                <h2 className="text-3xl sm:text-4xl font-bold text-base-100 tracking-tight mb-4">
+                  Ready to get documents signed?
+                </h2>
+                <p className="text-lg text-base-100/70 mb-8 max-w-2xl mx-auto">
+                  Create your free account and send your first document for signing in minutes.
+                </p>
+                <Link
+                  to="/register"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-base-100 px-10 py-3 text-lg font-medium text-neutral shadow-sm transition-all duration-200 hover:shadow-md hover:bg-base-100/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-base-100/50"
+                >
+                  Get Started for Free
+                </Link>
+                <p className="text-sm text-base-100/50 mt-6">No credit card required. Free to use.</p>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Footer */}
       <footer className="border-t border-base-300/50 py-12">

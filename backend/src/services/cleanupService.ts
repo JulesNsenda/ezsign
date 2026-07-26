@@ -2,6 +2,8 @@ import { Pool } from 'pg';
 import fs from 'fs/promises';
 import path from 'path';
 import logger from '@/services/loggerService';
+import { getStorageRoot } from '@/config/storage';
+import { resolveWithinStorage } from '@/utils/storagePaths';
 
 /**
  * Storage statistics interface
@@ -35,7 +37,7 @@ export class CleanupService {
 
   constructor(pool: Pool, basePath?: string) {
     this.pool = pool;
-    this.basePath = basePath || process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
+    this.basePath = basePath || getStorageRoot();
   }
 
   /**
@@ -266,7 +268,7 @@ export class CleanupService {
     try {
       // Delete main document file
       if (filePath) {
-        const fullPath = path.join(this.basePath, filePath);
+        const fullPath = resolveWithinStorage(this.basePath, filePath);
         try {
           await fs.unlink(fullPath);
           logger.info('Deleted document file', { documentId, filePath });
@@ -297,7 +299,12 @@ export class CleanupService {
       for (const row of result.rows) {
         if (row.signature_data) {
           try {
-            const sigPath = path.join(this.basePath, row.signature_data);
+            // Guarded (SEC-C2) - note the query above is a pre-existing
+            // defect (WHERE document_id, a column signatures does not
+            // have), so this line never actually runs today; guarded
+            // anyway per the bypass-site list rather than left as a raw
+            // join, and NOT fixed here (see docs/plans SEC-C2 known traps).
+            const sigPath = resolveWithinStorage(this.basePath, row.signature_data);
             await fs.unlink(sigPath);
             logger.debug('Deleted signature file', { documentId, signaturePath: row.signature_data });
           } catch (err) {

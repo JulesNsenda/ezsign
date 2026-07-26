@@ -10,6 +10,12 @@ export interface RegisterData {
   email: string;
   password: string;
   name?: string;
+  /**
+   * Present when registering via a team invitation link - lets the backend's
+   * invitation-scoped exemption through even while registration.enabled is
+   * false. See AcceptInvitation.tsx / Register.tsx.
+   */
+  invitationToken?: string;
 }
 
 export interface LoginData {

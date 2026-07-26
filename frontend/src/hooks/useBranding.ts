@@ -3,6 +3,7 @@ import brandingService, {
   type BrandingResponse,
   type LogoUploadResponse,
   type PublicBrandingResponse,
+  type DefaultBrandingResponse,
 } from '@/services/brandingService';
 import type { UpdateBrandingData, Branding } from '@/types';
 
@@ -37,7 +38,7 @@ export const usePublicBranding = (teamId: string | undefined) => {
  * Hook to get default branding for public pages (login, register)
  */
 export const useDefaultBranding = () => {
-  return useQuery<PublicBrandingResponse>({
+  return useQuery<DefaultBrandingResponse>({
     queryKey: ['defaultBranding'],
     queryFn: () => brandingService.getDefaultBranding(),
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes

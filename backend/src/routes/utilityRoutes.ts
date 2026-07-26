@@ -1,12 +1,24 @@
 /**
  * Utility Routes
  *
- * Public utility endpoints for frontend support.
+ * Utility endpoints for frontend support. The GET endpoints are public
+ * (static preset data); the POST endpoint that compiles an
+ * attacker-suppliable regex requires authentication.
+ *
+ * Gate 4/item-1 note: `POST /test-validation` (which also *executed* an
+ * attacker-suppliable regex against an attacker-suppliable value via
+ * `validationPatternService.validateValue`) has been removed - it had no
+ * client (see `useTestValidation` in the frontend, now orphaned) and was the
+ * only reachable path to `.test()`-ing a user-controlled regex.
  */
 
 import { Router, Request, Response } from 'express';
-import { validationPatternService } from '@/services/validationPatternService';
+import {
+  validationPatternService,
+  RegexValidationRejectedError,
+} from '@/services/validationPatternService';
 import { getAvailableVariables } from '@/services/prefillService';
+import { authenticate } from '@/middleware/auth';
 
 const router = Router();
 
@@ -48,8 +60,13 @@ router.get('/template-variables', (_req: Request, res: Response) => {
 /**
  * POST /api/util/validate-regex
  * Validate a custom regex pattern
+ *
+ * Requires authentication: compiling and testing an attacker-supplied
+ * regex is exactly the shape of a ReDoS primitive, so this can no longer
+ * be reached anonymously (see validationPatternService's length/nested-
+ * quantifier guards, which are the part that actually can't be bypassed).
  */
-router.post('/validate-regex', (req: Request, res: Response) => {
+router.post('/validate-regex', authenticate, (req: Request, res: Response) => {
   const { pattern } = req.body;
 
   if (!pattern || typeof pattern !== 'string') {
@@ -60,39 +77,23 @@ router.post('/validate-regex', (req: Request, res: Response) => {
     return;
   }
 
-  const isValid = validationPatternService.isValidRegex(pattern);
+  try {
+    const isValid = validationPatternService.isValidRegex(pattern);
 
-  res.json({
-    valid: isValid,
-    message: isValid ? 'Valid regex pattern' : 'Invalid regex pattern',
-  });
-});
-
-/**
- * POST /api/util/test-validation
- * Test a value against a validation pattern
- */
-router.post('/test-validation', (req: Request, res: Response) => {
-  const { value, patternId, customRegex } = req.body;
-
-  if (!value || typeof value !== 'string') {
-    res.status(400).json({
-      valid: false,
-      message: 'Value is required',
+    res.json({
+      valid: isValid,
+      message: isValid ? 'Valid regex pattern' : 'Invalid regex pattern',
     });
-    return;
+  } catch (error) {
+    if (error instanceof RegexValidationRejectedError) {
+      res.status(400).json({
+        valid: false,
+        message: error.message,
+      });
+      return;
+    }
+    throw error;
   }
-
-  if (!patternId || typeof patternId !== 'string') {
-    res.status(400).json({
-      valid: false,
-      message: 'Pattern ID is required',
-    });
-    return;
-  }
-
-  const result = validationPatternService.validateValue(value, patternId as any, customRegex);
-  res.json(result);
 });
 
 export default router;
