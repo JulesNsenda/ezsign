@@ -43,7 +43,7 @@ describe('Document Upload and Retrieval Integration Tests', () => {
       `INSERT INTO users (email, password_hash, role, email_verified)
        VALUES ($1, $2, $3, $4)
        RETURNING id`,
-      ['test-upload@example.com', 'hashed_password', 'user', true]
+      ['test-upload@example.com', 'hashed_password', 'creator', true]
     );
     testUserId = userResult.rows[0].id;
 
@@ -198,7 +198,7 @@ describe('Document Upload and Retrieval Integration Tests', () => {
         `INSERT INTO users (email, password_hash, role, email_verified)
          VALUES ($1, $2, $3, $4)
          RETURNING id`,
-        ['other-user@example.com', 'hashed_password', 'user', true]
+        ['other-user@example.com', 'hashed_password', 'creator', true]
       );
       const otherUserId = otherUserResult.rows[0].id;
 
@@ -324,7 +324,7 @@ describe('Document Upload and Retrieval Integration Tests', () => {
         `INSERT INTO users (email, password_hash, role, email_verified)
          VALUES ($1, $2, $3, $4)
          RETURNING id`,
-        ['team-member@example.com', 'hashed_password', 'user', true]
+        ['team-member@example.com', 'hashed_password', 'creator', true]
       );
       teamMemberUserId = userResult.rows[0].id;
 
@@ -366,7 +366,7 @@ describe('Document Upload and Retrieval Integration Tests', () => {
         `INSERT INTO users (email, password_hash, role, email_verified)
          VALUES ($1, $2, $3, $4)
          RETURNING id`,
-        ['non-team@example.com', 'hashed_password', 'user', true]
+        ['non-team@example.com', 'hashed_password', 'creator', true]
       );
       const nonTeamUserId = userResult.rows[0].id;
 
