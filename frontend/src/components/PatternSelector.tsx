@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   useValidationPatterns,
   useGroupedPatterns,
@@ -26,9 +26,29 @@ const PatternSelector: React.FC<PatternSelectorProps> = ({
 
   const [showCustom, setShowCustom] = useState(value?.pattern === 'custom');
   const [customRegexError, setCustomRegexError] = useState<string | null>(null);
+  // Local draft of the custom regex input, decoupled from `value.customRegex`
+  // (which only updates once the server confirms the pattern is safe - see
+  // handleCustomRegexChange below). Without this, a controlled input bound
+  // directly to `value.customRegex` would snap back to the last-accepted
+  // value on every keystroke that turns out to be invalid, making it
+  // impossible to type a pattern like `^[a-z]+$` character by character.
+  const [customRegexDraft, setCustomRegexDraft] = useState<string>(value?.customRegex || '');
+  // Guards against a slow response for an older keystroke landing after a
+  // newer one already resolved (or is still in flight) - only the request
+  // matching the current sequence number is allowed to set the error or
+  // commit the pattern.
+  const requestSeqRef = useRef(0);
+
+  // Resync the draft when `value` changes for a reason other than our own
+  // commits below - e.g. the properties panel switches to a different field.
+  useEffect(() => {
+    setCustomRegexDraft(value?.customRegex ?? '');
+  }, [value?.customRegex]);
 
   const handlePatternChange = useCallback(
     (patternId: string) => {
+      setCustomRegexError(null);
+
       if (!patternId) {
         onChange(undefined);
         setShowCustom(false);
@@ -56,7 +76,9 @@ const PatternSelector: React.FC<PatternSelectorProps> = ({
 
   const handleCustomRegexChange = useCallback(
     async (regex: string) => {
+      setCustomRegexDraft(regex);
       setCustomRegexError(null);
+      const seq = ++requestSeqRef.current;
 
       if (!regex) {
         onChange({
@@ -67,26 +89,45 @@ const PatternSelector: React.FC<PatternSelectorProps> = ({
         return;
       }
 
+      let hasError = false;
+
       // Validate regex
       try {
         const result = await validateRegex.mutateAsync(regex);
+        if (requestSeqRef.current !== seq) return; // superseded by a newer edit
         if (!result.valid) {
           setCustomRegexError(result.message);
+          hasError = true;
         }
-      } catch {
-        // Try local validation
-        try {
-          new RegExp(regex);
-        } catch {
-          setCustomRegexError('Invalid regex pattern');
+      } catch (error: any) {
+        if (requestSeqRef.current !== seq) return; // superseded by a newer edit
+        // The server rejects over-length or nested-quantifier patterns
+        // outright (400) rather than returning { valid: false } - surface
+        // its explanatory message the same way an invalid-pattern result
+        // would be shown.
+        if (error.response?.status === 400 && error.response?.data?.message) {
+          setCustomRegexError(error.response.data.message);
+          hasError = true;
+        } else {
+          // Unexpected failure (e.g. network error) - fall back to local validation
+          try {
+            new RegExp(regex);
+          } catch {
+            setCustomRegexError('Invalid regex pattern');
+            hasError = true;
+          }
         }
       }
 
-      onChange({
-        ...value,
-        pattern: 'custom',
-        customRegex: regex,
-      });
+      // Only persist a pattern the server accepted - a rejected pattern must
+      // not be written into the field config (and saved along with it).
+      if (!hasError) {
+        onChange({
+          ...value,
+          pattern: 'custom',
+          customRegex: regex,
+        });
+      }
     },
     [onChange, validateRegex, value]
   );
@@ -170,7 +211,7 @@ const PatternSelector: React.FC<PatternSelectorProps> = ({
           </label>
           <input
             type="text"
-            value={value?.customRegex || ''}
+            value={customRegexDraft}
             onChange={(e) => handleCustomRegexChange(e.target.value)}
             placeholder="^[A-Za-z]+$"
             className={`input-docuseal text-sm font-mono w-full ${

@@ -23,6 +23,7 @@ import { createEmailLogRouter, createEmailWebhookRouter } from '@/routes/emailLo
 import { createAdminDlqRouter } from '@/routes/adminDlqRoutes';
 import { createAdminStatsRouter } from '@/routes/adminStatsRoutes';
 import { createAdminSettingsRouter } from '@/routes/adminSettingsRoutes';
+import { createAdminUsersRouter } from '@/routes/adminUsersRoutes';
 import { createBrandingRouter, createPublicBrandingRouter } from '@/routes/brandingRoutes';
 import { createTeamInvitationsRouter, createInvitationsRouter } from '@/routes/invitations';
 import utilityRoutes from '@/routes/utilityRoutes';
@@ -163,14 +164,11 @@ const morganStream = {
 };
 app.use(morgan(morganFormat, { stream: morganStream }));
 
-// Body parsing middleware
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// Rate limiting
-app.use(apiLimiter);
-
 // CORS middleware
+// Must run before body parsing and rate limiting so that 413 (payload too
+// large) and 429 (rate limited) responses still carry
+// Access-Control-Allow-Origin - otherwise they reach the browser as an
+// opaque network error instead of a readable response.
 app.use((req: Request, res: Response, next: NextFunction): void => {
   const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [
     'http://localhost:3000',
@@ -179,23 +177,39 @@ app.use((req: Request, res: Response, next: NextFunction): void => {
   ];
   const origin = req.headers.origin;
 
+  // Allow-Credentials/Methods/Headers, and the OPTIONS-preflight short
+  // circuit, must only be emitted for an origin that's actually on the
+  // allowlist - otherwise a disallowed origin's preflight still gets a
+  // permissive-looking 200 (Allow-Origin just happens to be absent). Nest
+  // all of it inside the allowlist check so a disallowed origin instead
+  // falls through to normal routing (and its 404/401 fate) with no CORS
+  // headers at all.
   if (origin && allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-  }
+    // The response varies per request Origin - tell caches not to reuse one
+    // origin's (pre)response for another.
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
 
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-    return;
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(200);
+      return;
+    }
   }
 
   next();
 });
 
-// Health check routes (before rate limiting to ensure they always respond)
+// Body parsing middleware
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Rate limiting
+app.use(apiLimiter);
+
+// Health check routes (rate limiting skips /health - see shouldSkipRateLimit)
 app.use('/health', createHealthRoutes(healthService));
 
 // API routes
@@ -218,7 +232,8 @@ app.use('/api/admin/emails', createEmailLogRouter(pool)); // Email logs (admin)
 app.use('/api/admin/dlq', createAdminDlqRouter(pool)); // Dead Letter Queue (admin)
 app.use('/api/admin/stats', createAdminStatsRouter(pool)); // Query performance stats (admin)
 app.use('/api/admin/settings', createAdminSettingsRouter(pool)); // Instance settings (admin)
-app.use('/api/util', utilityRoutes); // Utility endpoints (public)
+app.use('/api/admin/users', createAdminUsersRouter(pool)); // Account audit + session revocation (admin)
+app.use('/api/util', utilityRoutes); // Utility endpoints (some public, some require authenticate - see utilityRoutes.ts)
 
 // API documentation placeholder
 app.get('/api/docs', (_req: Request, res: Response) => {

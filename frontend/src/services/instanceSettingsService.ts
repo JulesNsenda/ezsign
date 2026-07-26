@@ -21,7 +21,8 @@ export type InstanceSettingKey =
   | 'smtp.user'
   | 'smtp.pass'
   | 'email.from'
-  | 'app.url';
+  | 'app.url'
+  | 'registration.enabled';
 
 export interface EffectiveSetting {
   key: InstanceSettingKey;

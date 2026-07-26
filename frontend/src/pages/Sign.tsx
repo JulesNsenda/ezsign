@@ -27,6 +27,25 @@ import {
 } from '@/services/embedMessaging';
 
 /**
+ * Extracts a user-facing message from an axios error response. Most backend
+ * error envelopes nest `{error: {message}}` (via errorHandler.ts), but
+ * signingController responds `{success: false, error: '<plain string>'}` -
+ * `error` is a string there, not an object, so a bare `.error?.message` read
+ * silently resolves to `undefined`. Handle both rather than assuming one
+ * shape. Mirrors Register.tsx's `extractErrorMessage`, which solved the same
+ * mismatch for the registration gate's 403.
+ */
+function extractErrorMessage(err: any, fallback: string): string {
+  const data = err?.response?.data;
+  const nestedMessage =
+    data?.error && typeof data.error === 'object' ? data.error?.message : undefined;
+  if (typeof nestedMessage === 'string' && nestedMessage) return nestedMessage;
+  if (typeof data?.error === 'string' && data.error) return data.error;
+  if (typeof data?.message === 'string' && data.message) return data.message;
+  return fallback;
+}
+
+/**
  * Signing page for signers to review and sign documents
  */
 
@@ -261,6 +280,13 @@ export const Sign: React.FC = () => {
   }
 
   if (error || !session) {
+    // Surface the server's specific reason (not your turn yet, deadline
+    // passed, document cancelled, etc.) when there is one - falling back to
+    // the generic copy only when the response carried no usable message.
+    const serverMessage = error
+      ? extractErrorMessage(error, '')
+      : '';
+
     return (
       <div className="min-h-screen bg-base-200 flex items-center justify-center p-4">
         <div className="card-docuseal max-w-md text-center animate-fade-in">
@@ -271,7 +297,8 @@ export const Sign: React.FC = () => {
           </div>
           <h1 className="text-2xl font-bold text-neutral mb-3">Invalid or Expired Link</h1>
           <p className="text-base-content/60 leading-relaxed">
-            This signing link is no longer valid. Please contact the document sender for a new link.
+            {serverMessage ||
+              'This signing link is no longer valid. Please contact the document sender for a new link.'}
           </p>
         </div>
       </div>
@@ -592,7 +619,7 @@ export const Sign: React.FC = () => {
         eventEmitterRef.current.emitSigned(session.signer.id);
       }
     } catch (err: any) {
-      const errorMessage = err.response?.data?.error?.message || 'Failed to submit signatures';
+      const errorMessage = extractErrorMessage(err, 'Failed to submit signatures');
       showError(errorMessage);
 
       // Emit error event for embedded mode
@@ -684,7 +711,11 @@ export const Sign: React.FC = () => {
         return (
           <TextareaFieldInput
             placeholder={currentField.properties?.placeholder as string || 'Enter your text here...'}
-            maxLength={currentField.properties?.maxLength as number || 1000}
+            // `signatures.text_value` is `varchar(500)` - clamp to that cap
+            // regardless of a field's configured `maxLength` so a legitimately
+            // long submission never gets rejected at the database, taking
+            // every other field in the batch down with it.
+            maxLength={Math.min((currentField.properties?.maxLength as number) || 1000, 500)}
             rows={currentField.properties?.rows as number || 4}
             onSave={handleTextareaInput}
             onCancel={() => setIsSignatureModalOpen(false)}

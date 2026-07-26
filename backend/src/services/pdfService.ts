@@ -1,4 +1,6 @@
 import { PDFDocument, rgb, degrees } from 'pdf-lib';
+import { getStorageRoot } from '@/config/storage';
+import { resolveWithinStorage } from '@/utils/storagePaths';
 
 export interface PdfInfo {
   /** Number of pages in the PDF */
@@ -280,10 +282,8 @@ export class PdfService {
     pageNumber: number
   ): Promise<{ width: number; height: number }> {
     const fs = await import('fs/promises');
-    const path = await import('path');
-    // Prepend storage basePath if filePath is relative
-    const storagePath = process.env.FILE_STORAGE_PATH || './storage';
-    const fullPath = path.join(storagePath, filePath);
+    // Prepend storage basePath if filePath is relative (guarded - SEC-C2)
+    const fullPath = resolveWithinStorage(getStorageRoot(), filePath);
     const pdfBuffer = await fs.readFile(fullPath);
     const pdfDoc = await this.loadPdf(pdfBuffer);
     const pages = pdfDoc.getPages();

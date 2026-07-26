@@ -66,6 +66,16 @@ describe('AuthController', () => {
       verifyBackupCode: jest.fn().mockResolvedValue(true),
     };
 
+    // Registration open by default so pre-existing register() tests are
+    // unaffected; the 'registration gate' describe block below overrides
+    // this per-test to exercise the closed path.
+    (authController as any).settingsService = {
+      getValue: jest.fn().mockResolvedValue(true),
+    };
+    (authController as any).invitationService = {
+      findByToken: jest.fn().mockResolvedValue(null),
+    };
+
     // Setup response mock
     responseJson = jest.fn();
     responseStatus = jest.fn().mockReturnValue({ json: responseJson });
@@ -333,6 +343,253 @@ describe('AuthController', () => {
         message: 'Email already registered',
       });
     });
+
+    it('normalizes a mixed-case submitted email to lowercase before calling findByEmail and createUser (so Foo@Bar.com and foo@bar.com cannot become two accounts)', async () => {
+      mockRequest.body = {
+        email: 'Foo@Bar.com',
+        password: 'password123',
+      };
+
+      const mockUser = {
+        id: 'user-x',
+        email: 'foo@bar.com',
+        role: 'creator',
+        generateEmailVerificationToken: jest.fn().mockReturnValue({
+          token: 'verification-token',
+          expires: new Date(),
+        }),
+        toJSON: jest.fn().mockReturnValue({ id: 'user-x', email: 'foo@bar.com', role: 'creator' }),
+      } as any;
+
+      mockUserService.findByEmail = jest.fn().mockResolvedValue(null);
+      mockUserService.createUser = jest.fn().mockResolvedValue(mockUser);
+      mockUserService.updateEmailVerificationToken = jest.fn().mockResolvedValue(undefined);
+      mockTeamService.createTeam = jest.fn().mockResolvedValue({ id: 'team-x', name: "foo's Team" });
+
+      (tokenService.generateTokenPair as jest.Mock) = jest.fn().mockReturnValue({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+      });
+
+      await authController.register(mockRequest as Request, mockResponse as Response);
+
+      expect(mockUserService.findByEmail).toHaveBeenCalledWith('foo@bar.com');
+      expect(mockUserService.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'foo@bar.com' })
+      );
+      expect(responseStatus).toHaveBeenCalledWith(201);
+    });
+
+    it('returns 409 for a case-variant of an already-registered email (findByEmail is what actually matches case-insensitively; this confirms register normalizes before checking)', async () => {
+      mockRequest.body = {
+        email: 'FOO@BAR.COM',
+        password: 'password123',
+      };
+
+      const existingUser = { id: '123' } as any;
+      mockUserService.findByEmail = jest.fn().mockResolvedValue(existingUser);
+
+      await authController.register(mockRequest as Request, mockResponse as Response);
+
+      expect(mockUserService.findByEmail).toHaveBeenCalledWith('foo@bar.com');
+      expect(responseStatus).toHaveBeenCalledWith(409);
+      expect(mockUserService.createUser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('register: registration gate', () => {
+    const setRegistrationEnabled = (enabled: boolean): void => {
+      (authController as any).settingsService = {
+        getValue: jest.fn().mockResolvedValue(enabled),
+      };
+    };
+
+    const setInvitation = (invitation: any): void => {
+      (authController as any).invitationService = {
+        findByToken: jest.fn().mockResolvedValue(invitation),
+      };
+    };
+
+    const mockSuccessfulUserCreation = (email: string, id: string): void => {
+      const mockUser = {
+        id,
+        email,
+        role: 'creator',
+        generateEmailVerificationToken: jest.fn().mockReturnValue({
+          token: 'verification-token',
+          expires: new Date(),
+        }),
+        toJSON: jest.fn().mockReturnValue({ id, email, role: 'creator' }),
+      } as any;
+
+      mockUserService.findByEmail = jest.fn().mockResolvedValue(null);
+      mockUserService.createUser = jest.fn().mockResolvedValue(mockUser);
+      mockUserService.updateEmailVerificationToken = jest.fn().mockResolvedValue(undefined);
+      mockTeamService.createTeam = jest.fn().mockResolvedValue({ id: `team-${id}`, name: "x's Team" });
+
+      (tokenService.generateTokenPair as jest.Mock) = jest.fn().mockReturnValue({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+      });
+    };
+
+    it('returns 403 before findByEmail when closed and no invitation token is present', async () => {
+      setRegistrationEnabled(false);
+      setInvitation(null);
+      mockRequest.body = { email: 'invitee@example.com', password: 'password123' };
+
+      await authController.register(mockRequest as Request, mockResponse as Response);
+
+      expect(responseStatus).toHaveBeenCalledWith(403);
+      expect(responseJson).toHaveBeenCalledWith({
+        error: 'Forbidden',
+        message: 'Registration is currently closed',
+      });
+      expect(mockUserService.findByEmail).not.toHaveBeenCalled();
+    });
+
+    it('allows registration when closed but a valid invitation token matches the submitted email', async () => {
+      setRegistrationEnabled(false);
+      const findByToken = jest.fn().mockResolvedValue({ email: 'invitee@example.com', isValid: () => true });
+      (authController as any).invitationService = { findByToken };
+      mockSuccessfulUserCreation('invitee@example.com', 'user-1');
+
+      mockRequest.body = {
+        email: 'invitee@example.com',
+        password: 'password123',
+        invitationToken: 'good-token',
+      };
+
+      await authController.register(mockRequest as Request, mockResponse as Response);
+
+      expect(findByToken).toHaveBeenCalledWith('good-token');
+      expect(mockUserService.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'invitee@example.com' })
+      );
+      expect(responseStatus).toHaveBeenCalledWith(201);
+    });
+
+    it('normalizes a mixed-case submitted email to match the (always-lowercase) invitation email, and stores it normalized', async () => {
+      setRegistrationEnabled(false);
+      setInvitation({ email: 'invitee@example.com', isValid: () => true });
+      mockSuccessfulUserCreation('invitee@example.com', 'user-1');
+
+      mockRequest.body = {
+        email: 'Invitee@Example.com',
+        password: 'password123',
+        invitationToken: 'good-token',
+      };
+
+      await authController.register(mockRequest as Request, mockResponse as Response);
+
+      expect(mockUserService.findByEmail).toHaveBeenCalledWith('invitee@example.com');
+      expect(mockUserService.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'invitee@example.com' })
+      );
+      expect(responseStatus).toHaveBeenCalledWith(201);
+    });
+
+    it('maps a users.email unique-violation from createUser to the same 409 findByEmail() returns (race guard)', async () => {
+      setRegistrationEnabled(false);
+      setInvitation({ email: 'invitee@example.com', isValid: () => true });
+
+      mockUserService.findByEmail = jest.fn().mockResolvedValue(null);
+      const raceError: any = new Error('duplicate key value violates unique constraint');
+      raceError.code = '23505';
+      mockUserService.createUser = jest.fn().mockRejectedValue(raceError);
+
+      mockRequest.body = {
+        email: 'invitee@example.com',
+        password: 'password123',
+        invitationToken: 'good-token',
+      };
+
+      await authController.register(mockRequest as Request, mockResponse as Response);
+
+      expect(responseStatus).toHaveBeenCalledWith(409);
+      expect(responseJson).toHaveBeenCalledWith({
+        error: 'Conflict',
+        message: 'Email already registered',
+      });
+    });
+
+    it('returns 403 when closed and the invitation token is valid but issued to a different email', async () => {
+      setRegistrationEnabled(false);
+      setInvitation({ email: 'someone-else@example.com', isValid: () => true });
+
+      mockRequest.body = {
+        email: 'invitee@example.com',
+        password: 'password123',
+        invitationToken: 'good-token',
+      };
+
+      await authController.register(mockRequest as Request, mockResponse as Response);
+
+      expect(responseStatus).toHaveBeenCalledWith(403);
+      expect(mockUserService.findByEmail).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when closed and the invitation token is expired', async () => {
+      setRegistrationEnabled(false);
+      // isExpired() -> isValid() false for an expired invitation.
+      setInvitation({ email: 'invitee@example.com', isValid: () => false });
+
+      mockRequest.body = {
+        email: 'invitee@example.com',
+        password: 'password123',
+        invitationToken: 'expired-token',
+      };
+
+      await authController.register(mockRequest as Request, mockResponse as Response);
+
+      expect(responseStatus).toHaveBeenCalledWith(403);
+    });
+
+    it('returns 403 when closed and the invitation token has already been accepted', async () => {
+      setRegistrationEnabled(false);
+      // status === 'accepted' -> isValid() false.
+      setInvitation({ email: 'invitee@example.com', isValid: () => false });
+
+      mockRequest.body = {
+        email: 'invitee@example.com',
+        password: 'password123',
+        invitationToken: 'already-accepted-token',
+      };
+
+      await authController.register(mockRequest as Request, mockResponse as Response);
+
+      expect(responseStatus).toHaveBeenCalledWith(403);
+    });
+
+    it('returns 403 when closed and no invitation is found for the token', async () => {
+      setRegistrationEnabled(false);
+      const findByToken = jest.fn().mockResolvedValue(null);
+      (authController as any).invitationService = { findByToken };
+
+      mockRequest.body = {
+        email: 'invitee@example.com',
+        password: 'password123',
+        invitationToken: 'unknown-token',
+      };
+
+      await authController.register(mockRequest as Request, mockResponse as Response);
+
+      expect(findByToken).toHaveBeenCalledWith('unknown-token');
+      expect(responseStatus).toHaveBeenCalledWith(403);
+      expect(mockUserService.createUser).not.toHaveBeenCalled();
+    });
+
+    it('allows registration regardless of invitation state when registration is open', async () => {
+      setRegistrationEnabled(true);
+      setInvitation(null);
+      mockSuccessfulUserCreation('anyone@example.com', 'user-2');
+
+      mockRequest.body = { email: 'anyone@example.com', password: 'password123' };
+
+      await authController.register(mockRequest as Request, mockResponse as Response);
+
+      expect(responseStatus).toHaveBeenCalledWith(201);
+    });
   });
 
   describe('login', () => {
@@ -491,6 +748,67 @@ describe('AuthController', () => {
       expect(responseStatus).toHaveBeenCalledWith(200);
       expect(responseJson).toHaveBeenCalledWith({
         message: 'Logout successful',
+      });
+    });
+  });
+
+  /**
+   * blacklistAllUserTokens() changed from Promise<void> to Promise<boolean>
+   * (registration-gate item 2.5, so the admin revoke-sessions endpoint can
+   * distinguish a real failure from success). logoutAll is one of the two
+   * pre-existing, fire-and-forget callers (the other is changePassword,
+   * below) that must keep ignoring the return value - these tests confirm
+   * a resolved `false` (a *handled* best-effort failure, not a throw)
+   * changes nothing about the response.
+   */
+  describe('logoutAll', () => {
+    beforeEach(() => {
+      (mockRequest as any).user = { userId: '123' };
+    });
+
+    it('returns 401 when there is no authenticated user on the request', async () => {
+      (mockRequest as any).user = undefined;
+
+      await authController.logoutAll(mockRequest as Request, mockResponse as Response);
+
+      expect(responseStatus).toHaveBeenCalledWith(401);
+      expect(tokenBlacklistService.blacklistAllUserTokens).not.toHaveBeenCalled();
+    });
+
+    it('returns 200 when blacklistAllUserTokens resolves true', async () => {
+      (tokenBlacklistService.blacklistAllUserTokens as jest.Mock).mockResolvedValueOnce(true);
+
+      await authController.logoutAll(mockRequest as Request, mockResponse as Response);
+
+      expect(tokenBlacklistService.blacklistAllUserTokens).toHaveBeenCalledWith('123');
+      expect(responseStatus).toHaveBeenCalledWith(200);
+      expect(responseJson).toHaveBeenCalledWith({
+        message: 'Successfully logged out from all devices',
+      });
+    });
+
+    it('still returns 200 when blacklistAllUserTokens resolves false (ignores the boolean - unchanged fire-and-forget behavior)', async () => {
+      (tokenBlacklistService.blacklistAllUserTokens as jest.Mock).mockResolvedValueOnce(false);
+
+      await authController.logoutAll(mockRequest as Request, mockResponse as Response);
+
+      expect(responseStatus).toHaveBeenCalledWith(200);
+      expect(responseJson).toHaveBeenCalledWith({
+        message: 'Successfully logged out from all devices',
+      });
+    });
+
+    it('returns 500 if blacklistAllUserTokens throws unexpectedly', async () => {
+      (tokenBlacklistService.blacklistAllUserTokens as jest.Mock).mockRejectedValueOnce(
+        new Error('used before init')
+      );
+
+      await authController.logoutAll(mockRequest as Request, mockResponse as Response);
+
+      expect(responseStatus).toHaveBeenCalledWith(500);
+      expect(responseJson).toHaveBeenCalledWith({
+        error: 'Internal Server Error',
+        message: 'Failed to logout from all devices',
       });
     });
   });
@@ -825,6 +1143,69 @@ describe('AuthController', () => {
       });
 
       await runChangePasswordWithFakeTimers();
+      jest.useRealTimers();
+
+      expect(mockUserService.updatePassword).toHaveBeenCalledWith('123', 'NewPassword456');
+      expect(responseStatus).toHaveBeenCalledWith(200);
+      expect(responseJson).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Password changed successfully',
+          accessToken: 'new-access-token',
+          refreshToken: 'new-refresh-token',
+        })
+      );
+    });
+
+    it('still succeeds identically when blacklistAllUserTokens resolves false (a handled best-effort failure, not a throw) - changePassword ignores the boolean return value', async () => {
+      jest.useFakeTimers();
+      mockRequest.body = {
+        currentPassword: 'OldPassword123',
+        newPassword: 'NewPassword456',
+      };
+
+      const mockUser = {
+        id: '123',
+        email: 'test@example.com',
+        role: 'creator',
+        must_change_password: false,
+        verifyPassword: jest.fn().mockResolvedValue(true),
+      } as any;
+
+      mockUserService.findById = jest.fn().mockResolvedValue(mockUser);
+      mockUserService.updatePassword = jest.fn().mockResolvedValue(undefined);
+      mockUserService.clearMustChangePassword = jest.fn().mockResolvedValue(undefined);
+
+      // Resolves false rather than rejecting - the new possibility this
+      // method's Promise<void> -> Promise<boolean> change introduced.
+      // Since changePassword never inspects the return value (only whether
+      // the call threw), this must take the exact same path as a `true`
+      // resolution: no throw reaches the catch block below, so
+      // waitPastCurrentSecond() must still run before tokens are minted.
+      (tokenBlacklistService.blacklistAllUserTokens as jest.Mock).mockResolvedValueOnce(false);
+
+      (tokenService.generateTokenPair as jest.Mock) = jest.fn().mockReturnValue({
+        accessToken: 'new-access-token',
+        refreshToken: 'new-refresh-token',
+      });
+
+      const promise = authController.changePassword(
+        mockRequest as Request,
+        mockResponse as Response
+      );
+
+      // Drain microtasks (bcrypt verify, the two DB writes, the revoke
+      // call) but not the fake timer - minting must not have happened yet,
+      // proving the `false` resolution still took the wait branch (a
+      // regression that mistakenly treated "resolved false" like a throw
+      // would skip both the wait and this assertion would already be
+      // satisfied trivially).
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(tokenService.generateTokenPair).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(1100);
+      await promise;
       jest.useRealTimers();
 
       expect(mockUserService.updatePassword).toHaveBeenCalledWith('123', 'NewPassword456');

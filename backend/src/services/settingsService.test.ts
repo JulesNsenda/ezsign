@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from 'pg';
-import { SettingsService, SettingsValidationError } from './settingsService';
+import { SettingsService, SettingsValidationError, SETTINGS_REGISTRY } from './settingsService';
 import { decryptSecret } from '@/utils/secretsCrypto';
 
 jest.mock('@/services/loggerService', () => ({
@@ -123,6 +123,124 @@ describe('SettingsService', () => {
 
     it('throws SettingsValidationError for an unknown key', async () => {
       await expect(service.getValue('not.a.real.key')).rejects.toThrow(SettingsValidationError);
+    });
+  });
+
+  describe('registration.enabled: DB -> default only, no env fallback', () => {
+    it('defaults to false when no DB row exists', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+      const value = await service.getValue('registration.enabled');
+      expect(value).toBe(false);
+    });
+
+    it('prefers a DB row over any env var', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [{ value: 'true', is_secret: false }] });
+      const value = await service.getValue('registration.enabled');
+      expect(value).toBe(true);
+    });
+
+    it('set(null) deletes the DB row and reverts to the registry default (false), since there is no env fallback to fall through to first', async () => {
+      mockClient.query.mockResolvedValue({ rows: [] });
+      await service.set([{ key: 'registration.enabled', value: null }], 'user-1');
+
+      const deleteCall = mockClient.query.mock.calls.find(
+        (call) =>
+          typeof call[0] === 'string' &&
+          call[0].includes('DELETE FROM instance_settings') &&
+          call[1]?.[0] === 'registration.enabled'
+      );
+      expect(deleteCall).toBeDefined();
+
+      // getValue re-resolves DB -> env -> default; the DB row was just
+      // deleted, and (per the sibling test below) this key has no
+      // envFallback entries at all, so the only place left to land is the
+      // registry default.
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+      const value = await service.getValue('registration.enabled');
+      expect(value).toBe(false);
+    });
+
+    it('has no envFallback entries in the registry (asserted directly, not just behaviorally) - no env var, real or invented, can reopen registration', () => {
+      expect(SETTINGS_REGISTRY['registration.enabled']?.envFallback).toBeUndefined();
+    });
+  });
+
+  describe('boolean coercion from storage/env (accepts common truthy/falsy spellings)', () => {
+    it.each(['1', 'true', 'TRUE', ' Yes ', 'on', 'ON'])(
+      'coerces stored value "%s" to true',
+      async (raw) => {
+        mockPool.query.mockResolvedValueOnce({ rows: [{ value: raw, is_secret: false }] });
+        const value = await service.getValue('smtp.secure');
+        expect(value).toBe(true);
+      }
+    );
+
+    // Note on regression coverage: unlike the truthy block above, no input
+    // here can distinguish this coercion from the old buggy `raw === 'true'`
+    // check - every one of these spellings is already not `'true'`, so the
+    // old code returned `false` for all of them too. This block is a
+    // positive behavior spec (these six spellings must decode to `false`),
+    // not a regression test; ' No ' with padding is the one case that would
+    // catch a *different* plausible regression (dropping the
+    // `.trim().toLowerCase()` normalization). Actual regression detection
+    // against the historical bug lives in the truthy block and the
+    // "throws...unrecognized" test below.
+    it.each(['0', 'false', 'FALSE', ' No ', 'off', 'OFF'])(
+      'coerces stored value "%s" to false',
+      async (raw) => {
+        mockPool.query.mockResolvedValueOnce({ rows: [{ value: raw, is_secret: false }] });
+        const value = await service.getValue('smtp.secure');
+        expect(value).toBe(false);
+      }
+    );
+
+    it('throws rather than silently defaulting to false for an unrecognized stored value', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [{ value: 'maybe', is_secret: false }] });
+      await expect(service.getValue('smtp.secure')).rejects.toThrow(SettingsValidationError);
+    });
+
+    it('coerces a truthy env var (fixes the old raw === "true" bug where "1"/"TRUE" silently became false)', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+      process.env.EMAIL_SMTP_SECURE = '1';
+      const value = await service.getValue('smtp.secure');
+      expect(value).toBe(true);
+    });
+
+    it('getValue() falls through to the default (does not throw) for an unrecognized env value - an operator typo must not hard-fail mail sending', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+      process.env.EMAIL_SMTP_SECURE = 'ssl';
+      const value = await service.getValue('smtp.secure');
+      expect(value).toBe(false); // registry default for smtp.secure
+    });
+
+    it('getEmailConfig() falls through to the default for an unrecognized env value instead of throwing', async () => {
+      process.env.EMAIL_SMTP_SECURE = 'ssl';
+      mockPool.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+
+      const config = await service.getEmailConfig();
+
+      expect(config.secure).toBe(false);
+    });
+
+    it('getAll() never throws on an unrecognized stored boolean, but reports it as invalid (not default) so it stays distinguishable from "unconfigured"', async () => {
+      mockPool.query.mockResolvedValueOnce({
+        rows: [{ key: 'smtp.secure', value: 'maybe', is_secret: false }],
+      });
+
+      const all = await service.getAll();
+      const smtpSecure = all.find((s) => s.key === 'smtp.secure');
+
+      expect(smtpSecure).toMatchObject({ value: false, source: 'invalid', isSet: true });
+    });
+
+    it('getAll() reports an invalid env-sourced boolean the same way (invalid, not default)', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+      process.env.EMAIL_SMTP_SECURE = 'ssl';
+
+      const all = await service.getAll();
+      const smtpSecure = all.find((s) => s.key === 'smtp.secure');
+
+      expect(smtpSecure).toMatchObject({ value: false, source: 'invalid', isSet: true });
     });
   });
 
@@ -318,6 +436,27 @@ describe('SettingsService', () => {
         (call) => call[1]?.[0] === 'smtp.pass'
       );
       expect(passCall).toBeUndefined();
+    });
+
+    it('treats a corrupt current stored value as changed rather than throwing - a PUT that fixes the corrupt key itself must still succeed (tombstones smtp.pass to be safe)', async () => {
+      // The currently-stored smtp.secure value is corrupt/unparseable -
+      // this is exactly the case getAll() now reports as `source: 'invalid'`.
+      mockPool.query.mockResolvedValueOnce({
+        rows: [{ value: 'maybe', is_secret: false }],
+      });
+      mockClient.query.mockResolvedValue({ rows: [] });
+
+      await expect(
+        service.set([{ key: 'smtp.secure', value: false }], 'user-1')
+      ).resolves.toBeUndefined();
+
+      const passUpsertCall = mockClient.query.mock.calls.find(
+        (call) =>
+          typeof call[0] === 'string' &&
+          call[0].includes('ON CONFLICT (key) DO UPDATE') &&
+          call[1][0] === 'smtp.pass'
+      );
+      expect(passUpsertCall).toBeDefined();
     });
 
     it('skips the auto-tombstone when smtp.pass is explicitly set in the same request', async () => {

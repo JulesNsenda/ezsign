@@ -5,6 +5,8 @@ export interface ApiError extends Error {
   statusCode?: number;
   code?: string;
   details?: any;
+  /** Set by body-parser/raw-body on error (e.g. 'entity.too.large'). */
+  type?: string;
 }
 
 /**
@@ -16,9 +18,17 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction
 ): void => {
-  const statusCode = err.statusCode || 500;
-  const message = err.message || 'Internal Server Error';
-  const code = err.code || 'INTERNAL_ERROR';
+  // body-parser (via raw-body) throws this for an oversized JSON body;
+  // multer throws a LIMIT_FILE_SIZE error (no `type`, no `statusCode`) for an
+  // oversized file upload - the more common oversize path in practice (see
+  // documentController's 10MB and brandingRoutes' 2MB multer limits). Handle
+  // both explicitly rather than relying on the incidental `statusCode` either
+  // happens to carry, so the response envelope gets a meaningful `code`
+  // instead of the generic INTERNAL_ERROR fallback below.
+  const isPayloadTooLarge = err.type === 'entity.too.large' || err.code === 'LIMIT_FILE_SIZE';
+  const statusCode = isPayloadTooLarge ? 413 : err.statusCode || 500;
+  const message = isPayloadTooLarge ? 'Request body too large' : err.message || 'Internal Server Error';
+  const code = isPayloadTooLarge ? 'PAYLOAD_TOO_LARGE' : err.code || 'INTERNAL_ERROR';
 
   // Log error for debugging
   if (statusCode >= 500) {

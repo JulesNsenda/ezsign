@@ -30,6 +30,7 @@ interface FormState {
   smtpPass: string;
   emailFrom: string;
   appUrl: string;
+  registrationEnabled: boolean;
 }
 
 const EMPTY_FORM: FormState = {
@@ -40,6 +41,7 @@ const EMPTY_FORM: FormState = {
   smtpPass: '',
   emailFrom: '',
   appUrl: '',
+  registrationEnabled: false,
 };
 
 const SOURCE_LABELS: Record<SettingSource, string> = {
@@ -85,6 +87,7 @@ export const InstanceSettings: React.FC = () => {
       smtpPass: '',
       emailFrom: String(find(data.settings, 'email.from')?.value ?? ''),
       appUrl: String(find(data.settings, 'app.url')?.value ?? ''),
+      registrationEnabled: Boolean(find(data.settings, 'registration.enabled')?.value ?? false),
     });
   }, [data]);
 
@@ -123,6 +126,13 @@ export const InstanceSettings: React.FC = () => {
     const origAppUrl = String(find(data.settings, 'app.url')?.value ?? '');
     if (form.appUrl !== origAppUrl) entries.push({ key: 'app.url', value: form.appUrl });
 
+    const origRegistrationEnabled = Boolean(
+      find(data.settings, 'registration.enabled')?.value ?? false,
+    );
+    if (form.registrationEnabled !== origRegistrationEnabled) {
+      entries.push({ key: 'registration.enabled', value: form.registrationEnabled });
+    }
+
     return entries;
   }, [data, form]);
 
@@ -141,27 +151,40 @@ export const InstanceSettings: React.FC = () => {
   const showPassClearNote = transportChanged && form.smtpPass === '' && passSetting?.isSet;
 
   const handleSave = async () => {
-    if (!form.smtpHost.trim()) {
+    if (changedEntries.length === 0) {
+      return;
+    }
+
+    // Only validate a field if it's actually part of this save - an
+    // env-sourced value (e.g. app.url) can load into the form without
+    // passing its own client-side check (resolveFromEnv coerces type but
+    // never runs the zod schema), which would otherwise block saving an
+    // unrelated change - like the registration.enabled toggle below - forever.
+    const changedKeys = new Set(changedEntries.map((e) => e.key));
+
+    if (changedKeys.has('smtp.host') && !form.smtpHost.trim()) {
       toast.error('SMTP host cannot be empty');
       return;
     }
     const portNum = Number(form.smtpPort);
-    if (form.smtpPort === '' || !instanceSettingsService.isValidPort(portNum)) {
+    if (
+      changedKeys.has('smtp.port') &&
+      (form.smtpPort === '' || !instanceSettingsService.isValidPort(portNum))
+    ) {
       toast.error('SMTP port must be between 1 and 65535');
       return;
     }
-    if (!form.emailFrom.trim()) {
+    if (changedKeys.has('email.from') && !form.emailFrom.trim()) {
       toast.error('From address cannot be empty');
       return;
     }
-    if (!form.appUrl.trim() || !instanceSettingsService.isValidAppUrl(form.appUrl.trim())) {
+    if (
+      changedKeys.has('app.url') &&
+      (!form.appUrl.trim() || !instanceSettingsService.isValidAppUrl(form.appUrl.trim()))
+    ) {
       toast.error(
         'Application URL must be a valid https:// URL (http:// is only allowed for localhost)',
       );
-      return;
-    }
-
-    if (changedEntries.length === 0) {
       return;
     }
 
@@ -209,6 +232,7 @@ export const InstanceSettings: React.FC = () => {
   const userSetting = find(data.settings, 'smtp.user');
   const fromSetting = find(data.settings, 'email.from');
   const appUrlSetting = find(data.settings, 'app.url');
+  const registrationEnabledSetting = find(data.settings, 'registration.enabled');
 
   return (
     <div className="space-y-6">
@@ -368,6 +392,26 @@ export const InstanceSettings: React.FC = () => {
             allowed for localhost).
           </p>
         </div>
+      </Card>
+
+      {/* Registration Section */}
+      <Card title="Registration">
+        <div className="flex items-center justify-between">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.registrationEnabled}
+              onChange={(e) => handleChange('registrationEnabled', e.target.checked)}
+              className="toggle toggle-primary"
+            />
+            <span className="font-medium">Allow self-service sign-up</span>
+          </label>
+          {registrationEnabledSetting && <SourceBadge source={registrationEnabledSetting.source} />}
+        </div>
+        <p className="text-xs text-base-content/50 mt-1">
+          Closed by default. When off, the public sign-up page is disabled and only invited
+          teammates can create an account. Admins can always be created via the invitation flow.
+        </p>
       </Card>
 
       {/* System Section (read-only) */}

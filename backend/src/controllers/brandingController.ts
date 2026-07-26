@@ -3,20 +3,59 @@ import { Pool } from 'pg';
 import { BrandingService } from '@/services/brandingService';
 import { TeamService } from '@/services/teamService';
 import { StorageService } from '@/services/storageService';
+import { getSettingsService, SettingsService } from '@/services/settingsService';
 import { AuthenticatedRequest } from '@/middleware/auth';
-import { Branding } from '@/models/Branding';
+import { Branding, UpdateBrandingData } from '@/models/Branding';
 import logger from '@/services/loggerService';
 import path from 'path';
+
+/**
+ * Fields a team owner may set through `PUT /api/teams/:teamId/branding`.
+ * `logo_path`/`favicon_path` are deliberately excluded (SEC-C2): a raw
+ * client-supplied path here would be read back, unauthenticated, by
+ * `GET /api/branding/logo/:teamId`, so it must never come from `req.body`.
+ * `uploadLogo` sets `logo_path` separately, server-side, with a key it
+ * generates itself (`branding/${teamId}/logo${ext}`); `logo_url` (a plain
+ * external URL, never resolved against storage) is fine to accept here.
+ */
+const ALLOWED_UPDATE_BRANDING_FIELDS = [
+  'logo_url',
+  'primary_color',
+  'secondary_color',
+  'accent_color',
+  'company_name',
+  'tagline',
+  'email_footer_text',
+  'custom_page_title',
+  'support_email',
+  'support_url',
+  'privacy_url',
+  'terms_url',
+  'show_powered_by',
+  'hide_ezsign_branding',
+] as const;
+
+function pickUpdateBrandingFields(body: Record<string, unknown>): UpdateBrandingData {
+  const picked: Record<string, unknown> = {};
+  for (const field of ALLOWED_UPDATE_BRANDING_FIELDS) {
+    if (field in body) {
+      picked[field] = body[field];
+    }
+  }
+  return picked as UpdateBrandingData;
+}
 
 export class BrandingController {
   private brandingService: BrandingService;
   private teamService: TeamService;
   private storageService: StorageService;
+  private settingsService: SettingsService;
 
   constructor(pool: Pool, storageService: StorageService) {
     this.brandingService = new BrandingService(pool);
     this.teamService = new TeamService(pool);
     this.storageService = storageService;
+    this.settingsService = getSettingsService(pool);
   }
 
   /**
@@ -120,8 +159,13 @@ export class BrandingController {
         return;
       }
 
+      // Pick only the fields a client may set (SEC-C2 - drops any
+      // logo_path/favicon_path in the request body) before validating or
+      // persisting anything from it.
+      const updates = pickUpdateBrandingFields(req.body);
+
       // Validate branding data
-      const validation = Branding.validate(req.body);
+      const validation = Branding.validate(updates);
       if (!validation.valid) {
         res.status(400).json({
           error: 'Bad Request',
@@ -134,7 +178,7 @@ export class BrandingController {
       await this.brandingService.getOrCreateBranding(teamId);
 
       // Update branding
-      const branding = await this.brandingService.updateBranding(teamId, req.body);
+      const branding = await this.brandingService.updateBranding(teamId, updates);
 
       if (!branding) {
         res.status(404).json({
@@ -396,6 +440,28 @@ export class BrandingController {
         return;
       }
 
+      // SEC-C2 (F1): containment to the storage root is not containment to
+      // this endpoint's own subtree. This route is unauthenticated, so a
+      // `logo_path` poisoned before the row existed (or during the open
+      // registration window) would otherwise let anyone who knows a
+      // `teamId` read any file under the storage root -- `documents/...`,
+      // `temp/...`, another team's own logo, etc. `uploadLogo` (the only
+      // writer) always composes exactly `branding/${teamId}/logo${ext}`, so
+      // requiring that prefix rejects everything else without needing a
+      // live-DB audit.
+      const expectedPrefix = `branding/${teamId}/`;
+      if (!branding.logo_path.startsWith(expectedPrefix)) {
+        logger.warn('Rejected logo_path outside its team branding subtree', {
+          teamId,
+          correlationId: req.correlationId,
+        });
+        res.status(404).json({
+          error: 'Not Found',
+          message: 'Logo not found',
+        });
+        return;
+      }
+
       const logoBuffer = await this.storageService.downloadFile(branding.logo_path);
 
       // Determine content type from path
@@ -574,16 +640,39 @@ export class BrandingController {
   /**
    * Get default branding for public pages (login, register)
    * GET /api/branding/default
+   *
+   * Also folds in `registrationEnabled` -- this is the one unauthenticated,
+   * DB-backed endpoint already polled by Landing/Login/PublicNavbar (via
+   * useDefaultBranding, 5-min staleTime), so it doubles as the public config
+   * surface for the registration gate rather than adding a new route.
+   * Deliberately minimal: only this single boolean, not the settings
+   * registry at large -- this response is reachable with no auth at all.
    */
   getDefaultBranding = async (req: Request, res: Response): Promise<void> => {
     try {
       const branding = await this.brandingService.getDefaultBranding();
+
+      // getValue() (unlike getAll()) throws on a malformed stored value
+      // instead of degrading to the default. This endpoint is unauthenticated
+      // and otherwise branding-only, so a single bad `instance_settings` row
+      // must not turn into a 500 that also takes branding down with it --
+      // fail closed on the flag, but keep serving branding.
+      let registrationEnabled = false;
+      try {
+        registrationEnabled = Boolean(await this.settingsService.getValue('registration.enabled'));
+      } catch (settingsError) {
+        logger.warn('Failed to resolve registration.enabled for default branding; reporting closed', {
+          error: (settingsError as Error).message,
+          correlationId: req.correlationId,
+        });
+      }
 
       if (!branding) {
         // Return null branding if none configured
         res.status(200).json({
           branding: null,
           isDefault: true,
+          registrationEnabled,
         });
         return;
       }
@@ -594,6 +683,7 @@ export class BrandingController {
       res.status(200).json({
         branding: branding.toPublicJSON(apiBaseUrl),
         isDefault: !branding.hasCustomBranding(),
+        registrationEnabled,
       });
     } catch (error) {
       logger.error('Get default branding error', {

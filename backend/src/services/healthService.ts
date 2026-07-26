@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import fs from 'fs/promises';
+import { getStorageRoot } from '@/config/storage';
 import logger from '@/services/loggerService';
 
 /**
@@ -57,7 +58,7 @@ export class HealthService {
 
   constructor(pool: Pool, storagePath?: string) {
     this.pool = pool;
-    this.storagePath = storagePath || process.env.FILE_STORAGE_PATH || './storage';
+    this.storagePath = storagePath || getStorageRoot();
   }
 
   /**

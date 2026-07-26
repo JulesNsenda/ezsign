@@ -14,6 +14,42 @@ import type {
 let patternsCache: ValidationPatternInfo[] | null = null;
 let patternsByCategoryCache: Record<string, ValidationPatternInfo[]> | null = null;
 
+/**
+ * Regex ReDoS guard (mirrors the backend's `utils/regexGuard.ts`)
+ *
+ * `validateValueLocally` runs on every keystroke while signing, with no
+ * server round-trip - it is the only enforcement on that path, since the
+ * backend does not re-validate a field's pattern on submit. A document
+ * owner-supplied custom regex must therefore be rejected here before it is
+ * ever compiled, the same way the backend rejects it when the pattern is
+ * saved. The backend module isn't importable from the frontend, so this is
+ * a small, self-contained copy rather than a shared import.
+ */
+
+/** User-supplied regex source - capped well below anything a legitimate pattern needs. */
+const MAX_CUSTOM_REGEX_LENGTH = 256;
+
+/**
+ * Best-effort syntactic heuristic for the classic ReDoS shape `(X+)+` /
+ * `(X*)*` / `(X+)*`: a group whose ENTIRE content is a single atom (an escape
+ * sequence like `\d`, a bracket class like `[a-z]`, or one literal character)
+ * quantified by `+`/`*`, itself wrapped in an outer `+`/`*`.
+ *
+ * MUST stay byte-identical to `backend/src/utils/regexGuard.ts` - if the two
+ * drift, the client and server return different verdicts for the same pattern.
+ * The "entire content is just the atom" restriction is what stops this
+ * flagging safe patterns like the `currency` preset's `(,\d{3})*`.
+ *
+ * NOT a complete ReDoS detector; no static check for arbitrary JS regexes is.
+ * Known undetected gaps: nested groups (`((a+))+`) and alternation overlap
+ * (`(a|a)+`, `(a+|b)+`). Do not rely on it as a boundary on its own.
+ */
+const NESTED_QUANTIFIER_RE = /\((?:\?:)?(?:\\.|\[[^\]]*\]|[^()])[+*]\??\)[+*]/;
+
+function hasNestedQuantifier(pattern: string): boolean {
+  return NESTED_QUANTIFIER_RE.test(pattern);
+}
+
 export const validationService = {
   /**
    * Get all available validation patterns
@@ -61,21 +97,6 @@ export const validationService = {
   },
 
   /**
-   * Test a value against a validation pattern (server-side)
-   */
-  async testValidation(
-    value: string,
-    patternId: ValidationPatternPreset,
-    customRegex?: string
-  ): Promise<{ valid: boolean; message?: string }> {
-    const response = await apiClient.post<{ valid: boolean; message?: string }>(
-      '/util/test-validation',
-      { value, patternId, customRegex }
-    );
-    return response.data;
-  },
-
-  /**
    * Client-side validation (faster, no network)
    * Returns { valid: true } or { valid: false, message: string }
    */
@@ -98,6 +119,15 @@ export const validationService = {
     if (config.pattern === 'custom') {
       if (!config.customRegex) {
         return { valid: true }; // No custom regex defined
+      }
+      // Reject before ever compiling - an over-length or nested-quantifier
+      // pattern must never reach `.test()`, since that's what wedges the
+      // signer's tab. Same verdict as the server's rejection of the pattern.
+      if (
+        config.customRegex.length > MAX_CUSTOM_REGEX_LENGTH ||
+        hasNestedQuantifier(config.customRegex)
+      ) {
+        return { valid: false, message: 'Invalid custom pattern configuration' };
       }
       try {
         regex = new RegExp(config.customRegex);
@@ -160,7 +190,7 @@ const PATTERN_REGEXES: Record<ValidationPatternPreset, RegExp> = {
   number: /^-?\d*\.?\d+$/,
   alpha: /^[a-zA-Z\s]+$/,
   alphanumeric: /^[a-zA-Z0-9\s]+$/,
-  url: /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/,
+  url: /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)\/?$/,
   date_iso: /^\d{4}-\d{2}-\d{2}$/,
   currency: /^-?\$?\d{1,3}(,\d{3})*(\.\d{2})?$/,
   custom: /.*/,

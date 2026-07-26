@@ -96,6 +96,13 @@ const CLEANUP_PROBABILITY = 0.01;
  *     best-effort: they log and swallow query errors rather than throw, so
  *     that a transient DB blip during logout/change-password never turns
  *     into a 500 for an action that has otherwise already succeeded.
+ *     blacklistAllUserTokens() additionally returns a boolean success
+ *     signal (still never throws) for the one caller that needs to know
+ *     whether the revocation actually happened - the admin
+ *     revoke-sessions endpoint, which must not report success on a
+ *     transient DB error while the target's refresh token still works.
+ *     logout-all and change-password remain free to ignore the return
+ *     value, matching their existing best-effort behavior.
  */
 class TokenBlacklistService {
   private pool: Pool | null = null;
@@ -210,13 +217,19 @@ class TokenBlacklistService {
    *
    * @param userId - The user ID to revoke all tokens for
    * @param maxTokenLifetimeSeconds - How long to retain the revocation entry (default: derived from JWT_REFRESH_TOKEN_EXPIRY, matching the refresh token lifetime)
+   * @returns `true` if the revocation was written, `false` if the write
+   *   failed (still never throws - see class-level note). Callers that
+   *   need to distinguish these (e.g. the admin revoke-sessions endpoint)
+   *   must check the return value; callers treating this as fire-and-forget
+   *   (logout-all, change-password) can continue to ignore it.
    */
   async blacklistAllUserTokens(
     userId: string,
     maxTokenLifetimeSeconds: number = getDefaultUserRevocationLifetimeSeconds()
-  ): Promise<void> {
+  ): Promise<boolean> {
     const pool = this.getPool();
     const ttl = Math.max(maxTokenLifetimeSeconds, 1);
+    let success = true;
 
     try {
       await pool.query(
@@ -229,14 +242,18 @@ class TokenBlacklistService {
       );
       logger.info('All user tokens revoked', { userId });
     } catch (error) {
-      // Best-effort write: see class-level note.
+      // Best-effort write: see class-level note. Still doesn't throw -
+      // callers that don't check the return value keep their existing
+      // fire-and-forget behavior.
       logger.error('Failed to revoke all user tokens', {
         userId,
         error: (error as Error).message,
       });
+      success = false;
     }
 
     void this.maybeCleanupExpired(pool);
+    return success;
   }
 
   /**

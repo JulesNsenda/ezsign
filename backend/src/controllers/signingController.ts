@@ -14,6 +14,19 @@ import { ReminderService } from '@/services/reminderService';
 import { getSettingsService } from '@/services/settingsService';
 import { buildSigningUrl, buildDownloadUrl } from '@/utils/urlBuilder';
 import logger from '@/services/loggerService';
+import {
+  resolveSigningContext,
+  assertDocumentSignable,
+  assertDocumentReadable,
+  assertFieldsOwnedBySigner,
+  isValidUuid,
+  mapRowToSignerData,
+  mapRowToDocumentData,
+  SigningContextError,
+} from '@/services/signingContextService';
+
+/** Item 4.6 payload cap: matches the array bound enforced in `validateSignaturesPayload`. */
+const MAX_SIGNATURES_PER_SUBMISSION = 50;
 
 export class SigningController {
   private pool: Pool;
@@ -81,6 +94,27 @@ export class SigningController {
   }
 
   /**
+   * H6: the three public, unauthenticated signing-token routes below each
+   * fell through to a catch-all that echoed `error.message` straight back to
+   * the caller once the `SigningContextError` branch (checked first, by
+   * every caller of this helper) didn't match - raw driver text,
+   * constraint/table names, and (post-H1) an operator-actionable document id
+   * and mismatch count. Logs the real error server-side instead and
+   * responds with a fixed, generic message. `SigningContextError` messages
+   * (SEC-C3/C4/C5, the item-4.6 payload validation) are deliberately NOT
+   * routed through here - those are written for the signer and stay
+   * verbatim.
+   */
+  private respondWithGenericSigningError(logMessage: string, error: unknown, req: Request, res: Response): void {
+    logger.error(logMessage, {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      correlationId: req.correlationId,
+    });
+    res.status(400).json({ success: false, error: 'An error occurred while processing your request' });
+  }
+
+  /**
    * Send document for signature
    * POST /api/documents/:id/send
    */
@@ -109,7 +143,7 @@ export class SigningController {
         return;
       }
 
-      const document = new Document(this.mapRowToDocumentData(docResult.rows[0]));
+      const document = new Document(mapRowToDocumentData(docResult.rows[0]));
       logger.debug('Document loaded', { documentId, status: document.status, correlationId: req.correlationId });
 
       // Check if user owns the document
@@ -205,7 +239,7 @@ export class SigningController {
       const emailBranding = await this.getEmailBranding(document.team_id, baseUrl);
 
       // Send signing requests to all signers (or first signer if sequential)
-      const signers = signersResult.rows.map((row) => new Signer(this.mapRowToSignerData(row)));
+      const signers = signersResult.rows.map((row) => new Signer(mapRowToSignerData(row)));
 
       if (document.workflow_type === 'sequential') {
         // For sequential workflow, only send to first signer
@@ -284,18 +318,7 @@ export class SigningController {
     try {
       const token = req.params.token as string;
 
-      // Find signer by access token
-      const signerResult = await this.pool.query(
-        'SELECT * FROM signers WHERE access_token = $1',
-        [token]
-      );
-
-      if (signerResult.rows.length === 0) {
-        res.status(404).json({ success: false, error: 'Invalid signing link' });
-        return;
-      }
-
-      const signer = new Signer(this.mapRowToSignerData(signerResult.rows[0]));
+      const { signer, document, allSigners } = await resolveSigningContext(this.pool, token);
 
       // Check if signer already signed
       if (signer.status === 'signed') {
@@ -306,45 +329,16 @@ export class SigningController {
         return;
       }
 
-      // Get document
-      const docResult = await this.pool.query(
-        'SELECT * FROM documents WHERE id = $1',
-        [signer.document_id]
-      );
+      // SEC-C4: document must still be pending and not past its deadline.
+      assertDocumentSignable(document);
 
-      if (docResult.rows.length === 0) {
-        res.status(404).json({ success: false, error: 'Document not found' });
-        return;
-      }
-
-      const document = new Document(this.mapRowToDocumentData(docResult.rows[0]));
-
-      // Check if document is in pending status
-      if (document.status !== 'pending') {
+      // SEC-C5: for sequential workflow, check if it's this signer's turn
+      if (document.workflow_type === 'sequential' && !Signer.canSignInSequence(signer, allSigners)) {
         res.status(400).json({
           success: false,
-          error: `Document is ${document.status} and cannot be signed`,
+          error: 'It is not your turn to sign yet (sequential workflow)',
         });
         return;
-      }
-
-      // For sequential workflow, check if it's this signer's turn
-      if (document.workflow_type === 'sequential') {
-        const allSigners = await this.pool.query(
-          'SELECT * FROM signers WHERE document_id = $1 ORDER BY signing_order',
-          [signer.document_id]
-        );
-
-        const signersList = allSigners.rows.map((row) => new Signer(this.mapRowToSignerData(row)));
-        const canSign = Signer.canSignInSequence(signer, signersList);
-
-        if (!canSign) {
-          res.status(400).json({
-            success: false,
-            error: 'It is not your turn to sign yet (sequential workflow)',
-          });
-          return;
-        }
       }
 
       // Get fields assigned to this signer
@@ -368,8 +362,11 @@ export class SigningController {
         signatures: signaturesResult.rows,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      res.status(400).json({ success: false, error: message });
+      if (error instanceof SigningContextError) {
+        res.status(error.statusCode).json({ success: false, error: error.message });
+        return;
+      }
+      this.respondWithGenericSigningError('Error resolving signing session', error, req, res);
     }
   };
 
@@ -380,34 +377,33 @@ export class SigningController {
   submitSignature = async (req: Request, res: Response): Promise<void> => {
     try {
       const token = req.params.token as string;
-      const { signatures } = req.body; // Array of { field_id, signature_type, signature_data, text_value?, font_family? }
+      // Array of { field_id, signature_type, signature_data, text_value?, font_family? } -
+      // structurally validated up front (item 4.6): array bounds, per-entry
+      // shape. `text_value`/`font_family` are preserved as-is (defaulted to
+      // null, never dropped) - every non-signature field type (radio, text,
+      // date, checkbox, dropdown) submits `signature_type: 'typed'` and
+      // relies on `text_value` to render.
+      const validatedSignatures = this.validateSignaturesPayload(req.body?.signatures);
 
-      if (!signatures || !Array.isArray(signatures) || signatures.length === 0) {
-        res.status(400).json({
-          success: false,
-          error: 'Signatures array is required',
-        });
-        return;
-      }
-
-      // Find signer by access token
-      const signerResult = await this.pool.query(
-        'SELECT * FROM signers WHERE access_token = $1',
-        [token]
-      );
-
-      if (signerResult.rows.length === 0) {
-        res.status(404).json({ success: false, error: 'Invalid signing link' });
-        return;
-      }
-
-      const signer = new Signer(this.mapRowToSignerData(signerResult.rows[0]));
+      const { signer, document, allSigners } = await resolveSigningContext(this.pool, token);
 
       // Check if signer can sign
       if (signer.status !== 'pending') {
         res.status(400).json({
           success: false,
           error: `Signer is already ${signer.status}`,
+        });
+        return;
+      }
+
+      // SEC-C4: document must still be pending and not past its deadline.
+      assertDocumentSignable(document);
+
+      // SEC-C5: for sequential workflow, reject an out-of-turn submission.
+      if (document.workflow_type === 'sequential' && !Signer.canSignInSequence(signer, allSigners)) {
+        res.status(400).json({
+          success: false,
+          error: 'It is not your turn to sign yet (sequential workflow)',
         });
         return;
       }
@@ -420,26 +416,40 @@ export class SigningController {
       try {
         await client.query('BEGIN');
 
+        // SEC-C3: every submitted field must belong to this document and be
+        // assigned to this signer's email (batched, before any insert). Runs
+        // on `client` rather than `this.pool` so the check and the writes
+        // below share one session/snapshot instead of two separate
+        // connections.
+        await assertFieldsOwnedBySigner(
+          client,
+          validatedSignatures.map((s) => s.field_id),
+          signer.document_id,
+          signer.email
+        );
+
         // Validate and insert signatures
-        for (const sigData of signatures) {
+        for (const sigData of validatedSignatures) {
           const signature = new Signature({
             id: '',
             signer_id: signer.id,
             field_id: sigData.field_id,
             signature_type: sigData.signature_type,
             signature_data: sigData.signature_data,
-            text_value: sigData.text_value || null,
-            font_family: sigData.font_family || null,
+            text_value: sigData.text_value,
+            font_family: sigData.font_family,
             ip_address: req.ip || null,
             user_agent: req.get('user-agent') || null,
             signed_at: new Date(),
             created_at: new Date(),
           });
 
-          // Validate signature
+          // Validate signature. Typed (not a plain Error) so this stays
+          // alongside the other intentionally user-facing rejections -
+          // see the catch-all's error-taxonomy comment below.
           const validation = signature.validateSignatureData();
           if (!validation.valid) {
-            throw new Error(`Invalid signature: ${validation.errors.join(', ')}`);
+            throw new SigningContextError(`Invalid signature: ${validation.errors.join(', ')}`, 400);
           }
 
           // Insert signature
@@ -451,8 +461,8 @@ export class SigningController {
               sigData.field_id,
               sigData.signature_type,
               sigData.signature_data,
-              sigData.text_value || null,
-              sigData.font_family || null,
+              sigData.text_value,
+              sigData.font_family,
               req.ip || null,
               req.get('user-agent') || null,
             ]
@@ -524,16 +534,63 @@ export class SigningController {
             'SELECT * FROM documents WHERE id = $1',
             [signer.document_id]
           );
-          const document = new Document(this.mapRowToDocumentData(docResult.rows[0]));
+          const document = new Document(mapRowToDocumentData(docResult.rows[0]));
 
-          // Get all signatures for this document with field type and properties
+          // Get all signatures for this document with field type and properties.
+          // H1 (post-review correction): scoped to this *document* only -
+          // `f.document_id = $1 AND sg.document_id = $1` - never also
+          // filtered by `f.signer_email = sg.email`. That predicate is a
+          // *classifier*, not a filter: two legitimate owner actions can
+          // desynchronize `fields.signer_email` from `signers.email` after a
+          // signature has already been collected against the field
+          // (`signerService.updateSigner` changing a signer's email without
+          // touching their fields' `signer_email`, and
+          // `assignFieldsToSigner` repointing a field's `signer_email` to a
+          // different signer). Filtering the stamping query on that
+          // predicate would silently exclude an already-collected,
+          // *legitimate* signature from the stamped PDF while the document
+          // still reports itself completed - worse than the forgery this
+          // check exists to guard against. So: fetch every document-scoped
+          // signature row unconditionally for stamping, and separately count
+          // how many have a mismatched `signer_email` (case-insensitively,
+          // so a pure case drift doesn't itself brick completion - a genuine
+          // repoint via `assignFieldsToSigner` still trips this). If that
+          // count is non-zero, refuse to complete at all: throwing here rolls
+          // back the whole transaction (including this signer's own
+          // just-inserted signature and status update), so the submission
+          // 400s and an operator has to reconcile the data before anyone can
+          // complete this document, rather than a wrong PDF being persisted.
           const allSignaturesResult = await client.query(
             `SELECT s.*, f.page, f.x, f.y, f.width, f.height, f.type, f.properties
              FROM signatures s
+             JOIN signers sg ON s.signer_id = sg.id
              JOIN fields f ON s.field_id = f.id
-             WHERE f.document_id = $1`,
+             WHERE f.document_id = $1 AND sg.document_id = $1`,
             [signer.document_id]
           );
+          const mismatchCountResult = await client.query(
+            `SELECT COUNT(*)::int AS count
+             FROM signatures s
+             JOIN signers sg ON s.signer_id = sg.id
+             JOIN fields f ON s.field_id = f.id
+             WHERE f.document_id = $1 AND sg.document_id = $1
+               AND lower(f.signer_email) IS DISTINCT FROM lower(sg.email)`,
+            [signer.document_id]
+          );
+          const mismatchCount = mismatchCountResult.rows[0].count;
+
+          if (mismatchCount > 0) {
+            // Operator-actionable detail goes to the server log only - this
+            // is a public, unauthenticated route, so the response the signer
+            // receives (see the outer catch) must not repeat it.
+            logger.error(
+              'Refusing to complete document: completion JOIN found signature(s) whose field signer_email does not match the owning signer\'s email',
+              { documentId: signer.document_id, mismatchCount }
+            );
+            throw new Error(
+              `Document ${signer.document_id}: ${mismatchCount} signature(s) reference a field whose signer_email no longer matches the signing signer's email; refusing to stamp an incomplete signed PDF`
+            );
+          }
 
           logger.info('Found signatures to apply', {
             documentId: signer.document_id,
@@ -738,14 +795,17 @@ export class SigningController {
 
             logger.debug('Signed PDF created', { documentId: signer.document_id, size: signedPdfBuffer.length });
 
-            // Save the signed PDF (replace the original file)
-            const storagePath = process.env.FILE_STORAGE_PATH || './storage';
-            const fs = await import('fs/promises');
-            const path = await import('path');
-            const fullPath = path.join(storagePath, document.file_path);
-            await fs.writeFile(fullPath, signedPdfBuffer);
+            // Save the signed PDF (replace the original file). Routed
+            // through StorageService/LocalStorageAdapter rather than a raw
+            // fs.writeFile so resolveWithinStorage guards document.file_path
+            // before anything touches the filesystem (SEC-C2) - this was the
+            // priority bypass site: an attacker-influenceable write inside a
+            // catch that swallows the error and completes the document
+            // anyway (unchanged by this fix - a rejected path still means
+            // the document completes with the original, unsigned PDF).
+            await this._storageService.uploadFile(signedPdfBuffer, document.file_path);
 
-            logger.info('Signed PDF saved', { documentId: signer.document_id, path: fullPath });
+            logger.info('Signed PDF saved', { documentId: signer.document_id, path: document.file_path });
           } catch (error) {
             logger.error('Error applying signatures to PDF', { error: (error as Error).message, stack: (error as Error).stack, documentId: signer.document_id });
             // Continue with document completion even if PDF signing fails
@@ -809,7 +869,7 @@ export class SigningController {
             'SELECT * FROM documents WHERE id = $1',
             [signer.document_id]
           );
-          const document = new Document(this.mapRowToDocumentData(docResult.rows[0]));
+          const document = new Document(mapRowToDocumentData(docResult.rows[0]));
 
           if (document.workflow_type === 'sequential' && signer.signing_order !== null) {
             // Find next signer
@@ -819,7 +879,7 @@ export class SigningController {
             );
 
             if (nextSignerResult.rows.length > 0) {
-              const nextSigner = new Signer(this.mapRowToSignerData(nextSignerResult.rows[0]));
+              const nextSigner = new Signer(mapRowToSignerData(nextSignerResult.rows[0]));
 
               // Get sender info
               const userResult = await client.query(
@@ -859,8 +919,11 @@ export class SigningController {
         client.release();
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      res.status(400).json({ success: false, error: message });
+      if (error instanceof SigningContextError) {
+        res.status(error.statusCode).json({ success: false, error: error.message });
+        return;
+      }
+      this.respondWithGenericSigningError('Error submitting signature', error, req, res);
     }
   };
 
@@ -873,35 +936,44 @@ export class SigningController {
       const token = req.params.token as string;
       logger.debug('Download request for token', { tokenPrefix: token.substring(0, 8), correlationId: req.correlationId });
 
-      // Find signer by access token
-      const signerResult = await this.pool.query(
-        'SELECT * FROM signers WHERE access_token = $1',
-        [token]
-      );
-
-      if (signerResult.rows.length === 0) {
-        logger.debug('No signer found for token', { correlationId: req.correlationId });
-        res.status(404).json({ success: false, error: 'Invalid signing link' });
-        return;
-      }
-
-      const signer = new Signer(this.mapRowToSignerData(signerResult.rows[0]));
+      const { signer, document, allSigners } = await resolveSigningContext(this.pool, token);
       logger.debug('Signer found', { signerId: signer.id, documentId: signer.document_id, correlationId: req.correlationId });
-
-      // Get document
-      const docResult = await this.pool.query(
-        'SELECT * FROM documents WHERE id = $1',
-        [signer.document_id]
-      );
-
-      if (docResult.rows.length === 0) {
-        logger.debug('No document found', { documentId: signer.document_id, correlationId: req.correlationId });
-        res.status(404).json({ success: false, error: 'Document not found' });
-        return;
-      }
-
-      const document = new Document(this.mapRowToDocumentData(docResult.rows[0]));
       logger.debug('Document found', { documentId: document.id, filePath: document.file_path, correlationId: req.correlationId });
+
+      // SEC-C4 (read-time gate): a signing link must not be a permanent read
+      // credential that survives cancellation - but keep serving `pending`
+      // and `completed`, since Sign.tsx reuses this same token both to
+      // preview the PDF while signing and for the post-submit "Download
+      // Signed Document" button (see assertDocumentReadable's doc comment).
+      assertDocumentReadable(document);
+
+      // H4: while still pending, this route must not expose the PDF to a
+      // signer who couldn't view it via the GET /:token session route
+      // either. Two cases the sequential gate alone doesn't cover between
+      // them: an out-of-turn sequential signer (same check as the session
+      // route), and a `declined` signer specifically - their predecessors,
+      // if any, have necessarily already signed (you can only decline your
+      // own turn once it arrives), so `canSignInSequence` returns true for
+      // them and the sequential check alone would let them through. Once
+      // `completed`, every signer's copy is the same finished document, so
+      // neither check applies - this is the route the frontend reuses for
+      // the post-signing "Download Signed Document" button.
+      if (document.status === 'pending') {
+        if (signer.status === 'declined') {
+          res.status(400).json({
+            success: false,
+            error: 'You have declined to sign this document and can no longer access it',
+          });
+          return;
+        }
+        if (document.workflow_type === 'sequential' && !Signer.canSignInSequence(signer, allSigners)) {
+          res.status(400).json({
+            success: false,
+            error: 'It is not your turn to sign yet (sequential workflow)',
+          });
+          return;
+        }
+      }
 
       // Check if file exists
       const fileExists = await this._storageService.fileExists(document.file_path);
@@ -927,9 +999,11 @@ export class SigningController {
       res.send(fileBuffer);
       logger.debug('File sent successfully', { documentId: document.id, correlationId: req.correlationId });
     } catch (error) {
-      logger.error('Download error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      res.status(400).json({ success: false, error: message });
+      if (error instanceof SigningContextError) {
+        res.status(error.statusCode).json({ success: false, error: error.message });
+        return;
+      }
+      this.respondWithGenericSigningError('Download error', error, req, res);
     }
   };
 
@@ -958,7 +1032,7 @@ export class SigningController {
         return;
       }
 
-      const document = new Document(this.mapRowToDocumentData(docResult.rows[0]));
+      const document = new Document(mapRowToDocumentData(docResult.rows[0]));
 
       // Check access
       if (document.user_id !== userId) {
@@ -973,7 +1047,7 @@ export class SigningController {
       );
 
       const signers = signersResult.rows.map((row) => {
-        const signer = new Signer(this.mapRowToSignerData(row));
+        const signer = new Signer(mapRowToSignerData(row));
         return signer.toPublicJSON();
       });
 
@@ -994,46 +1068,99 @@ export class SigningController {
     }
   };
 
-  // Helper methods to map database rows to model data
-  private mapRowToDocumentData(row: any): any {
-    return {
-      id: row.id,
-      user_id: row.user_id,
-      team_id: row.team_id,
-      title: row.title,
-      original_filename: row.original_filename,
-      file_path: row.file_path,
-      file_size: parseInt(row.file_size),
-      mime_type: row.mime_type,
-      page_count: row.page_count,
-      status: row.status,
-      workflow_type: row.workflow_type,
-      completed_at: row.completed_at,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      expires_at: row.expires_at,
-      reminder_settings: row.reminder_settings,
-    };
+  /**
+   * Item 4.6: structural validation of the submitted signatures batch, as an
+   * explicit controller check rather than reviving the dead `validate()`
+   * middleware (zero call sites anywhere - see the launch-security plan).
+   * Normalizes `text_value`/`font_family` to `null` when absent, but never
+   * drops them when present: every non-signature field type (radio, text,
+   * date, checkbox, dropdown) submits `signature_type: 'typed'` and relies
+   * on `text_value` to render (`frontend/src/pages/Sign.tsx`).
+   *
+   * H5/H6 (post-review): enforces the `text_value`/`font_family` length caps
+   * unconditionally (not just for `signature_type: 'typed'`, unlike
+   * `Signature.validateSignatureData()`) and rejects duplicate `field_id`s,
+   * all here, before `resolveSigningContext`/`BEGIN` - so a batch that would
+   * otherwise fail late (a raw `unique_field_signature` constraint violation
+   * mid-insert, rolling back everything already written) is rejected up
+   * front instead. Every rejection here throws `SigningContextError` (400) -
+   * the message is written for the signer, so it must stay typed alongside
+   * the C3/C4/C5 checks rather than falling through the catch-all's generic
+   * fallback (see the three handlers' catch blocks).
+   */
+  private validateSignaturesPayload(input: unknown): Array<{
+    field_id: string;
+    signature_type: 'drawn' | 'typed' | 'uploaded';
+    signature_data: string;
+    text_value: string | null;
+    font_family: string | null;
+  }> {
+    if (!Array.isArray(input) || input.length === 0) {
+      throw new SigningContextError('Signatures array is required', 400);
+    }
+    if (input.length > MAX_SIGNATURES_PER_SUBMISSION) {
+      throw new SigningContextError(
+        `Signatures array cannot contain more than ${MAX_SIGNATURES_PER_SUBMISSION} entries`,
+        400
+      );
+    }
+
+    const seenFieldIds = new Set<string>();
+
+    return input.map((entry, index) => {
+      if (!entry || typeof entry !== 'object') {
+        throw new SigningContextError(`Signature at index ${index} must be an object`, 400);
+      }
+
+      const { field_id, signature_type, signature_data, text_value, font_family } = entry as Record<string, unknown>;
+
+      if (typeof field_id !== 'string' || !isValidUuid(field_id)) {
+        throw new SigningContextError(`Signature at index ${index} has an invalid field_id`, 400);
+      }
+      if (seenFieldIds.has(field_id)) {
+        throw new SigningContextError(
+          `Signature at index ${index} duplicates field_id ${field_id}, which was already submitted earlier in this batch`,
+          400
+        );
+      }
+      seenFieldIds.add(field_id);
+
+      if (typeof signature_type !== 'string' || !Signature.isValidSignatureType(signature_type)) {
+        throw new SigningContextError(`Signature at index ${index} has an invalid signature_type`, 400);
+      }
+      if (typeof signature_data !== 'string' || signature_data.length === 0) {
+        throw new SigningContextError(`Signature at index ${index} must include non-empty signature_data`, 400);
+      }
+      if (text_value !== undefined && text_value !== null && typeof text_value !== 'string') {
+        throw new SigningContextError(`Signature at index ${index} has an invalid text_value`, 400);
+      }
+      if (typeof text_value === 'string' && text_value.length > 500) {
+        throw new SigningContextError(
+          `Signature at index ${index} (field ${field_id}) has a text_value longer than 500 characters`,
+          400
+        );
+      }
+      if (font_family !== undefined && font_family !== null && typeof font_family !== 'string') {
+        throw new SigningContextError(`Signature at index ${index} has an invalid font_family`, 400);
+      }
+      if (typeof font_family === 'string' && font_family.length > 100) {
+        throw new SigningContextError(
+          `Signature at index ${index} (field ${field_id}) has a font_family longer than 100 characters`,
+          400
+        );
+      }
+
+      return {
+        field_id,
+        signature_type,
+        signature_data,
+        text_value: (text_value as string | null | undefined) ?? null,
+        font_family: (font_family as string | null | undefined) ?? null,
+      };
+    });
   }
 
-  private mapRowToSignerData(row: any): any {
-    return {
-      id: row.id,
-      document_id: row.document_id,
-      email: row.email,
-      name: row.name,
-      signing_order: row.signing_order,
-      status: row.status,
-      access_token: row.access_token,
-      signed_at: row.signed_at,
-      declined_at: row.declined_at,
-      ip_address: row.ip_address,
-      user_agent: row.user_agent,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-    };
-  }
-
+  // Helper method to map a database row to Field model data
   private mapRowToFieldData(row: any): any {
     return {
       id: row.id,

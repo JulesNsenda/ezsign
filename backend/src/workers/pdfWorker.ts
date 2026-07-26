@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { registerWorker, QueueName, NormalizedJob } from '@/config/queue';
 import { PdfJobData, PdfJobType } from '@/services/pdfQueueService';
 import { pdfService } from '@/services/pdfService';
+import { getStorageRoot } from '@/config/storage';
 import logger from '@/services/loggerService';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -37,9 +38,11 @@ async function generateThumbnail(
     maxHeight: data.maxHeight || 300,
   });
 
-  // Save thumbnail in a structured directory
-  // Get storage base path from environment or use default
-  const storagePath = process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
+  // Save thumbnail in a structured directory (single canonical root -
+  // SEC-C2 item 3.1; `data.filePath` above is already a fully-resolved,
+  // guarded absolute path composed upstream by the controller that queued
+  // this job, so there is no key here for resolveWithinStorage to check)
+  const storagePath = getStorageRoot();
   const thumbnailDir = path.join(storagePath, 'thumbnails');
   await fs.mkdir(thumbnailDir, { recursive: true });
 

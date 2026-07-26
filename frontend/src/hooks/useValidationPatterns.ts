@@ -37,23 +37,6 @@ export function useValidateRegex() {
 }
 
 /**
- * Hook to test a value against a validation pattern (server-side)
- */
-export function useTestValidation() {
-  return useMutation({
-    mutationFn: ({
-      value,
-      patternId,
-      customRegex,
-    }: {
-      value: string;
-      patternId: ValidationPatternPreset;
-      customRegex?: string;
-    }) => validationService.testValidation(value, patternId, customRegex),
-  });
-}
-
-/**
  * Hook for real-time field validation
  * Provides local validation state for a field value
  */

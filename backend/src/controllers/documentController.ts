@@ -2,12 +2,12 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import multer from 'multer';
 import { DocumentService } from '@/services/documentService';
-import { createStorageAdapter, getStorageConfig } from '@/config/storage';
+import { createStorageAdapter, getStorageConfig, getStorageRoot } from '@/config/storage';
 import { createStorageService } from '@/services/storageService';
 import { pdfQueueService } from '@/services/pdfQueueService';
 import { socketService } from '@/services/socketService';
 import logger from '@/services/loggerService';
-import path from 'path';
+import { resolveWithinStorage } from '@/utils/storagePaths';
 
 // Configure multer for memory storage (we'll process the file before storing)
 const upload = multer({
@@ -33,7 +33,7 @@ export class DocumentController {
   constructor(pool: Pool) {
     // Initialize storage adapter based on configuration
     const storageConfig = getStorageConfig();
-    this.storagePath = storageConfig.local?.basePath || process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
+    this.storagePath = storageConfig.local?.basePath || getStorageRoot();
     const storageAdapter = createStorageAdapter(storageConfig);
     const storageService = createStorageService(storageAdapter);
 
@@ -83,20 +83,32 @@ export class DocumentController {
         originalFilename: req.file.originalname,
       });
 
-      // Queue thumbnail generation (async, don't await)
-      const filePath = path.join(this.storagePath, document.file_path);
-      pdfQueueService.addThumbnailJob({
-        documentId: document.id,
-        filePath,
-        maxWidth: 200,
-        maxHeight: 300,
-      }).catch((err) => {
-        logger.warn('Failed to queue thumbnail generation', {
+      // Queue thumbnail generation (async, don't await). Guarded (SEC-C2)
+      // so a malformed file_path can't queue a job that reads/writes
+      // outside the storage root; a rejection here must not fail the
+      // upload response (the document was already created), matching the
+      // "don't await" intent of the existing .catch() below.
+      try {
+        const filePath = resolveWithinStorage(this.storagePath, document.file_path);
+        pdfQueueService.addThumbnailJob({
           documentId: document.id,
-          error: err.message,
+          filePath,
+          maxWidth: 200,
+          maxHeight: 300,
+        }).catch((err) => {
+          logger.warn('Failed to queue thumbnail generation', {
+            documentId: document.id,
+            error: err.message,
+            correlationId: req.correlationId,
+          });
+        });
+      } catch (guardError) {
+        logger.warn('Rejected thumbnail job file path outside storage root', {
+          documentId: document.id,
+          error: (guardError as Error).message,
           correlationId: req.correlationId,
         });
-      });
+      }
 
       // Emit WebSocket event for document creation
       socketService.emitDocumentUpdate({

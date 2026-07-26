@@ -66,6 +66,16 @@ describe('Authentication Integration Tests', () => {
       verifyBackupCode: jest.fn().mockResolvedValue(true),
     };
 
+    // Registration open, so the gate added in register() doesn't consume
+    // this suite's hand-sequenced pool.query mocks. See authController.test.ts
+    // for dedicated closed/exemption coverage.
+    (authController as any).settingsService = {
+      getValue: jest.fn().mockResolvedValue(true),
+    };
+    (authController as any).invitationService = {
+      findByToken: jest.fn().mockResolvedValue(null),
+    };
+
     // Setup request/response mocks
     mockRequest = {
       body: {},

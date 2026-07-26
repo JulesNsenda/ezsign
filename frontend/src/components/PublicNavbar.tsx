@@ -13,6 +13,10 @@ export const PublicNavbar: React.FC = () => {
   const location = useLocation();
   const { data: brandingData } = useDefaultBranding();
   const branding = brandingData?.branding;
+  // Hides the "Get Started" CTA when registration is closed. Fetch failure
+  // just means the CTA stays hidden - courtesy only, the backend 403 is the
+  // real gate on /register.
+  const registrationEnabled = brandingData?.registrationEnabled ?? false;
   const [menuOpen, setMenuOpen] = useState(false);
 
   const displayName = 'EzSign';
@@ -83,7 +87,7 @@ export const PublicNavbar: React.FC = () => {
                 </Button>
               </Link>
             )}
-            {!isRegisterPage && (
+            {!isRegisterPage && registrationEnabled && (
               <Link to="/register">
                 <Button variant="primary" size="sm">
                   Get Started
@@ -94,7 +98,7 @@ export const PublicNavbar: React.FC = () => {
 
           {/* Mobile: primary CTA + menu toggle */}
           <div className="flex sm:hidden items-center gap-2">
-            {!isRegisterPage && (
+            {!isRegisterPage && registrationEnabled && (
               <Link to="/register" onClick={closeMenu}>
                 <Button variant="primary" size="sm">
                   Get Started

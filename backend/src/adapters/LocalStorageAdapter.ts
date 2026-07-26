@@ -5,10 +5,19 @@ import {
   StorageOptions,
   FileMetadata,
 } from '@/services/storageService';
+import { resolveWithinStorage } from '@/utils/storagePaths';
+import logger from '@/services/loggerService';
 
 /**
  * Local filesystem storage adapter
  * Stores files in the local filesystem
+ *
+ * Every public method guards its path(s) through `resolveWithinStorage`
+ * before touching the filesystem (SEC-C2) - `path.join(basePath, key)`
+ * alone normalizes `..` but does not confine the result to `basePath`.
+ * `read`/`save`/`copy`/`move`/`getMetadata` throw on a rejected key;
+ * `exists`/`delete` are soft-fail probes today (callers depend on the
+ * boolean contract), so they return `false` instead.
  */
 export class LocalStorageAdapter implements StorageAdapter {
   private basePath: string;
@@ -63,7 +72,10 @@ export class LocalStorageAdapter implements StorageAdapter {
         : uniqueName;
     }
 
-    const fullPath = path.join(this.basePath, relativePath);
+    // Guard the fully composed relative path (after both the directory
+    // join above and the generateUniqueName reassignment), not the raw
+    // filename - either one, alone, could still be traversed through.
+    const fullPath = resolveWithinStorage(this.basePath, relativePath);
 
     // Ensure directory exists
     const dir = path.dirname(fullPath);
@@ -77,15 +89,22 @@ export class LocalStorageAdapter implements StorageAdapter {
       await this.saveMetadata(relativePath, options.metadata);
     }
 
-    // Return relative path (without basePath)
-    return relativePath.replace(/\\/g, '/'); // Normalize to forward slashes
+    // Return the canonical form derived from the guarded, resolved path -
+    // not the raw `relativePath` (F3/SEC-C2). Callers persist this return
+    // value to the DB (documentService.ts, templateService.ts); returning
+    // the pre-resolution key would let a traversal-shaped-but-in-root key
+    // (e.g. a leading-slash form `resolveWithinStorage` tolerates) get
+    // stored verbatim, disagreeing with what's actually on disk and with
+    // what cleanupService's orphan matching (`path.relative` against the
+    // same base) expects to compare against.
+    return path.relative(path.resolve(this.basePath), fullPath).replace(/\\/g, '/');
   }
 
   /**
    * Read a file from local storage
    */
   async read(filePath: string): Promise<Buffer> {
-    const fullPath = path.join(this.basePath, filePath);
+    const fullPath = resolveWithinStorage(this.basePath, filePath);
 
     try {
       return await fs.readFile(fullPath);
@@ -101,17 +120,29 @@ export class LocalStorageAdapter implements StorageAdapter {
    * Delete a file from local storage
    */
   async delete(filePath: string): Promise<boolean> {
-    const fullPath = path.join(this.basePath, filePath);
+    // Soft-fail probe (matches exists()): callers treat `false` as "nothing
+    // to delete", so a rejected path returns false rather than throwing -
+    // otherwise a clean 404 on the public download path would become a 500.
+    let fullPath: string;
+    try {
+      fullPath = resolveWithinStorage(this.basePath, filePath);
+    } catch (error) {
+      logger.warn('Rejected storage path outside base directory in delete()', {
+        filePath,
+        error: (error as Error).message,
+      });
+      return false;
+    }
 
     try {
       await fs.unlink(fullPath);
 
       // Also delete metadata file if it exists
-      const metadataPath = this.getMetadataPath(filePath);
       try {
+        const metadataPath = this.getMetadataPath(filePath);
         await fs.unlink(metadataPath);
       } catch {
-        // Metadata file might not exist, ignore
+        // Metadata file might not exist (or its path was rejected), ignore
       }
 
       return true;
@@ -127,7 +158,18 @@ export class LocalStorageAdapter implements StorageAdapter {
    * Check if a file exists
    */
   async exists(filePath: string): Promise<boolean> {
-    const fullPath = path.join(this.basePath, filePath);
+    // Soft-fail probe: a rejected path is treated the same as "doesn't
+    // exist" rather than thrown - see delete() for why.
+    let fullPath: string;
+    try {
+      fullPath = resolveWithinStorage(this.basePath, filePath);
+    } catch (error) {
+      logger.warn('Rejected storage path outside base directory in exists()', {
+        filePath,
+        error: (error as Error).message,
+      });
+      return false;
+    }
 
     try {
       await fs.access(fullPath);
@@ -141,7 +183,7 @@ export class LocalStorageAdapter implements StorageAdapter {
    * Get file metadata
    */
   async getMetadata(filePath: string): Promise<FileMetadata> {
-    const fullPath = path.join(this.basePath, filePath);
+    const fullPath = resolveWithinStorage(this.basePath, filePath);
 
     try {
       const stats = await fs.stat(fullPath);
@@ -172,8 +214,8 @@ export class LocalStorageAdapter implements StorageAdapter {
    * Copy a file within storage
    */
   async copy(sourcePath: string, destPath: string): Promise<string> {
-    const sourceFullPath = path.join(this.basePath, sourcePath);
-    const destFullPath = path.join(this.basePath, destPath);
+    const sourceFullPath = resolveWithinStorage(this.basePath, sourcePath);
+    const destFullPath = resolveWithinStorage(this.basePath, destPath);
 
     // Ensure destination directory exists
     const destDir = path.dirname(destFullPath);
@@ -197,8 +239,8 @@ export class LocalStorageAdapter implements StorageAdapter {
    * Move a file within storage
    */
   async move(sourcePath: string, destPath: string): Promise<string> {
-    const sourceFullPath = path.join(this.basePath, sourcePath);
-    const destFullPath = path.join(this.basePath, destPath);
+    const sourceFullPath = resolveWithinStorage(this.basePath, sourcePath);
+    const destFullPath = resolveWithinStorage(this.basePath, destPath);
 
     // Ensure destination directory exists
     const destDir = path.dirname(destFullPath);
@@ -223,10 +265,12 @@ export class LocalStorageAdapter implements StorageAdapter {
    * Get metadata file path
    */
   private getMetadataPath(filePath: string): string {
-    return path.join(
-      this.basePath,
-      `${filePath}.meta.json`
-    );
+    // Ninth join site (not just the eight bypass sites elsewhere) - reached
+    // from delete(), saveMetadata(), and readMetadata(), so it gets its own
+    // guard rather than relying solely on the callers that already guard
+    // `filePath` themselves.
+    const fullPath = resolveWithinStorage(this.basePath, filePath);
+    return `${fullPath}.meta.json`;
   }
 
   /**

@@ -37,9 +37,13 @@ export const Login: React.FC = () => {
   const [loginStep, setLoginStep] = useState<LoginStep>('credentials');
   const [twoFactorState, setTwoFactorState] = useState<TwoFactorState | null>(null);
 
-  // Fetch default branding for the login page (used for footer links)
+  // Fetch default branding for the login page (used for footer links);
+  // also carries `registrationEnabled`, used below to hide the sign-up link
+  // when registration is closed. Fetch failure just means the link stays
+  // hidden (courtesy only - the backend 403 is the real gate on /register).
   const { data: brandingData } = useDefaultBranding();
   const branding = brandingData?.branding;
+  const registrationEnabled = brandingData?.registrationEnabled ?? false;
 
   const {
     register,
@@ -285,12 +289,14 @@ export const Login: React.FC = () => {
             </Link>
           </div>
 
-          <div className="mt-6 pt-6 border-t border-base-300/50 text-center text-sm">
-            <span className="text-base-content/60">Don't have an account? </span>
-            <Link to="/register" className="text-neutral font-semibold hover:text-neutral/80 transition-colors hover:underline underline-offset-4">
-              Sign up
-            </Link>
-          </div>
+          {registrationEnabled && (
+            <div className="mt-6 pt-6 border-t border-base-300/50 text-center text-sm">
+              <span className="text-base-content/60">Don't have an account? </span>
+              <Link to="/register" className="text-neutral font-semibold hover:text-neutral/80 transition-colors hover:underline underline-offset-4">
+                Sign up
+              </Link>
+            </div>
+          )}
         </div>
 
         <div className="text-center text-sm text-base-content/50 mt-8">

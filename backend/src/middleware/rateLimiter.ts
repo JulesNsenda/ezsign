@@ -52,15 +52,20 @@ export const RATE_LIMIT_TIERS = {
 
 /**
  * Get the rate limit key based on request authentication
+ *
+ * IMPORTANT: The raw `x-api-key` header is attacker-controlled and unverified
+ * at this point in the middleware chain - never key on it directly. Only an
+ * *authenticated* API key identity (`req.apiKey`, attached by the real
+ * `apiKeyAuth` middleware after validating the key against the database)
+ * qualifies for the elevated tier. Today `apiLimiter` runs before any
+ * authentication middleware, so `req.apiKey` is never set and every request
+ * falls through to the user/IP branches below - that's expected, and keeps
+ * this correct if the limiter is later moved after auth.
  */
-const getKeyGenerator = (req: Request): string => {
-  // Check for API key authentication
-  const apiKey = req.headers['x-api-key'] as string;
-  if (apiKey) {
-    // Use a hash of the API key to avoid storing the key directly
-    const crypto = require('crypto');
-    const keyHash = crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
-    return `apikey:${keyHash}`;
+export const getKeyGenerator = (req: Request): string => {
+  // Check for an authenticated API key identity
+  if (req.apiKey?.id) {
+    return `apikey:${req.apiKey.id}`;
   }
 
   // Check for JWT authentication
@@ -76,12 +81,15 @@ const getKeyGenerator = (req: Request): string => {
 
 /**
  * Get the max requests based on authentication type
+ *
+ * See `getKeyGenerator` above - the elevated `apiKey` tier requires a
+ * verified `req.apiKey` identity, never the raw unauthenticated header.
  */
-const getMaxRequests = (req: Request): number => {
+export const getMaxRequests = (req: Request): number => {
   const config = getConfig();
 
-  // Check for API key authentication
-  if (req.headers['x-api-key']) {
+  // Check for an authenticated API key identity
+  if (req.apiKey?.id) {
     return config.apiKey;
   }
 

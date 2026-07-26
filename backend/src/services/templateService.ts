@@ -40,10 +40,16 @@ export class TemplateService {
       // Copy the document file to templates directory
       const originalBuffer = await this.storageService.downloadFile(document.file_path);
       const templateFileName = `template_${Date.now()}_${document.original_filename}`;
+      // generateUniqueName: true (F2/SEC-C2) - document.original_filename is
+      // presence-checked only where it originates, and today is protected
+      // from traversal solely as a side effect of busboy stripping
+      // separators from upload filenames. Don't rely on that: the adapter
+      // basenames + sanitizes before composing when this is set, so the
+      // interpolated value can never reach path composition raw.
       const templateFilePath = await this.storageService.uploadFile(
         originalBuffer,
         templateFileName,
-        { directory: 'templates' }
+        { directory: 'templates', generateUniqueName: true }
       );
 
       // Create template
@@ -125,10 +131,17 @@ export class TemplateService {
       // Copy the template file to documents directory
       const templateBuffer = await this.storageService.downloadFile(template.file_path);
       const documentFileName = `doc_${Date.now()}_from_template_${template.name}.pdf`;
+      // generateUniqueName: true (F2/SEC-C2) - template.name is presence-
+      // checked only (templateController.createFromDocument), so a name
+      // like `x/../../temp/evil` would otherwise compose an in-root but
+      // attacker-chosen key (e.g. temp/evil.pdf), which the containment
+      // guard accepts since root containment isn't subtree containment.
+      // The adapter basenames + sanitizes before composing when this is
+      // set, so the interpolated name can never reach path composition raw.
       const uploadedFile = await this.storageService.uploadFile(
         templateBuffer,
         documentFileName,
-        { directory: 'documents' }
+        { directory: 'documents', generateUniqueName: true }
       );
 
       // Create document
