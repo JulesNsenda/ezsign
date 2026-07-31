@@ -85,6 +85,32 @@ const dbConfig = process.env.DATABASE_URL
 
 // Initialize database connection pool with monitoring
 const rawPool = new Pool(dbConfig);
+
+// REQUIRED, not defensive. node-postgres emits 'error' on the Pool when a
+// client that is sitting IDLE in the pool loses its connection, and its docs
+// are explicit that an unhandled one crashes the process. Without this, an
+// error on an idle client became an uncaughtException, which shutdownManager
+// (correctly) treats as fatal and shuts the app down.
+//
+// That is not hypothetical: on 2026-07-30 at 14:03 UTC PostgreSQL was
+// restarted underneath us and every pooled connection got
+// `57P01 terminating connection due to administrator command`. The app shut
+// itself down cleanly and never came back — the whole group's hostname stopped
+// serving until someone restarted it by hand. The platform bounces PostgreSQL
+// on every deploy, so this was guaranteed to recur.
+//
+// Handling it here is all that is needed to survive it: pg discards the broken
+// client and opens a fresh one on the next checkout, so in-flight requests see
+// one error and everything after reconnects. Deliberately NOT rethrown and
+// deliberately not a shutdown — a transient database bounce is exactly the
+// thing a pool exists to absorb.
+rawPool.on('error', (err: Error & { code?: string }) => {
+  logger.error('Idle database client error; pool will reconnect', {
+    error: err.message,
+    code: err.code,
+  });
+});
+
 const pool = createMonitoredPool(rawPool);
 
 // Token revocation store (Postgres-backed; reads fail closed)
