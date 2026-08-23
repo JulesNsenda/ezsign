@@ -36,6 +36,31 @@ apiClient.interceptors.request.use(
 /**
  * Response interceptor - handle token refresh
  */
+/**
+ * Endpoints where a 401 is a legitimate ANSWER to the caller - wrong password,
+ * wrong 2FA code, expired reset link - rather than an expired session.
+ *
+ * The interceptor below reacts to a 401 by clearing tokens and hard-navigating
+ * to /login. On these endpoints that is actively harmful: submitting a wrong
+ * password on the login page produced a 401, which reloaded the page, which
+ * remounted the form and destroyed the error message it was about to render -
+ * so the user saw their input cleared and NO explanation at all.
+ *
+ * `/auth/change-password` is deliberately NOT here: it answers a wrong current
+ * password with 400, so a 401 from it really does mean the session expired.
+ */
+const AUTH_ANSWER_ENDPOINTS = [
+  '/auth/login',
+  '/auth/register',
+  '/auth/verify-2fa',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+  '/auth/verify-email',
+];
+
+const isAuthAnswerEndpoint = (url?: string): boolean =>
+  !!url && AUTH_ANSWER_ENDPOINTS.some((endpoint) => url.startsWith(endpoint));
+
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
     return response;
@@ -44,7 +69,11 @@ apiClient.interceptors.response.use(
     const originalRequest = error.config;
 
     // If error is 401 and we haven't tried to refresh yet
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !isAuthAnswerEndpoint(originalRequest?.url)
+    ) {
       originalRequest._retry = true;
 
       try {
