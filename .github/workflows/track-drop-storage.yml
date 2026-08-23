@@ -1,0 +1,89 @@
+# Watches the upstream DROP platform issue that forces our storage stopgap.
+#
+# drop.yaml currently points FILE_STORAGE_PATH at /tmp because /tmp is the only
+# writable path on DROP. That is scratch space: signed PDFs there do not survive
+# a restart, while their `documents` rows do. It is a stopgap, and stopgaps rot
+# silently unless something watches them - so this job does the remembering.
+#
+# When JulesNsenda/drop#238 closes, this opens an issue here with the exact
+# follow-up. It is idempotent: it will not open a second issue if one is
+# already open.
+name: Track DROP storage issue
+
+on:
+  schedule:
+    # Weekly, Mondays 07:13 UTC. Deliberately off the hour - scheduled jobs
+    # pile up on :00 and GitHub delays them under load.
+    - cron: '13 7 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check upstream issue and open a follow-up when it is fixed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const UPSTREAM = { owner: 'JulesNsenda', repo: 'drop', issue_number: 238 };
+            const MARKER = '<!-- track-drop-storage -->';
+
+            const { data: upstream } = await github.rest.issues.get(UPSTREAM);
+            core.info(`drop#${UPSTREAM.issue_number} is ${upstream.state}`);
+
+            if (upstream.state !== 'closed') {
+              core.info('Still open - storage stopgap stays. Nothing to do.');
+              return;
+            }
+
+            // Idempotency: bail if we already opened one.
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'drop-storage',
+              per_page: 100,
+            });
+            if (existing.data.some((i) => (i.body || '').includes(MARKER))) {
+              core.info('Follow-up issue already open. Nothing to do.');
+              return;
+            }
+
+            const body = [
+              MARKER,
+              `[JulesNsenda/drop#${UPSTREAM.issue_number}](${upstream.html_url}) is now **${upstream.state}**` +
+                (upstream.closed_at ? ` (closed ${upstream.closed_at}).` : '.'),
+              '',
+              'That issue is the only reason `drop.yaml` stores uploads in `/tmp`.',
+              '',
+              '### Why this matters',
+              '',
+              '`/tmp` is scratch space. Uploaded and signed PDFs do not survive a restart or',
+              'redeploy, while the `documents` rows describing them persist - leaving a record',
+              'of a document that can no longer be produced.',
+              '',
+              '### To do',
+              '',
+              '1. Re-read the upstream issue to confirm what DROP now provides.',
+              '2. If DROP offers a writable, persistent volume, declare it and point',
+              '   `FILE_STORAGE_PATH` at the mount instead of `/tmp`.',
+              '3. Remove the STOPGAP block in `drop.yaml` and this workflow.',
+              '4. Redeploy and confirm the startup log reads `Storage root verified writable`',
+              '   at the new path.',
+              '5. Note that existing `/tmp` files are gone - reconcile or re-upload any',
+              '   `documents` rows whose files no longer resolve.',
+              '',
+              'Opened automatically by `.github/workflows/track-drop-storage.yml`.',
+            ].join('\n');
+
+            const created = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'DROP storage is fixed upstream - move uploads off /tmp',
+              body,
+              labels: ['drop-storage'],
+            });
+            core.notice(`Opened ${created.data.html_url}`);

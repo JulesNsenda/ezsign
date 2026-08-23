@@ -37,9 +37,13 @@ services:
       path: /api                    # -> ezsign.<domain>/api
     env:
       NODE_ENV: production
-      # FILE_STORAGE_PATH is deliberately NOT set here, because there is no
-      # value that works. File uploads are BLOCKED on DROP pending a platform
-      # fix: https://github.com/JulesNsenda/drop/issues/238
+      # STOPGAP - REMOVE WHEN drop#238 IS FIXED.
+      #   Platform issue: https://github.com/JulesNsenda/drop/issues/238
+      #   Tracked by a scheduled job: .github/workflows/track-drop-storage.yml
+      #   opens an issue on this repo the moment drop#238 closes.
+      #
+      # /tmp is the ONLY writable path on DROP, so it is the only way to make
+      # uploads work at all today.
       #
       # Measured on DROP with a probe app (not inferred):
       #
@@ -54,13 +58,15 @@ services:
       # directory the process demonstrably owns. That is why this reads as a
       # path bug when it is a permissions one.
       #
-      # /tmp is the only writable path, and it is scratch space - signed PDFs
-      # there would not survive a restart while their `documents` rows would,
-      # leaving a record of a document that can no longer be produced. Pointing
-      # storage at /tmp was tried and reverted (#41, #42): papering over a
-      # platform gap with silent data loss is worse than a visible failure.
+      # WHAT THIS COSTS - understand it before accepting a real signature:
+      # /tmp is scratch space. Uploaded and signed PDFs will NOT survive a
+      # restart or redeploy and may be reclaimed by the OS at any time, while
+      # the `documents` rows describing them persist in Postgres. That leaves a
+      # record of a document that can no longer be produced - for an e-signing
+      # platform, the legally meaningful artifact is gone. Fine for demoing and
+      # exercising the app; NOT fine for real signatures.
       #
-      # Unblock via EITHER:
+      # Replace via EITHER:
       #   * DROP providing a writable, persistent volume, or
       #   * this app moving to durable object storage - an S3StorageAdapter
       #     already exists in backend/src/adapters/, which is the right
@@ -69,6 +75,7 @@ services:
       # Docker/compose are unaffected: they mount the named volume
       # `backend_storage` at /app/storage and set FILE_STORAGE_PATH there
       # (see docker-compose.yml and docker-compose.prod.yml).
+      FILE_STORAGE_PATH: /tmp/ezsign-storage
 
   # --- Web app: React + Vite ---
   frontend:
