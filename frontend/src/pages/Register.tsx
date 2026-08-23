@@ -175,7 +175,7 @@ export const Register: React.FC = () => {
                 </div>
               )}
 
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+              <form noValidate onSubmit={handleSubmit(onSubmit)} className="space-y-5">
                 <div>
                   <label className="block text-sm font-medium text-neutral mb-2">
                     Name <span className="text-base-content/40">(Optional)</span>

@@ -131,7 +131,7 @@ export const ResetPassword: React.FC = () => {
             </div>
           )}
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+          <form noValidate onSubmit={handleSubmit(onSubmit)} className="space-y-5">
             <div>
               <label className="block text-sm font-semibold text-neutral mb-2">
                 New Password

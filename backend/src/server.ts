@@ -27,7 +27,7 @@ import { createAdminUsersRouter } from '@/routes/adminUsersRoutes';
 import { createBrandingRouter, createPublicBrandingRouter } from '@/routes/brandingRoutes';
 import { createTeamInvitationsRouter, createInvitationsRouter } from '@/routes/invitations';
 import utilityRoutes from '@/routes/utilityRoutes';
-import { getStorageService } from '@/config/storage';
+import { getStorageService, verifyStorageRoot } from '@/config/storage';
 import { HealthService } from '@/services/healthService';
 import { errorHandler } from '@/middleware/errorHandler';
 import { apiLimiter } from '@/middleware/rateLimiter';
@@ -243,8 +243,16 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Rate limiting
 app.use(apiLimiter);
 
-// Health check routes (rate limiting skips /health - see shouldSkipRateLimit)
+// Health check routes (rate limiting skips these - see shouldSkipRateLimit).
+//
+// Mounted at BOTH paths on purpose. `/health` sits at the root of the origin,
+// which a path-routed deployment (DROP forwards only `/api` to this service)
+// hands to the static frontend instead - so the backend had no externally
+// reachable health check at all, and nothing could tell a wedged API from a
+// healthy one. `/api/health` routes with the rest of the API everywhere;
+// `/health` stays for Docker/compose health checks and local use.
 app.use('/health', createHealthRoutes(healthService));
+app.use('/api/health', createHealthRoutes(healthService));
 
 // API routes
 app.use('/api/auth', createAuthRouter(pool));
@@ -304,6 +312,9 @@ const httpServer = createServer(app);
 
 // Initialize Socket.IO
 socketService.initialize(httpServer, pool);
+
+// Prove the storage root is usable now, not on someone's first upload.
+void verifyStorageRoot();
 
 // Start server
 const server = httpServer.listen(PORT, () => {
