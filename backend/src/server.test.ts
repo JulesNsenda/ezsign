@@ -190,3 +190,86 @@ describe('server.ts CORS middleware (header-set behavior)', () => {
     expect(next).toHaveBeenCalled();
   });
 });
+
+/**
+ * A PostgreSQL restart must not take the app down with it.
+ *
+ * node-postgres emits 'error' on the Pool when a client sitting IDLE loses its
+ * connection, and an unhandled one crashes the process. Before this handler
+ * existed that surfaced as an uncaughtException, which shutdownManager treats
+ * as fatal — so on 2026-07-30 at 14:03 UTC, when PostgreSQL was restarted
+ * underneath the app and every pooled connection got
+ * `57P01 terminating connection due to administrator command`, the backend shut
+ * itself down cleanly and never came back. The platform bounces PostgreSQL on
+ * every deploy, so it was certain to recur.
+ */
+describe('server.ts database pool resilience', () => {
+  /**
+   * A PostgreSQL restart must not take the app down with it.
+   *
+   * node-postgres emits 'error' on the Pool when a client sitting IDLE loses
+   * its connection, and its docs are explicit that an unhandled one crashes
+   * the process. Before the handler existed that surfaced as an
+   * uncaughtException, which shutdownManager treats as fatal — so on
+   * 2026-07-30 at 14:03 UTC, when PostgreSQL was restarted underneath the app
+   * and every pooled connection got `57P01 terminating connection due to
+   * administrator command`, the backend shut itself down cleanly and never
+   * came back. The platform bounces PostgreSQL on every deploy, so it was
+   * certain to recur.
+   *
+   * These tests re-import `server.ts` behind their own `pg` mock rather than
+   * reusing the suite-level one: jest.config sets clearMocks/resetMocks, which
+   * wipes the shared mock's implementation and call history between tests, so
+   * the module-load that actually constructs the Pool is not observable from
+   * here otherwise.
+   */
+  function loadServerCapturingPoolHandlers(): {
+    handlers: Map<string, (err: Error & { code?: string }) => void>;
+    logger: { error: jest.Mock };
+  } {
+    const handlers = new Map<string, (err: Error & { code?: string }) => void>();
+    const loggerMock = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), http: jest.fn(), debug: jest.fn() };
+
+    jest.resetModules();
+    jest.doMock('pg', () => ({
+      Pool: jest.fn().mockImplementation(() => ({
+        on: (event: string, cb: (err: Error & { code?: string }) => void) => {
+          handlers.set(event, cb);
+        },
+        connect: jest.fn((cb: (e: Error | null, c: unknown, r: () => void) => void) => cb(null, {}, jest.fn())),
+        query: jest.fn().mockResolvedValue({ rows: [] }),
+        end: jest.fn((cb?: () => void) => cb?.()),
+      })),
+    }));
+    jest.doMock('@/services/loggerService', () => ({ __esModule: true, default: loggerMock }));
+
+    require('./server');
+    return { handlers, logger: loggerMock };
+  }
+
+  it('attaches an error handler to the pool', () => {
+    const { handlers } = loadServerCapturingPoolHandlers();
+    expect(handlers.has('error')).toBe(true);
+  });
+
+  it('absorbs an idle-client error instead of letting it become an uncaughtException', () => {
+    const { handlers, logger } = loadServerCapturingPoolHandlers();
+    const handler = handlers.get('error');
+    expect(typeof handler).toBe('function');
+
+    // The exact error PostgreSQL sends when restarted under a live pool.
+    const pgRestart = Object.assign(
+      new Error('terminating connection due to administrator command'),
+      { code: '57P01' }
+    );
+
+    // Rethrowing here is precisely what reached process.on('uncaughtException')
+    // and shut the app down.
+    expect(() => handler!(pgRestart)).not.toThrow();
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('Idle database client error'),
+      expect.objectContaining({ code: '57P01' })
+    );
+  });
+});
