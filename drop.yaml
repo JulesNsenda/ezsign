@@ -44,10 +44,22 @@ services:
       # usable working directory to anchor to. Every upload 500'd. An absolute
       # root removes the dependency on cwd entirely.
       #
-      # NOTE: this lives on the container filesystem, so uploaded PDFs do NOT
-      # survive a redeploy while their `documents` rows do - those files will
-      # 404. Point this at a persistent volume when one is available, or move
-      # to an object-storage adapter.
+      # /app/storage is this project's established location, not an arbitrary
+      # pick: docker-compose mounts the named volume `backend_storage` there,
+      # docker-compose.prod.yml sets this same FILE_STORAGE_PATH, and the
+      # Dockerfile creates and chowns it. Keeping DROP on the same path means
+      # one storage layout everywhere.
+      #
+      # Why it broke here specifically: DROP builds this service NATIVELY
+      # (`type: nodejs`), so the repo Dockerfile never runs and its
+      # `mkdir -p storage` never happens - the directory was simply absent.
+      #
+      # UNVERIFIED, and it matters: on compose this path is a persistent
+      # VOLUME, but nothing is known to back it on DROP. If DROP replaces the
+      # app directory on each deploy, uploaded PDFs are lost while their
+      # `documents` rows survive, and those documents will 404. Confirm by
+      # uploading a file and redeploying. If it does not persist, this needs a
+      # DROP volume or the existing S3StorageAdapter.
       FILE_STORAGE_PATH: /app/storage
 
   # --- Web app: React + Vite ---
