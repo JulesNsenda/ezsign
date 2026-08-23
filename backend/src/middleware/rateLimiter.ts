@@ -129,8 +129,16 @@ const shouldSkipRateLimit = (req: Request): boolean => {
     return true;
   }
 
-  // Skip rate limiting for health checks
-  if (req.path === '/health' || req.path.startsWith('/health/')) {
+  // Skip rate limiting for health checks. Both mounts must be listed: the
+  // limiter runs app-wide, so `req.path` here is the FULL path, and the
+  // `/api/health` mount (the only one reachable through a path-routed proxy)
+  // would otherwise consume the anonymous quota on every probe.
+  if (
+    req.path === '/health' ||
+    req.path.startsWith('/health/') ||
+    req.path === '/api/health' ||
+    req.path.startsWith('/api/health/')
+  ) {
     return true;
   }
 
