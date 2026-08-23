@@ -37,34 +37,30 @@ services:
       path: /api                    # -> ezsign.<domain>/api
     env:
       NODE_ENV: production
-      # /tmp is THE ONLY WRITABLE PATH on DROP. Measured, not assumed - a
-      # throwaway probe app deployed to DROP reported:
+      # ABSOLUTE on purpose. The default storage root is `./storage`, which
+      # Node resolves against process.cwd() - and on DROP that failed with
+      # `ENOENT: no such file or directory, mkdir './storage'` even though
+      # mkdir runs with `recursive: true`, because the relative path had no
+      # usable working directory to anchor to. Every upload 500'd. An absolute
+      # root removes the dependency on cwd entirely.
       #
-      #   /app/storage, /app/data, /app/uploads  -> ENOENT
-      #   /data, /storage, /var/data             -> EACCES
-      #   /tmp, /tmp/storage                     -> mkdir ok, write ok
+      # /app/storage is this project's established location, not an arbitrary
+      # pick: docker-compose mounts the named volume `backend_storage` there,
+      # docker-compose.prod.yml sets this same FILE_STORAGE_PATH, and the
+      # Dockerfile creates and chowns it. Keeping DROP on the same path means
+      # one storage layout everywhere.
       #
-      # The ENOENT is what makes this so confusing to debug. /app exists, is a
-      # directory, and stats as mode 0755 owned by the very uid running the
-      # process (1000:1000) - so a write there "should" succeed. DROP sandboxes
-      # the app directory read-only and masks writes as ENOENT rather than the
-      # EROFS/EACCES you would expect, and `mkdir -p` reports it as though a
-      # parent were missing. cwd is a red herring: it is /app, and `./storage`
-      # simply resolved to /app/storage.
+      # Why it broke here specifically: DROP builds this service NATIVELY
+      # (`type: nodejs`), so the repo Dockerfile never runs and its
+      # `mkdir -p storage` never happens - the directory was simply absent.
       #
-      # !! THIS IS A STOPGAP, NOT A SOLUTION !!
-      # /tmp is scratch space. Uploaded and SIGNED PDFs stored here do not
-      # survive a restart or redeploy, and may be reclaimed by the OS at any
-      # time - while the `documents` rows describing them persist in Postgres.
-      # The result is a record of a document that can no longer be produced,
-      # which for an e-signing platform means losing the legally meaningful
-      # artifact. Acceptable ONLY to demo/exercise the app on DROP.
-      #
-      # The real fix is durable object storage (an S3StorageAdapter already
-      # exists in this repo) or a persistent volume, which DROP does not
-      # currently offer. Do NOT accept real signatures on this deployment
-      # until one of those is in place.
-      FILE_STORAGE_PATH: /tmp/ezsign-storage
+      # UNVERIFIED, and it matters: on compose this path is a persistent
+      # VOLUME, but nothing is known to back it on DROP. If DROP replaces the
+      # app directory on each deploy, uploaded PDFs are lost while their
+      # `documents` rows survive, and those documents will 404. Confirm by
+      # uploading a file and redeploying. If it does not persist, this needs a
+      # DROP volume or the existing S3StorageAdapter.
+      FILE_STORAGE_PATH: /app/storage
 
   # --- Web app: React + Vite ---
   frontend:
