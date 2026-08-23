@@ -1,5 +1,17 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
+
+/**
+ * Socket.IO endpoint path. MUST stay in sync with the backend's
+ * `SOCKET_IO_PATH` (backend/src/services/socketService.ts).
+ *
+ * Socket.IO's default '/socket.io/' sits at the ROOT of the origin, which a
+ * path-routed deployment (DROP, and any proxy forwarding only /api to the
+ * backend) serves from the static frontend - the handshake 404s and real-time
+ * updates never connect. Keeping it under /api routes it with the rest of the
+ * API in every deployment mode.
+ */
+const SOCKET_IO_PATH = '/api/socket.io';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -64,6 +76,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     console.log('[Socket] Connecting to:', apiUrl);
 
     const newSocket = io(apiUrl, {
+      path: SOCKET_IO_PATH,
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnection: true,
