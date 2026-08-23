@@ -112,7 +112,7 @@ export const ForcePasswordChange: React.FC = () => {
             </div>
           )}
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+          <form noValidate onSubmit={handleSubmit(onSubmit)} className="space-y-5">
             <div>
               <label htmlFor="current-password" className="block text-sm font-semibold text-neutral mb-2">
                 Current Password
