@@ -37,6 +37,18 @@ services:
       path: /api                    # -> ezsign.<domain>/api
     env:
       NODE_ENV: production
+      # ABSOLUTE on purpose. The default storage root is `./storage`, which
+      # Node resolves against process.cwd() - and on DROP that failed with
+      # `ENOENT: no such file or directory, mkdir './storage'` even though
+      # mkdir runs with `recursive: true`, because the relative path had no
+      # usable working directory to anchor to. Every upload 500'd. An absolute
+      # root removes the dependency on cwd entirely.
+      #
+      # NOTE: this lives on the container filesystem, so uploaded PDFs do NOT
+      # survive a redeploy while their `documents` rows do - those files will
+      # 404. Point this at a persistent volume when one is available, or move
+      # to an object-storage adapter.
+      FILE_STORAGE_PATH: /app/storage
 
   # --- Web app: React + Vite ---
   frontend:

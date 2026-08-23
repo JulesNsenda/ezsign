@@ -1,4 +1,5 @@
 import * as path from 'path';
+import * as fs from 'fs/promises';
 import { LocalStorageAdapter } from '@/adapters/LocalStorageAdapter';
 import { S3StorageAdapter, S3Config } from '@/adapters/S3StorageAdapter';
 import { StorageAdapter, StorageService, createStorageService } from '@/services/storageService';
@@ -84,6 +85,67 @@ export function getStorageRoot(): string {
   }
 
   return './storage';
+}
+
+/**
+ * Prove at STARTUP that the storage root resolves and is writable.
+ *
+ * Without this the first thing to discover a broken storage root is a user's
+ * first upload, as a 500. That is exactly how this bit on DROP: the default
+ * root is the RELATIVE `./storage`, Node resolves it against `process.cwd()`,
+ * and every upload died with `ENOENT: no such file or directory, mkdir
+ * './storage'` - despite `recursive: true` - because the relative path had no
+ * usable working directory to anchor to. Nothing in the logs said so until
+ * someone tried to upload.
+ *
+ * Logs the RESOLVED ABSOLUTE path either way, so "where do files actually go"
+ * is answerable from the logs alone rather than by reasoning about cwd.
+ *
+ * Deliberately does NOT exit on failure: the rest of the app (auth, viewing,
+ * existing documents) still works, and a hard exit here would crash-loop the
+ * container - which is what destroys the one-time bootstrap admin password.
+ *
+ * @returns true when the root is usable
+ */
+export async function verifyStorageRoot(): Promise<boolean> {
+  const configuredRoot = getStorageRoot();
+  let resolvedRoot: string;
+
+  try {
+    // process.cwd() itself throws if the working directory is gone, which is
+    // the failure this function exists to make legible.
+    resolvedRoot = path.resolve(configuredRoot);
+  } catch (error) {
+    logger.error(
+      'Storage root could not be resolved to an absolute path. The configured root is relative and the ' +
+        'process has no usable working directory. Set FILE_STORAGE_PATH to an ABSOLUTE path.',
+      { configuredRoot, error: (error as Error).message }
+    );
+    return false;
+  }
+
+  const probe = path.join(resolvedRoot, `.write-probe-${process.pid}`);
+
+  try {
+    await fs.mkdir(resolvedRoot, { recursive: true });
+    await fs.writeFile(probe, 'ok');
+    await fs.unlink(probe);
+  } catch (error) {
+    logger.error(
+      'Storage root is NOT writable - every upload will fail. Set FILE_STORAGE_PATH to an absolute, ' +
+        'writable path.',
+      {
+        configuredRoot,
+        resolvedRoot,
+        isAbsoluteConfig: path.isAbsolute(configuredRoot),
+        error: (error as Error).message,
+      }
+    );
+    return false;
+  }
+
+  logger.info('Storage root verified writable', { configuredRoot, resolvedRoot });
+  return true;
 }
 
 /**
