@@ -101,14 +101,85 @@ const databaseUrl = normalizeDatabaseUrl(
 // server process started below (server.ts prefers DATABASE_URL when set).
 process.env.DATABASE_URL = databaseUrl;
 
-const migrate = spawnSync('npx', ['node-pg-migrate', 'up'], {
-  env: { ...process.env, DATABASE_URL: databaseUrl },
-  stdio: 'inherit',
-  shell: process.platform === 'win32',
-});
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-if (migrate.status !== 0) {
-  process.exit(migrate.status ?? 1);
+/**
+ * Block until Postgres accepts a connection, or the budget runs out.
+ *
+ * Deploy platforms routinely start the app container before the database is
+ * accepting connections (and bounce Postgres on every deploy). Running
+ * migrations into that gap fails with ECONNREFUSED, which used to exit this
+ * script immediately - the supervisor restarted the container, which failed
+ * the same way, and the app sat in a crash loop until someone restarted it by
+ * hand. Worse, the loop floods the log buffer, which is exactly where the
+ * one-time bootstrap admin password is printed.
+ *
+ * Probing first also keeps "the database isn't up YET" distinguishable from
+ * "a migration is broken": only connectivity is retried here, so a genuine
+ * migration failure below still exits on its first attempt rather than being
+ * retried into a different crash loop.
+ *
+ * Never logs the URL or its parts - it is a secret.
+ */
+async function waitForPostgres(url) {
+  const timeoutMs = parseInt(process.env.DB_WAIT_TIMEOUT_MS || '120000', 10);
+  const intervalMs = parseInt(process.env.DB_WAIT_INTERVAL_MS || '2000', 10);
+  const deadline = Date.now() + timeoutMs;
+
+  // Required at call time so a missing/broken `pg` surfaces here rather than
+  // at module load, keeping the URL-normalisation errors above the first
+  // failure a misconfigured deploy sees.
+  const { Client } = require('pg');
+  let attempt = 0;
+  let lastError;
+
+  while (Date.now() < deadline) {
+    attempt += 1;
+    const client = new Client({ connectionString: url, connectionTimeoutMillis: 5000 });
+    try {
+      await client.connect();
+      await client.end();
+      if (attempt > 1) {
+        console.log(`Postgres is accepting connections (after ${attempt} attempts).`);
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      await client.end().catch(() => undefined);
+      if (attempt === 1) {
+        console.log(
+          `Waiting up to ${Math.round(timeoutMs / 1000)}s for Postgres to accept connections...`
+        );
+      }
+      await sleep(intervalMs);
+    }
+  }
+
+  console.error(
+    'Postgres did not accept connections within ' +
+      `${Math.round(timeoutMs / 1000)}s: ` +
+      `${lastError && lastError.code ? lastError.code : 'unknown error'}`
+  );
+  process.exit(1);
 }
 
-require(path.join(__dirname, '..', 'dist', 'server.js'));
+async function main() {
+  await waitForPostgres(databaseUrl);
+
+  const migrate = spawnSync('npx', ['node-pg-migrate', 'up'], {
+    env: { ...process.env, DATABASE_URL: databaseUrl },
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+  });
+
+  if (migrate.status !== 0) {
+    process.exit(migrate.status ?? 1);
+  }
+
+  require(path.join(__dirname, '..', 'dist', 'server.js'));
+}
+
+main().catch((error) => {
+  console.error('Startup failed:', error && error.message ? error.message : error);
+  process.exit(1);
+});

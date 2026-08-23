@@ -89,6 +89,17 @@ export class DocumentService {
    * Create a new document
    */
   async createDocument(data: CreateDocumentData): Promise<Document> {
+    // Defense in depth: documentController already validates the title, but the
+    // service is also called directly (templates, tests). Validate BEFORE the
+    // storage upload below, so a rejected document never orphans a stored file.
+    const title = typeof data.title === 'string' ? data.title.trim() : '';
+    if (title.length === 0) {
+      throw new Error('Title is required');
+    }
+    if (title.length > 255) {
+      throw new Error('Title too long');
+    }
+
     // Get PDF info
     const pdfInfo = await pdfService.getPdfInfo(data.fileBuffer);
 
@@ -117,7 +128,7 @@ export class DocumentService {
     const values = [
       data.userId,
       data.teamId || null,
-      data.title,
+      title,
       uploadedFile.originalName,
       uploadedFile.storedPath,
       uploadedFile.size,

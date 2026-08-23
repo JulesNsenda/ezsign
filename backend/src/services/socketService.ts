@@ -42,6 +42,12 @@ export interface FieldEvent {
   completedAt?: string;
 }
 
+/**
+ * Socket.IO endpoint path. MUST stay in sync with the frontend's
+ * `SOCKET_IO_PATH` (frontend/src/contexts/SocketContext.tsx).
+ */
+export const SOCKET_IO_PATH = '/api/socket.io';
+
 class SocketService {
   private io: Server | null = null;
   private pool: Pool | null = null;
@@ -59,6 +65,12 @@ class SocketService {
     ];
 
     this.io = new Server(httpServer, {
+      // Served under /api like every other backend route. Socket.IO's default
+      // '/socket.io/' sits at the ROOT, which a path-routed deployment (DROP,
+      // and any proxy that forwards only /api to this service) hands to the
+      // static frontend instead - so the handshake 404s and real-time updates
+      // never connect. The frontend client sets the same path.
+      path: SOCKET_IO_PATH,
       cors: {
         origin: allowedOrigins,
         methods: ['GET', 'POST'],
