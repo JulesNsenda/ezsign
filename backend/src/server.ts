@@ -135,6 +135,14 @@ logger.info('Health service initialized');
 // Initialize Express app
 const app = express();
 
+// Behind DROP's (and any other) reverse proxy, the socket peer is the proxy, so
+// `req.ip` would be the proxy's address and EVERY client would share a single
+// rate-limit bucket. Trust exactly one proxy hop so `req.ip` resolves to the
+// real client from X-Forwarded-For. Do NOT raise this to `true`/a larger hop
+// count without a proxy that strips client-supplied X-Forwarded-For headers -
+// that would let a client spoof its own IP and evade rate limiting.
+app.set('trust proxy', 1);
+
 // Security middleware with custom configuration
 app.use(
   helmet({
