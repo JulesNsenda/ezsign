@@ -1,4 +1,4 @@
-import rateLimit, { Options, RateLimitRequestHandler } from 'express-rate-limit';
+import rateLimit, { Options, RateLimitRequestHandler, ipKeyGenerator } from 'express-rate-limit';
 import logger from '@/services/loggerService';
 import { Request, Response, NextFunction } from 'express';
 
@@ -62,6 +62,19 @@ export const RATE_LIMIT_TIERS = {
  * falls through to the user/IP branches below - that's expected, and keeps
  * this correct if the limiter is later moved after auth.
  */
+/**
+ * Normalised per-client IP key for rate limiting.
+ *
+ * A raw `req.ip` is NOT a safe rate-limit key for IPv6: a single client is
+ * typically handed a whole /64 (or larger) prefix, so it can rotate through
+ * effectively unlimited distinct addresses and bypass every limiter. express-
+ * rate-limit v8 rejects raw-IP key generators for exactly this reason
+ * (ERR_ERL_KEY_GEN_IPV6). `ipKeyGenerator` collapses IPv6 addresses to their
+ * /56 prefix and passes IPv4 through unchanged.
+ */
+const clientIpKey = (req: Request): string =>
+  ipKeyGenerator(req.ip || req.socket.remoteAddress || 'unknown');
+
 export const getKeyGenerator = (req: Request): string => {
   // Check for an authenticated API key identity
   if (req.apiKey?.id) {
@@ -75,8 +88,7 @@ export const getKeyGenerator = (req: Request): string => {
   }
 
   // Fall back to IP address for anonymous requests
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  return `anon:${ip}`;
+  return `anon:${clientIpKey(req)}`;
 };
 
 /**
@@ -202,7 +214,7 @@ export const authLimiter = (() => {
     legacyHeaders: false,
     skipSuccessfulRequests: true,
     skip: (req) => req.method === 'OPTIONS', // Skip CORS preflight
-    keyGenerator: (req) => `auth:${req.ip || req.socket.remoteAddress || 'unknown'}`,
+    keyGenerator: (req) => `auth:${clientIpKey(req)}`,
   });
 })();
 
@@ -232,7 +244,7 @@ export const uploadLimiter = (() => {
       if (user?.userId) {
         return `upload:user:${user.userId}`;
       }
-      return `upload:ip:${req.ip || req.socket.remoteAddress || 'unknown'}`;
+      return `upload:ip:${clientIpKey(req)}`;
     },
   });
 })();
@@ -256,7 +268,7 @@ export const signingLimiter = (() => {
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => req.method === 'OPTIONS',
-    keyGenerator: (req) => `signing:${req.ip || req.socket.remoteAddress || 'unknown'}`,
+    keyGenerator: (req) => `signing:${clientIpKey(req)}`,
   });
 })();
 
@@ -284,7 +296,7 @@ export const passwordChangeLimiter = (() => {
       if (user?.userId) {
         return `pwchange:user:${user.userId}`;
       }
-      return `pwchange:ip:${req.ip || req.socket.remoteAddress || 'unknown'}`;
+      return `pwchange:ip:${clientIpKey(req)}`;
     },
   });
 })();
@@ -309,7 +321,7 @@ export const twoFactorLimiter = (() => {
     legacyHeaders: false,
     skipSuccessfulRequests: true,
     skip: (req) => req.method === 'OPTIONS',
-    keyGenerator: (req) => `2fa:${req.ip || req.socket.remoteAddress || 'unknown'}`,
+    keyGenerator: (req) => `2fa:${clientIpKey(req)}`,
   });
 })();
 

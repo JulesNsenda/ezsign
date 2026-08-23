@@ -123,4 +123,30 @@ describe('rateLimiter key/tier selection', () => {
       expect(getMaxRequests(req)).toBe(RATE_LIMIT_TIERS.anonymous.max);
     });
   });
+
+  describe('IPv6 rate-limit bypass (raw req.ip is not a safe key)', () => {
+    const ipReq = (ip: string) => ({ headers: {}, ip }) as unknown as Request;
+
+    it('collapses two addresses from the same IPv6 /56 to a single key', () => {
+      // A client is typically handed a whole /64 or wider prefix, so keying on
+      // the raw address lets it rotate through effectively unlimited IPs and
+      // evade every limiter. Both of these must land in the same bucket.
+      const a = getKeyGenerator(ipReq('2001:db8:85a3:0000:1319:8a2e:370:7348'));
+      const b = getKeyGenerator(ipReq('2001:db8:85a3:0055:ffff:ffff:ffff:ffff'));
+
+      expect(a).toBe(b);
+      expect(a).not.toBe('anon:2001:db8:85a3:0000:1319:8a2e:370:7348');
+    });
+
+    it('still separates addresses from different IPv6 /56 prefixes', () => {
+      const a = getKeyGenerator(ipReq('2001:db8:85a3:0000:1319:8a2e:370:7348'));
+      const b = getKeyGenerator(ipReq('2001:db8:85a3:ff00:1319:8a2e:370:7348'));
+
+      expect(a).not.toBe(b);
+    });
+
+    it('passes IPv4 addresses through unchanged', () => {
+      expect(getKeyGenerator(ipReq('1.2.3.4'))).toBe('anon:1.2.3.4');
+    });
+  });
 });
