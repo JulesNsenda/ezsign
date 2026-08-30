@@ -9,6 +9,7 @@ import { EmailService, EmailBranding, CompletionEmailData, SigningRequestEmailDa
 import { PdfService } from '@/services/pdfService';
 import { StorageService } from '@/services/storageService';
 import { BrandingService } from '@/services/brandingService';
+import { AuditService } from '@/services/auditService';
 import { socketService } from '@/services/socketService';
 import { ReminderService } from '@/services/reminderService';
 import { getSettingsService } from '@/services/settingsService';
@@ -35,6 +36,7 @@ export class SigningController {
   private _pdfService: PdfService;
   private _storageService: StorageService;
   private brandingService: BrandingService;
+  private auditService: AuditService;
   private reminderService?: ReminderService;
 
   constructor(
@@ -42,13 +44,18 @@ export class SigningController {
     emailService: EmailService,
     pdfService: PdfService,
     storageService: StorageService,
-    reminderService?: ReminderService
+    reminderService?: ReminderService,
+    auditService?: AuditService
   ) {
     this.pool = pool;
     this.emailService = emailService;
     this._pdfService = pdfService;
     this._storageService = storageService;
     this.brandingService = new BrandingService(pool);
+    // Injectable so tests can assert what is recorded: with a mocked pool,
+    // every emission fails inside `recordEvent`'s catch and a broken call
+    // looks exactly like a working one.
+    this.auditService = auditService ?? new AuditService(pool);
     this.reminderService = reminderService;
   }
 
@@ -224,6 +231,34 @@ export class SigningController {
         status: 'pending',
         updatedAt: new Date().toISOString(),
         updatedBy: userId,
+      });
+
+      // Item 3.2: one `sent` row for the document's draft -> pending
+      // transition, emitted here rather than after the per-signer send loop
+      // below. Two consequences worth stating, both deliberate:
+      //   - It is not per-signer. Which signer got which email, and which
+      //     sends failed, is what `email_logs` records; duplicating that per
+      //     recipient here would make the timeline unreadable.
+      //   - It is NOT suppressed when some sends fail. Since Item 1.4 the
+      //     loop continues past a failure, so suppressing would produce
+      //     documents that are `pending` with failed emails and no `sent`
+      //     event - exactly the blind spot this feature exists to remove.
+      // There is no transaction here (the status flip above is a bare
+      // UPDATE), so no post-commit staging is needed.
+      await this.auditService.recordEvent({
+        document_id: documentId,
+        user_id: userId,
+        event_type: 'sent',
+        ip_address: req.ip ?? null,
+        user_agent: req.get('user-agent') ?? null,
+        metadata: {
+          signer_count: signersResult.rows.length,
+          // A sequential workflow emails only the first signer, so a bare
+          // count would read as "sent to 3" beside a single email-log row -
+          // the false-failure impression this feature exists to remove.
+          workflow_type: document.workflow_type,
+          actor_email: (req as any).user?.email ?? null,
+        },
       });
 
       // Get user info for sender name
@@ -426,6 +461,56 @@ export class SigningController {
         'SELECT * FROM signatures WHERE signer_id = $1',
         [signer.id]
       );
+
+      // Item 3.2: record `viewed` once per signer, never per request. This
+      // handler is public and unauthenticated, and is hit on every page
+      // load, refresh and link-preview bot - a row per request would bury
+      // the timeline under noise. The conditional UPDATE is the gate: only
+      // the request that actually flips `viewed_at` from NULL gets a row
+      // back, so concurrent opens race for one row and exactly one of them
+      // emits. Placed after every access gate above, so the event means
+      // "this signer was served the document", not "someone hit the URL".
+      //
+      // `user_id` is necessarily NULL on a token route - the viewer has no
+      // account - so the signer is identified in metadata instead, which is
+      // also what activityService will join on to render a name.
+      //
+      // `resolveSigningContext` already SELECTed this signer, so the common
+      // case (every open after the first) is settled without touching the
+      // database again; the conditional UPDATE still carries `AND viewed_at
+      // IS NULL` because that predicate, not this check, is what makes
+      // concurrent first-opens race for a single row.
+      if (!signer.viewed_at) {
+        const viewedResult = await this.pool.query(
+          'UPDATE signers SET viewed_at = CURRENT_TIMESTAMP WHERE id = $1 AND viewed_at IS NULL RETURNING id',
+          [signer.id]
+        );
+        if (viewedResult.rows.length > 0) {
+          const recorded = await this.auditService.recordEvent({
+            document_id: signer.document_id,
+            user_id: null,
+            event_type: 'viewed',
+            ip_address: req.ip ?? null,
+            user_agent: req.get('user-agent') ?? null,
+            metadata: { signer_id: signer.id, signer_email: signer.email },
+          });
+
+          // The UPDATE above autocommits on its own connection, so if the
+          // audit write then fails the gate has been consumed and the event
+          // can never be emitted or retried - BUG-1's shape with the 500
+          // removed. Put the gate back so a later open records it.
+          if (!recorded) {
+            await this.pool
+              .query('UPDATE signers SET viewed_at = NULL WHERE id = $1', [signer.id])
+              .catch((error) => {
+                logger.warn('Could not release the viewed_at gate after a failed audit write', {
+                  signerId: signer.id,
+                  error: (error as Error).message,
+                });
+              });
+          }
+        }
+      }
 
       res.status(200).json({
         document: document.toPublicJSON(),
@@ -999,6 +1084,34 @@ export class SigningController {
       // already durably saved at this point, so a failure below must be
       // logged and swallowed - never surfaced as an error to the signer, and
       // never allowed to undo the commit above.
+      // Item 3.2: `signed`, and `completed` when this submission finished the
+      // document. Emitted here - after COMMIT - and not inside the
+      // transaction above, because `AuditService` holds its own pool: a call
+      // made mid-transaction commits on a different connection, so the
+      // ROLLBACK in the catch would leave permanent `signed`/`completed`
+      // rows describing a signature that does not exist. Ordered before the
+      // email I/O below so the recorded timestamps sit as close as possible
+      // to the commit they describe rather than behind an SMTP round-trip.
+      await this.auditService.recordEvent({
+        document_id: signer.document_id,
+        user_id: null,
+        event_type: 'signed',
+        ip_address: req.ip ?? null,
+        user_agent: req.get('user-agent') ?? null,
+        metadata: { signer_id: signer.id, signer_email: signer.email },
+      });
+
+      if (allSigned) {
+        await this.auditService.recordEvent({
+          document_id: signer.document_id,
+          user_id: null,
+          event_type: 'completed',
+          ip_address: req.ip ?? null,
+          user_agent: req.get('user-agent') ?? null,
+          metadata: { completed_by_signer_id: signer.id },
+        });
+      }
+
       if (completionBroadcastStaged) {
         socketService
           .emitDocumentUpdate({

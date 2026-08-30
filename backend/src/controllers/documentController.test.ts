@@ -1,5 +1,6 @@
 import { DocumentController } from './documentController';
 import { Pool } from 'pg';
+import { AuditService } from '@/services/auditService';
 
 // Mock the services
 jest.mock('@/services/documentService');
@@ -10,10 +11,16 @@ describe('DocumentController', () => {
   let mockPool: Pool;
   let mockRequest: any;
   let mockResponse: any;
+  let mockAuditService: { recordEvent: jest.Mock };
 
   beforeEach(() => {
     mockPool = {} as Pool;
-    controller = new DocumentController(mockPool);
+    // Item 3.2: injected rather than pool-derived. With the default
+    // instance and this bare-object pool, `this.pool.query` is undefined and
+    // every emission dies inside `recordEvent`'s catch - so a deleted or
+    // mis-typed audit call would look exactly like a working one.
+    mockAuditService = { recordEvent: jest.fn().mockResolvedValue(true) };
+    controller = new DocumentController(mockPool, mockAuditService as unknown as AuditService);
 
     mockRequest = {
       user: {
@@ -24,6 +31,10 @@ describe('DocumentController', () => {
       params: {},
       query: {},
       body: {},
+      // Real Express always supplies both; Item 3.2 reads them for the
+      // audit record's request context.
+      ip: '203.0.113.5',
+      get: jest.fn().mockReturnValue('jest-agent'),
     };
 
     mockResponse = {
@@ -377,6 +388,107 @@ describe('DocumentController', () => {
         'inline; filename="test.pdf"'
       );
       expect(mockResponse.send).toHaveBeenCalledWith(mockFileBuffer);
+    });
+  });
+  describe('Item 3.2 - lifecycle audit emissions', () => {
+    it('records a created event, with the actor snapshotted, after a successful upload', async () => {
+      const uploaded = {
+        id: 'doc-1',
+        title: 'Quarterly Report',
+        toPublicJSON: () => ({ id: 'doc-1' }),
+      };
+      // Same seam the tests above use: swap the instance's collaborator
+      // rather than the auto-mocked class, which the constructor already
+      // instantiated.
+      (controller as any).documentService = {
+        createDocument: jest.fn().mockResolvedValue(uploaded),
+      };
+
+      mockRequest.file = {
+        buffer: Buffer.from('%PDF-1.4 test'),
+        originalname: 'report.pdf',
+        mimetype: 'application/pdf',
+        size: 13,
+      };
+      mockRequest.body = { title: 'Quarterly Report' };
+
+      await controller.upload(mockRequest, mockResponse);
+
+      // Only assert the audit call: the upload path's other collaborators
+      // (thumbnail queue, sockets) are exercised by the tests above.
+      expect(mockAuditService.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          document_id: 'doc-1',
+          user_id: 'user-123',
+          event_type: 'created',
+          ip_address: '203.0.113.5',
+          user_agent: 'jest-agent',
+          metadata: expect.objectContaining({ actor_email: 'test@example.com' }),
+        })
+      );
+    });
+
+    it('records a cancelled event only on the draft -> cancelled transition', async () => {
+      (controller as any).documentService = {
+        findById: jest.fn().mockResolvedValue({ id: 'doc-1', status: 'draft' }),
+        updateDocument: jest.fn().mockResolvedValue({
+          id: 'doc-1',
+          status: 'cancelled',
+          toPublicJSON: () => ({ id: 'doc-1', status: 'cancelled' }),
+        }),
+      };
+
+      mockRequest.params = { id: 'doc-1' };
+      mockRequest.body = { status: 'cancelled' };
+
+      await controller.update(mockRequest, mockResponse);
+
+      expect(mockAuditService.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          document_id: 'doc-1',
+          event_type: 'cancelled',
+          metadata: expect.objectContaining({ previous_status: 'draft' }),
+        })
+      );
+    });
+
+    it('does not record a second cancelled event when the document is already cancelled', async () => {
+      // `updateDocument` has no state-machine validation - it writes whatever
+      // status it is given - so a repeated PUT (a double-clicked cancel
+      // button) would otherwise add an indistinguishable duplicate row to
+      // the activity timeline.
+      (controller as any).documentService = {
+        findById: jest.fn().mockResolvedValue({ id: 'doc-1', status: 'cancelled' }),
+        updateDocument: jest.fn().mockResolvedValue({
+          id: 'doc-1',
+          status: 'cancelled',
+          toPublicJSON: () => ({ id: 'doc-1', status: 'cancelled' }),
+        }),
+      };
+
+      mockRequest.params = { id: 'doc-1' };
+      mockRequest.body = { status: 'cancelled' };
+
+      await controller.update(mockRequest, mockResponse);
+
+      expect(mockAuditService.recordEvent).not.toHaveBeenCalled();
+    });
+
+    it('records nothing for a title-only update', async () => {
+      (controller as any).documentService = {
+        updateDocument: jest.fn().mockResolvedValue({
+          id: 'doc-1',
+          status: 'draft',
+          toPublicJSON: () => ({ id: 'doc-1' }),
+        }),
+      };
+
+      mockRequest.params = { id: 'doc-1' };
+      mockRequest.body = { title: 'Renamed' };
+
+      await controller.update(mockRequest, mockResponse);
+
+      expect(mockAuditService.recordEvent).not.toHaveBeenCalled();
     });
   });
 });

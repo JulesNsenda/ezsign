@@ -55,6 +55,7 @@ import { BrandingService } from '@/services/brandingService';
 import { getSettingsService } from '@/services/settingsService';
 import { socketService } from '@/services/socketService';
 import { createScheduledSendWorker } from './scheduledSendWorker';
+import { AuditService } from '@/services/auditService';
 
 const mockRegisterWorker = registerWorker as jest.Mock;
 const mockWithProvider = EmailService.withProvider as jest.Mock;
@@ -64,6 +65,10 @@ const mockEmitDocumentUpdate = socketService.emitDocumentUpdate as jest.Mock;
 
 describe('scheduledSendWorker (pg-boss)', () => {
   let pool: { query: jest.Mock };
+  // Item 3.2: injected so the `sent` emit is assertable. With the default
+  // pool-derived instance the mocked pool makes the INSERT throw inside
+  // `recordEvent`'s catch, and deleting the emit leaves this suite green.
+  let mockAuditService: { recordEvent: jest.Mock };
   let mockSendSigningRequest: jest.Mock;
   let mockGetByTeamId: jest.Mock;
   let mockGetAppUrl: jest.Mock;
@@ -104,6 +109,7 @@ describe('scheduledSendWorker (pg-boss)', () => {
 
   beforeEach(() => {
     pool = { query: jest.fn() };
+    mockAuditService = { recordEvent: jest.fn().mockResolvedValue(true) };
 
     mockSendSigningRequest = jest.fn().mockResolvedValue(undefined);
     mockWithProvider.mockReturnValue({ sendSigningRequest: mockSendSigningRequest });
@@ -121,7 +127,10 @@ describe('scheduledSendWorker (pg-boss)', () => {
 
   /** Registers the worker and returns the captured handler passed to registerWorker. */
   const registerAndCaptureHandler = async (): Promise<(job: NormalizedJob) => Promise<unknown>> => {
-    await createScheduledSendWorker(pool as unknown as Pool);
+    await createScheduledSendWorker(
+      pool as unknown as Pool,
+      mockAuditService as unknown as AuditService
+    );
     return mockRegisterWorker.mock.calls[0][1];
   };
 
@@ -196,5 +205,35 @@ describe('scheduledSendWorker (pg-boss)', () => {
       (call) => typeof call[0] === 'string' && call[0].includes("status = 'pending'")
     );
     expect(updateCall).toBeDefined();
+
+    // Item 3.2: this worker is the second draft -> pending seam. Without the
+    // emit, every scheduled send leaves a document with email logs and no
+    // `sent` event - a permanently gapped timeline on exactly the "did we
+    // ever send this?" question the activity view exists to answer.
+    expect(mockAuditService.recordEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        document_id: documentId,
+        user_id: userId,
+        event_type: 'sent',
+        metadata: expect.objectContaining({
+          signer_count: 1,
+          workflow_type: 'parallel',
+          scheduled: true,
+        }),
+      })
+    );
+  });
+
+  it('does not record a sent event for a document that is no longer scheduled', async () => {
+    // The status guard bails before the emit, which is also what stops a
+    // pg-boss retry writing a second `sent` row: the first attempt already
+    // moved the document to `pending`.
+    pool.query.mockResolvedValueOnce({ rows: [{ status: 'pending' }] });
+
+    const handler = await registerAndCaptureHandler();
+    const result = (await handler(baseJob)) as { success: boolean };
+
+    expect(result.success).toBe(false);
+    expect(mockAuditService.recordEvent).not.toHaveBeenCalled();
   });
 });

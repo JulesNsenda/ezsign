@@ -500,6 +500,7 @@ export class SignerService {
       status: row.status,
       access_token: row.access_token,
       signed_at: row.signed_at,
+      viewed_at: row.viewed_at ?? null,
       ip_address: row.ip_address,
       user_agent: row.user_agent,
       created_at: row.created_at,
