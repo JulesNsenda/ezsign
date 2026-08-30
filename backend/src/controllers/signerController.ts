@@ -8,6 +8,7 @@ import { Branding } from '@/models/Branding';
 import { CreateSignerData, UpdateSignerData } from '@/models/Signer';
 import { getSettingsService } from '@/services/settingsService';
 import { buildSigningUrl } from '@/utils/urlBuilder';
+import { categorizeSmtpError } from '@/utils/smtpErrorCategorizer';
 import logger from '@/services/loggerService';
 
 export class SignerController {
@@ -448,6 +449,9 @@ export class SignerController {
           message: customMessage,
           isReminder: true,
           branding: emailBranding,
+          documentId,
+          signerId,
+          userId: document.user_id,
         });
       }
 
@@ -464,23 +468,33 @@ export class SignerController {
       const updateResult = await this.pool.query(updateQuery, [signerId]);
       const updatedSigner = updateResult.rows[0];
 
-      // Create audit event
-      const auditQuery = `
-        INSERT INTO audit_events (
-          document_id, user_id, event_type, metadata, created_at
-        ) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-      `;
+      // Create audit event. Best-effort: the reminder itself already sent
+      // and the counter above already incremented, so a failure here must
+      // not turn a successful resend into a 500 for the caller (BUG-1).
+      try {
+        const auditQuery = `
+          INSERT INTO audit_events (
+            document_id, user_id, event_type, metadata, created_at
+          ) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+        `;
 
-      await this.pool.query(auditQuery, [
-        documentId,
-        userId,
-        'signer_reminder_sent',
-        JSON.stringify({
-          signer_id: signerId,
-          signer_email: signer.email,
-          reminder_count: updatedSigner.reminder_count,
-        }),
-      ]);
+        await this.pool.query(auditQuery, [
+          documentId,
+          userId,
+          'signer_reminder_sent',
+          JSON.stringify({
+            signer_id: signerId,
+            signer_email: signer.email,
+            reminder_count: updatedSigner.reminder_count,
+          }),
+        ]);
+      } catch (auditError) {
+        logger.warn('Failed to write signer-reminder audit event', {
+          error: (auditError as Error).message,
+          documentId,
+          signerId,
+        });
+      }
 
       // Return success response
       res.status(200).json({
@@ -495,11 +509,16 @@ export class SignerController {
       });
     } catch (error) {
       logger.error('Resend signing email error', { error: (error as Error).message, stack: (error as Error).stack, correlationId: req.correlationId });
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      // G1: this catch also covers `emailService.sendSigningRequest` failures,
+      // which surface raw nodemailer text (host/port/credential-adjacent
+      // details) - and this route is reachable by any team member with
+      // document access via checkDocumentAccess, not just the owner. The raw
+      // message is logged above for operators; the response gets the same
+      // categorized string the per-document email log endpoint already uses.
       res.status(500).json({
         success: false,
         error: 'Internal Server Error',
-        message: `Failed to resend signing email: ${message}`,
+        message: categorizeSmtpError(error, 'Failed to resend signing email'),
       });
     }
   };
