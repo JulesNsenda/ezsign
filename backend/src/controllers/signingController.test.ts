@@ -5,6 +5,7 @@ import { EmailService } from '@/services/emailService';
 import { PdfService } from '@/services/pdfService';
 import { StorageService } from '@/services/storageService';
 import { getSettingsService } from '@/services/settingsService';
+import { AuditService } from '@/services/auditService';
 import { socketService } from '@/services/socketService';
 import logger from '@/services/loggerService';
 
@@ -125,6 +126,11 @@ function makeFieldOwnershipClient(ownershipRows: Array<{ id: string }>) {
 describe('SigningController', () => {
   let controller: SigningController;
   let mockPool: { query: jest.Mock; connect: jest.Mock };
+  // Item 3.2: injected so emissions can be asserted directly. With the
+  // default pool-derived instance every audit write dies inside
+  // `recordEvent`'s catch against a mocked pool, so a deleted or mis-typed
+  // call would be indistinguishable from a working one.
+  let mockAuditService: { recordEvent: jest.Mock };
   let mockEmailService: Partial<EmailService>;
   let mockPdfService: Partial<PdfService>;
   let mockStorageService: { fileExists: jest.Mock; downloadFile: jest.Mock; uploadFile: jest.Mock };
@@ -141,6 +147,7 @@ describe('SigningController', () => {
     process.env.SIGNING_ENFORCE_EXPIRY = originalEnforceExpiry;
 
     mockPool = { query: jest.fn(), connect: jest.fn() };
+    mockAuditService = { recordEvent: jest.fn().mockResolvedValue(true) };
     mockEmailService = { sendSigningRequest: jest.fn(), sendCompletionNotification: jest.fn() } as any;
     mockPdfService = {} as any;
     mockStorageService = {
@@ -157,7 +164,8 @@ describe('SigningController', () => {
       mockEmailService as EmailService,
       mockPdfService as PdfService,
       mockStorageService as unknown as StorageService,
-      undefined
+      undefined,
+      mockAuditService as unknown as AuditService
     );
 
     responseJson = jest.fn();
@@ -196,13 +204,19 @@ describe('SigningController', () => {
         mockEmailService as EmailService,
         mockPdfService as PdfService,
         mockStorageService as unknown as StorageService,
-        mockReminderService as any
+        mockReminderService as any,
+        mockAuditService as unknown as AuditService
       );
 
       mockRequest = {
         params: { id: 'doc-1' },
         body: {},
         user: { userId: 'user-1' },
+        // Item 3.2 records the request context on the `sent` audit event.
+        // Real Express always provides both; the double has to as well, or
+        // it passes a request shape that cannot occur in production.
+        ip: '127.0.0.1',
+        get: jest.fn().mockReturnValue('test-agent'),
       } as any;
     });
 
@@ -241,6 +255,20 @@ describe('SigningController', () => {
           })
         );
       }
+
+      // Item 3.2: exactly one `sent` row for the document's draft -> pending
+      // transition - not one per signer, and NOT suppressed because one send
+      // failed. A `pending` document with failed emails and no `sent` event
+      // is precisely the blind spot the activity view exists to remove.
+      expect(mockAuditService.recordEvent).toHaveBeenCalledTimes(1);
+      expect(mockAuditService.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          document_id: 'doc-1',
+          user_id: 'user-1',
+          event_type: 'sent',
+          metadata: expect.objectContaining({ signer_count: 3, workflow_type: 'parallel' }),
+        })
+      );
 
       // Reminder scheduling still runs despite the mid-loop failure.
       expect(mockReminderService.scheduleRemindersForDocument).toHaveBeenCalledWith('doc-1');
@@ -677,6 +705,22 @@ describe('SigningController', () => {
       expect(responseStatus).toHaveBeenCalledWith(200);
       expect(responseJson).toHaveBeenCalledWith(
         expect.objectContaining({ success: true, data: { document_completed: false } })
+      );
+
+      // Item 3.2: `signed` is recorded for this signer, and `completed` is
+      // NOT - the other signer is still pending. `user_id` is null because
+      // this is a token route with no account behind it, so the signer is
+      // identified in metadata instead.
+      expect(mockAuditService.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          document_id: 'doc-1',
+          user_id: null,
+          event_type: 'signed',
+          metadata: expect.objectContaining({ signer_id: 'signer-1' }),
+        })
+      );
+      expect(mockAuditService.recordEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'completed' })
       );
 
       expect(insertedParams).toHaveLength(1);

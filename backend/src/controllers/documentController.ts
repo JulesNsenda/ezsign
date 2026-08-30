@@ -6,6 +6,7 @@ import { createStorageAdapter, getStorageConfig, getStorageRoot } from '@/config
 import { createStorageService } from '@/services/storageService';
 import { pdfQueueService } from '@/services/pdfQueueService';
 import { socketService } from '@/services/socketService';
+import { AuditService } from '@/services/auditService';
 import logger from '@/services/loggerService';
 import { resolveWithinStorage } from '@/utils/storagePaths';
 
@@ -27,10 +28,16 @@ const upload = multer({
 
 export class DocumentController {
   private documentService: DocumentService;
+  private auditService: AuditService;
   private storagePath: string;
   public uploadMiddleware: multer.Multer;
 
-  constructor(pool: Pool) {
+  // `auditService` is injectable so tests can assert what this controller
+  // records. It defaults to a pool-derived instance, matching how
+  // `documentService` above is built - without the seam, a mocked pool
+  // swallows every emission inside `recordEvent`'s catch and a deleted or
+  // mis-typed call is indistinguishable from a working one.
+  constructor(pool: Pool, auditService?: AuditService) {
     // Initialize storage adapter based on configuration
     const storageConfig = getStorageConfig();
     this.storagePath = storageConfig.local?.basePath || getStorageRoot();
@@ -38,6 +45,7 @@ export class DocumentController {
     const storageService = createStorageService(storageAdapter);
 
     this.documentService = new DocumentService(pool, storageService);
+    this.auditService = auditService ?? new AuditService(pool);
     this.uploadMiddleware = upload;
   }
 
@@ -116,6 +124,18 @@ export class DocumentController {
         status: 'created',
         updatedAt: new Date().toISOString(),
         ownerId: req.user.userId,
+      });
+
+      // Item 3.2: the document row is already committed, so this is a record
+      // of it rather than part of it - `recordEvent` swallows its own
+      // failures so a broken audit write cannot fail an upload that worked.
+      await this.auditService.recordEvent({
+        document_id: document.id,
+        user_id: req.user.userId,
+        event_type: 'created',
+        ip_address: req.ip ?? null,
+        user_agent: req.get('user-agent') ?? null,
+        metadata: { title: document.title, actor_email: req.user.email },
       });
 
       res.status(201).json({
@@ -456,6 +476,14 @@ export class DocumentController {
         }
       }
 
+      // Read the pre-update status so the `cancelled` emit below can key off
+      // a real transition rather than the echoed request value. Owner-scoped
+      // and low-traffic, so the extra read costs nothing worth saving.
+      const previousStatus =
+        status === 'cancelled'
+          ? (await this.documentService.findById(id, req.user.userId))?.status ?? null
+          : null;
+
       const document = await this.documentService.updateDocument(
         id,
         req.user.userId,
@@ -482,6 +510,28 @@ export class DocumentController {
         updatedAt: new Date().toISOString(),
         ownerId: req.user.userId,
       });
+
+      // Item 3.2: `cancelled` is the only lifecycle event this handler can
+      // emit. It is a general-purpose update endpoint (title, expiry,
+      // reminder settings), and the plan's seven events are document *state*
+      // transitions - a title edit is not one of them.
+      //
+      // Gated on an actual transition, read before the write. `updateDocument`
+      // does a blind `SET status = $n` with no state-machine validation, so
+      // the post-update status is only an echo of what was asked for:
+      // comparing it to the request body would emit a fresh `cancelled` row
+      // on every repeated PUT, and a double-clicked cancel button would be
+      // indistinguishable from two real cancellations in Item 4's timeline.
+      if (status === 'cancelled' && previousStatus !== 'cancelled') {
+        await this.auditService.recordEvent({
+          document_id: document.id,
+          user_id: req.user.userId,
+          event_type: 'cancelled',
+          ip_address: req.ip ?? null,
+          user_agent: req.get('user-agent') ?? null,
+          metadata: { previous_status: previousStatus, actor_email: req.user.email },
+        });
+      }
 
       res.status(200).json({
         message: 'Document updated successfully',

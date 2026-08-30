@@ -4,6 +4,7 @@ import { SignerService, SignerNotFoundError } from '@/services/signerService';
 import { DocumentService } from '@/services/documentService';
 import { EmailService, EmailBranding } from '@/services/emailService';
 import { BrandingService } from '@/services/brandingService';
+import { AuditService } from '@/services/auditService';
 import { Branding } from '@/models/Branding';
 import { CreateSignerData, UpdateSignerData } from '@/models/Signer';
 import { getSettingsService } from '@/services/settingsService';
@@ -16,6 +17,7 @@ export class SignerController {
   // private documentService: DocumentService | null;  // Reserved for future use
   private emailService: EmailService | null;
   private brandingService: BrandingService;
+  private auditService: AuditService;
   private pool: Pool;
 
   constructor(
@@ -29,6 +31,7 @@ export class SignerController {
     // this.documentService = documentService || null;  // Reserved for future use
     this.emailService = emailService || null;
     this.brandingService = new BrandingService(this.pool);
+    this.auditService = new AuditService(this.pool);
   }
 
   /**
@@ -468,33 +471,24 @@ export class SignerController {
       const updateResult = await this.pool.query(updateQuery, [signerId]);
       const updatedSigner = updateResult.rows[0];
 
-      // Create audit event. Best-effort: the reminder itself already sent
-      // and the counter above already incremented, so a failure here must
-      // not turn a successful resend into a 500 for the caller (BUG-1).
-      try {
-        const auditQuery = `
-          INSERT INTO audit_events (
-            document_id, user_id, event_type, metadata, created_at
-          ) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-        `;
-
-        await this.pool.query(auditQuery, [
-          documentId,
-          userId,
-          'signer_reminder_sent',
-          JSON.stringify({
-            signer_id: signerId,
-            signer_email: signer.email,
-            reminder_count: updatedSigner.reminder_count,
-          }),
-        ]);
-      } catch (auditError) {
-        logger.warn('Failed to write signer-reminder audit event', {
-          error: (auditError as Error).message,
-          documentId,
-          signerId,
-        });
-      }
+      // Best-effort: the reminder itself already sent and the counter above
+      // already incremented, so a failure here must not turn a successful
+      // resend into a 500 for the caller (BUG-1). Item 1.3 hand-rolled that
+      // try/catch here; Item 3.1 generalised the same rule into
+      // `AuditService.recordEvent`, so this routes through it rather than
+      // keeping a second copy to drift. It matters beyond tidiness: this row
+      // is document-scoped, so Item 4's timeline reads it, and going through
+      // `recordEvent` is what applies the IP/user-agent sanitising to it too.
+      await this.auditService.recordEvent({
+        document_id: documentId,
+        user_id: userId,
+        event_type: 'signer_reminder_sent',
+        metadata: {
+          signer_id: signerId,
+          signer_email: signer.email,
+          reminder_count: updatedSigner.reminder_count,
+        },
+      });
 
       // Return success response
       res.status(200).json({
