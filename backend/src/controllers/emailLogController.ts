@@ -9,7 +9,10 @@ import { Pool } from 'pg';
 import crypto from 'crypto';
 import { createEmailLogService, EmailLogFilter, PublicEmailLog } from '@/services/emailLogService';
 import { validatePaginationParams } from '@/utils/pagination';
-import { categorizeSmtpError } from '@/utils/smtpErrorCategorizer';
+// The disclosure rule itself lives in one module, shared with
+// `activityController`, so a change to who may see raw SMTP text cannot land
+// on one endpoint over this table and not the other.
+import { canSeeRawSmtpError, redactSmtpErrors } from '@/utils/smtpErrorRedaction';
 import logger from '@/services/loggerService';
 
 /**
@@ -104,7 +107,7 @@ export class EmailLogController {
    * categorized string.
    */
   private canSeeRawError(role: string): boolean {
-    return role === 'admin';
+    return canSeeRawSmtpError(role);
   }
 
   /**
@@ -112,9 +115,7 @@ export class EmailLogController {
    * logs in place of the raw `error_message`.
    */
   private redactErrors(logs: PublicEmailLog[]): PublicEmailLog[] {
-    return logs.map((log) =>
-      log.errorMessage ? { ...log, errorMessage: categorizeSmtpError(log.errorMessage) } : log,
-    );
+    return redactSmtpErrors(logs);
   }
 
   /**

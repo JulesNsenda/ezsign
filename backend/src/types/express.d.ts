@@ -15,6 +15,14 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: Buffer;
+
+      /**
+       * Set by `allowAdmin` when an instance admin was let past a guard that
+       * would otherwise have rejected them. Handlers read it to record the
+       * privileged access - in a signing product a cross-tenant read of the
+       * audit trail is exactly the access the trail should show.
+       */
+      usedAdminBypass?: boolean;
     }
   }
 }

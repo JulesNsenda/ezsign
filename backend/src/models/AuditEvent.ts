@@ -23,6 +23,11 @@ export const SYSTEM_EVENT_TYPES = [
   'settings.updated',
   'signer_reminder_sent',
   'user.sessions_revoked',
+  // An instance admin read a document's activity via the admin bypass on
+  // `GET /documents/:id/activity`. Carries a document_id (so it appears on
+  // that document's own timeline) but is not a lifecycle transition - it
+  // records who looked, not what happened to the document.
+  'admin.activity_viewed',
 ] as const;
 
 export type DocumentEventType = (typeof DOCUMENT_EVENT_TYPES)[number];
@@ -98,6 +103,7 @@ export class AuditEvent {
       'settings.updated': 'Instance settings updated',
       signer_reminder_sent: 'Signing reminder sent',
       'user.sessions_revoked': 'User sessions revoked',
+      'admin.activity_viewed': 'Activity viewed by an instance admin',
     };
     return descriptions[this.event_type] || 'Unknown event';
   }
@@ -136,7 +142,11 @@ export class AuditEvent {
     if (!this.metadata) return {};
 
     return {
-      email: this.metadata.user_email,
+      // `actor_email` is what the lifecycle emits actually write; nothing in
+      // the codebase has ever written `user_email`, so reading only that key
+      // meant this returned undefined for every row ever recorded. Kept as a
+      // fallback in case an older row carries it.
+      email: this.metadata.actor_email ?? this.metadata.user_email,
       name: this.metadata.user_name,
       role: this.metadata.user_role,
     };
