@@ -87,6 +87,14 @@ describe('AuditEvent Model', () => {
       'utf8'
     );
 
+    // The migration immediately before the latest one, if any. Its `up` list
+    // is what the latest one's `down` has to restore - see the rollback test
+    // below.
+    const previousMigrationFile =
+      migrationsTouchingConstraint.length > 1
+        ? migrationsTouchingConstraint[migrationsTouchingConstraint.length - 2]!
+        : null;
+
     // Pull the `exports.up` / `exports.down` function bodies out by
     // brace-matching rather than a bounded regex: this migration's `down`
     // wraps its CHECK in a raw pgm.sql(...) template string rather than an
@@ -96,7 +104,7 @@ describe('AuditEvent Model', () => {
       const marker = `exports.${exportName} = (pgm) => {`;
       const start = source.indexOf(marker);
       if (start === -1) {
-        throw new Error(`Could not locate exports.${exportName} in ${latestMigrationFile}`);
+        throw new Error(`Could not locate exports.${exportName} in a constraint migration`);
       }
       let depth = 1;
       let i = start + marker.length;
@@ -132,12 +140,6 @@ describe('AuditEvent Model', () => {
 
     const tsEventTypes = [...DOCUMENT_EVENT_TYPES, ...SYSTEM_EVENT_TYPES];
 
-    // The two values this migration itself adds - `down()` intentionally
-    // excludes them (see the migration's own comment: it rolls back to the
-    // narrower, pre-migration constraint NOT VALID, rather than deleting
-    // rows written under the wider one).
-    const typesAddedByThisMigration = ['signer_reminder_sent', 'user.sessions_revoked'];
-
     it("every TS event type is permitted by the migration's up() CHECK constraint", () => {
       tsEventTypes.forEach((type) => {
         expect(upEventTypes).toContain(type);
@@ -150,11 +152,34 @@ describe('AuditEvent Model', () => {
       });
     });
 
-    it("down() narrows the CHECK constraint back by exactly the values this migration adds", () => {
-      const expectedDownTypes = tsEventTypes.filter(
-        (type) => !typesAddedByThisMigration.includes(type)
+    it('down() restores exactly the constraint the previous migration established', () => {
+      // Derived rather than hardcoded: naming "the values this migration
+      // adds" in the test means editing it every time a new migration lands,
+      // and a stale list fails for a reason that has nothing to do with the
+      // thing being guarded. Comparing against the previous migration's own
+      // `up` list is the actual contract - a rollback should leave the
+      // constraint exactly as it was before.
+      if (!previousMigrationFile) {
+        // First migration to touch the constraint: nothing to restore to.
+        expect(downEventTypes.length).toBeLessThanOrEqual(upEventTypes.length);
+        return;
+      }
+
+      const previousUpTypes = extractEventTypeList(
+        extractFunctionBody(
+          fs.readFileSync(path.join(migrationsDir, previousMigrationFile), 'utf8'),
+          'up'
+        )
       );
-      expect(downEventTypes.slice().sort()).toEqual(expectedDownTypes.slice().sort());
+      expect(downEventTypes.slice().sort()).toEqual(previousUpTypes.slice().sort());
+    });
+
+    it('down() is a strict narrowing of up()', () => {
+      // Whatever the values are, a rollback must never *widen* the
+      // constraint, and it must actually remove something - otherwise the
+      // migration's `up` did not add anything and should not exist.
+      downEventTypes.forEach((type) => expect(upEventTypes).toContain(type));
+      expect(downEventTypes.length).toBeLessThan(upEventTypes.length);
     });
   });
 });

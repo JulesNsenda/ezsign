@@ -57,9 +57,20 @@ export const authenticate = async (
     let token = tokenService.extractTokenFromHeader(authHeader);
 
     // If no token in header, try query parameter (for PDF loading etc.).
-    // Admin routes never accept a query-string token - header only.
-    const isAdminPath = (req.baseUrl + req.path).toLowerCase().startsWith('/api/admin');
-    if (!token && req.query.token && !isAdminPath) {
+    //
+    // Privileged routes never accept a query-string token - header only.
+    // URLs reach reverse-proxy logs, browser history and `Referer` headers,
+    // so a token in one escapes the protection the request body has.
+    //
+    // That is not just `/api/admin`: `/documents/:id/activity` carries an
+    // instance-admin bypass (`allowAdmin`), which makes it the first route
+    // outside `/api/admin` where an admin token in a URL yields *another
+    // tenant's* data - signer emails, recipient addresses, subjects carrying
+    // document titles, and raw SMTP errors. Any future route that grants a
+    // cross-tenant read has to be added here too.
+    const fullPath = (req.baseUrl + req.path).toLowerCase();
+    const isPrivilegedPath = fullPath.startsWith('/api/admin') || fullPath.endsWith('/activity');
+    if (!token && req.query.token && !isPrivilegedPath) {
       token = req.query.token as string;
     }
 

@@ -6,9 +6,11 @@ import { FieldGroupController } from '@/controllers/fieldGroupController';
 import { SignerController } from '@/controllers/signerController';
 import { ScheduleController } from '@/controllers/scheduleController';
 import { EmailLogController } from '@/controllers/emailLogController';
+import { ActivityController } from '@/controllers/activityController';
 import * as fieldTableController from '@/controllers/fieldTableController';
 import { authenticate } from '@/middleware/auth';
 import { createDocumentAccessMiddleware } from '@/middleware/documentAccess';
+import { allowAdmin } from '@/middleware/authorize';
 import { FieldService } from '@/services/fieldService';
 import { FieldGroupService } from '@/services/fieldGroupService';
 import { SignerService } from '@/services/signerService';
@@ -25,6 +27,7 @@ export const createDocumentRouter = (pool: Pool): Router => {
   const router = Router();
   const controller = new DocumentController(pool);
   const checkDocumentAccess = createDocumentAccessMiddleware(pool);
+  const activityController = new ActivityController(pool);
 
   // Initialize services for field and signer management
   const pdfService = new PdfService();
@@ -145,6 +148,16 @@ export const createDocumentRouter = (pool: Pool): Router => {
   router.delete('/:id/signers/:signerId', checkDocumentAccess, signerController.deleteSigner);
   router.post('/:id/signers/:signerId/assign-fields', checkDocumentAccess, signerController.assignFields);
   router.post('/:id/signers/:signerId/resend', checkDocumentAccess, signerController.resendSigningEmail);
+
+  // Activity timeline. The only route with an instance-admin bypass: an
+  // admin chasing a delivery failure has to be able to read the activity of
+  // a document they do not own, which `checkDocumentAccess` alone forbids.
+  // Scoped to this route so it does not widen into document contents.
+  router.get(
+    '/:id/activity',
+    allowAdmin(checkDocumentAccess),
+    activityController.getDocumentActivity
+  );
 
   // Email log routes
   router.get('/:id/emails', checkDocumentAccess, emailLogController.getDocumentEmails);

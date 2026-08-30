@@ -1,6 +1,6 @@
 # Envelope activity log + editable email content
 
-**Status:** Items 0–2 merged (PR #46). Item 3 implemented and green (874 unit + 207 integration tests). Items 4–6 not started.
+**Status:** Items 0–3 merged (PRs #46, #48). Item 4 implemented and green (885 unit + 215 integration tests). Items 5–6 not started.
 **Date:** 2026-08-23
 
 ## Goal
@@ -303,8 +303,20 @@ hole, it is one file plus a validator, and it is a prerequisite for Item 6.
   - `downloaded` is **deferred** - see "Item 3 deviation" below
 
 **Item 4 — activity API**
-- [ ] 4.1 `services/activityService.ts` — UNION, total order, subquery count, actor join, explicit projection
-- [ ] 4.2 `GET /api/documents/:id/activity` — `checkDocumentAccess` + route-local instance-admin bypass
+- [x] 4.1 `services/activityService.ts` — UNION, total order, subquery count, actor join, explicit projection
+- [x] 4.2 `GET /api/documents/:id/activity` — `checkDocumentAccess` + route-local instance-admin bypass
+  - The bypass had to be a middleware wrapper (`allowInstanceAdmin`), not a
+    controller branch: `checkDocumentAccess` answers 403 itself and never calls
+    `next()`, so a route-local check in the handler would never run and the
+    Goal's "+ admin" would have been false.
+  - Raw `error_message` follows the **shipped** Item 2.5 rule (instance-admin
+    only), not this plan's stale "owner/instance-admin" text — the error
+    describes the instance's SMTP transport, which document ownership does not
+    earn.
+  - Item 3's `completed` event wrote `metadata.completed_by_signer_id` while
+    `signed`/`viewed` wrote `signer_id`, so the signer join resolved to NULL on
+    exactly the row a support reader cares most about. Normalized to
+    `signer_id` at the emit rather than carrying a COALESCE forever.
 
 **Item 5 — activity UI**
 - [ ] 5.1 `EmailLog`/`ActivityItem` types, service, hook
@@ -601,6 +613,122 @@ the `allSigned` READ COMMITTED race on concurrent final submissions
 project `activityService`'s columns explicitly and omit `ip_address`/`user_agent`
 — the planned `UNION ALL` bypasses `AuditEvent.toPublicJSON()`, which is what
 strips them today.**
+
+### Item 4 · pass 1
+
+Panel: `security-critic`, `architecture-critic`, both read-only against the real
+diff. **2 high, 9 medium, 11 low.** Actioned unless recorded below.
+
+**High — actioned**
+
+- **Both critics (high/high, medium/high) — the union returned
+  `email_logs.metadata` to any caller with document access**, silently reversing
+  a control shipped in Item 2. `PublicEmailLog = Omit<EmailLog, 'metadata'>`
+  exists precisely because `/documents/:id/emails` is reachable by any team
+  member; `/activity` has the same audience and made the opposite call. Today's
+  blob is ids-only, so nothing leaks yet — the defect is that the two endpoints
+  over one table now disagreed about what is public, so the next field added to
+  `EmailContext` would leak from one and not the other. **Actioned:** the email
+  arm projects `NULL::jsonb`, with an integration test writing a sentinel and
+  asserting it never appears.
+- **`architecture` (high/high) — `ActivityItem` had no `signerId`**, so Item 5's
+  Resend button had no typed path to `POST /:id/signers/:signerId/resend`. Its
+  only route would have been the untyped `metadata` blob — under two different
+  key shapes for audit and email rows — which the fix above strips. **Actioned:**
+  `s.id AS signer_id` on both arms, `signerId` on the type. It comes free from
+  the join that was already there.
+
+**Medium — actioned**
+
+- **`security` (medium/high) — the route accepted a JWT in the query string.**
+  `authenticate` allows `?token=` for anything outside `/api/admin`, and this is
+  the first route outside it where an admin token in a URL yields *another
+  tenant's* data. URLs reach proxy logs, browser history and `Referer`.
+  **Actioned:** the check is now `isPrivilegedPath`, covering `/activity` too.
+- **Both critics (medium/medium, medium/high) — the signer join was neither
+  document-scoped nor indexable.** Unscoped, an audit row naming another
+  document's signer would render that signer into this timeline (not reachable
+  today, but `metadata` is free-form and written by five call sites). And
+  `s.id::text` defeats the primary-key index. **Actioned:** `AND s.document_id =
+  a.document_id` fixes containment and indexability in one edit; test added.
+- **`architecture` (medium/high) — counting over the shared fragment** dragged
+  both LEFT JOINs into a count that cannot use them, doubling every request.
+  **Actioned:** two index-only subqueries. This also dissolves the `$1`-coupling
+  hazard for the count path; the remaining contract is stated in the fragment's
+  doc comment.
+- **`architecture` (medium/medium) — the `completed_by_signer_id` →
+  `signer_id` rename shipped no backfill**, so every `completed` row written
+  since PR #48 would render a null signer forever — the exact row the rename
+  exists to fix. The plan had rejected "a COALESCE forever" but shipped neither
+  the COALESCE nor the migration, taking both options' downside. **Actioned:**
+  backfill migration, round-tripped up/down.
+- **`architecture` (medium/high) — the `completed` key change had no
+  assertion**; a revert stayed green. **Actioned:** covered in both integration
+  suites.
+- **`architecture` (medium/high) — the service returned the HTTP envelope**
+  (`total_pages`, snake_case), inverting the layering `documentService` /
+  `documentController` already use. **Actioned:** service returns a domain
+  shape; the controller builds `pagination`.
+- **`architecture` (medium/high) — four helpers duplicated across two
+  controllers**, encoding the SMTP-disclosure *policy* in two places.
+  **Actioned:** `parsePageParam`/`parsePageSizeParam` moved to
+  `utils/pagination.ts`; `canSeeRawSmtpError`/`redactSmtpErrors` to
+  `utils/smtpErrorRedaction.ts`, with `emailLogController` rewired onto them so
+  the two endpoints cannot drift.
+- **`architecture` (medium/high) — the integration suite deleted every
+  instance-level audit row** in the shared test database, which would make any
+  suite asserting on `settings.updated` order-dependently flaky. **Actioned:**
+  scoped to the suite's own user.
+- **`security` (low/high) + `architecture` (low/high) — the admin bypass left no
+  trace.** A privileged cross-tenant read of the audit trail is exactly the
+  access the trail should show. **Actioned:** new `admin.activity_viewed` system
+  event (migration extends the CHECK), recorded after the response so it cannot
+  delay or fail the read. Deliberately *not* `viewed` — that verb means "the
+  signer opened this" everywhere else, and reusing it would corrupt every
+  timeline that renders it.
+
+**Low — actioned:** `kind ASC` rather than `DESC`, so a newest-first list puts an
+event above the email it triggered instead of below it; uuid validation returning
+400 (the bypass removed the incidental validation `checkDocumentAccess` was
+doing); `page` capped so a deep offset cannot force a full scan; dead
+`limit > 0` ternary dropped; `allowInstanceAdmin` moved to `authorize.ts` as
+`allowAdmin`, beside the other role checks where the next person will look; a
+comment recording *why* offset pagination is right here so it is not
+re-litigated.
+
+**Medium — recorded, not actioned**
+
+- **`architecture` (medium/high) — the bypass grants read with no matching
+  write**, since the per-document resend is `checkDocumentAccess`-only and the
+  admin resend returns 501. Either it is dead weight or it is the thin end of a
+  wedge. **Recorded:** the plan specifies the bypass for Item 4 and the Resend
+  workflow for Item 5; the decision on how far admin reach extends belongs with
+  Item 5, made once rather than by copying a line.
+
+**Low — recorded, not actioned**
+
+- **`security` (low/high) — `req.user.role` is a JWT claim never revalidated**,
+  so a demoted admin keeps the bypass for the token's remaining lifetime.
+  Pre-existing pattern (`authorize` reads the same claim); the real fix is to
+  revoke sessions on role change, using machinery that already exists.
+- **`security`/`architecture` (low) — for an admin, a nonexistent document
+  returns `200 {items: []}` rather than 404**, because the bypass skips the only
+  existence check. Compounds the ambiguity already documented on the endpoint.
+- **`architecture` (low/high) — `/emails` and `/activity` disagree on response
+  shape** (flat vs nested envelope). The new shape is the better one, so the fix
+  is to move `/emails` — a breaking change to a shipped endpoint, best done in
+  Item 5 while the frontend consumer is being written.
+- **`architecture` (low/medium) — `signer_id` on `completed` conflates "the
+  signer this is about" with "the signer who triggered it."** Kept: `completed`
+  *is* triggered by that signer's action, the event type distinguishes it, and
+  the alternative leaves the row a support reader most wants with no signer at
+  all.
+- **`architecture` (low/high) — every load-bearing assertion here lives in the
+  tier `npm test` excludes**, and no CI job runs it. Pre-existing repo condition
+  (`jest.config.js` ignores `__tests__/integration/`; `.github/workflows/` has
+  one unrelated job), but this item is unusually exposed because its whole
+  contract is SQL. **Item 4's guarantees are manually gated until CI runs
+  `npm run test:integration` against a Postgres service container.**
 
 ## Run stats
 

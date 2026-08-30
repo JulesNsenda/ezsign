@@ -1108,7 +1108,11 @@ export class SigningController {
           event_type: 'completed',
           ip_address: req.ip ?? null,
           user_agent: req.get('user-agent') ?? null,
-          metadata: { completed_by_signer_id: signer.id },
+          // Item 4 joins signers on `metadata->>'signer_id'`; `completed`
+          // used a different key, so the row a support reader cares most
+          // about resolved to a NULL signer. Same key everywhere - the
+          // distinguishing information is the event type, not the key name.
+          metadata: { signer_id: signer.id, signer_email: signer.email },
         });
       }
 
