@@ -1,6 +1,6 @@
 # Envelope activity log + editable email content
 
-**Status:** Items 0–2 implemented and green (backend suite: 51 suites, 870 tests). Items 3–6 not started.
+**Status:** Items 0–2 merged (PR #46). Item 3 implemented and green (874 unit + 207 integration tests). Items 4–6 not started.
 **Date:** 2026-08-23
 
 ## Goal
@@ -298,8 +298,9 @@ hole, it is one file plus a validator, and it is a prerequisite for Item 6.
 - [x] 2.5 Explicit column projection; raw `error_message` gated to owner/instance-admin, categorised otherwise
 
 **Item 3 — lifecycle events**
-- [ ] 3.1 Post-commit `recordEvent` helper (best-effort, pool-based, never in-transaction)
-- [ ] 3.2 Emit the seven lifecycle events; `signers.viewed_at` migration so `viewed` fires once per signer
+- [x] 3.1 Post-commit `recordEvent` helper (best-effort, pool-based, never in-transaction)
+- [x] 3.2 Emit **six** of the seven lifecycle events; `signers.viewed_at` migration so `viewed` fires once per signer
+  - `downloaded` is **deferred** - see "Item 3 deviation" below
 
 **Item 4 — activity API**
 - [ ] 4.1 `services/activityService.ts` — UNION, total order, subquery count, actor join, explicit projection
@@ -317,6 +318,33 @@ hole, it is one file plus a validator, and it is a prerequisite for Item 6.
 - [ ] 6.4 Admin CRUD + preview endpoint (JSON envelope)
 - [ ] 6.5 `EmailTemplateSettings.tsx` in the Instance tab; preview in `sandbox=""` iframe; reset to default
 - [ ] 6.6 Frontend `SettingSource` gains `'invalid'`
+
+## Item 3 deviation — `downloaded` is not emitted
+
+The plan names seven lifecycle events. Six ship: `created`, `sent`, `viewed`,
+`signed`, `completed`, `cancelled`. **`downloaded` does not**, because there is
+no server-side signal that separates a download from a page render:
+
+- `documentController.download` sets `Content-Disposition: inline` *deliberately*
+  ("to allow PDF viewing in browser (e.g., for react-pdf)") plus
+  `Accept-Ranges: bytes`, and `PrepareDocument.tsx` uses it as the viewer's
+  `pdfUrl`. Emitting there writes a row on every render, several with range
+  requests.
+- `downloadDocumentByToken` is the same shape — its own doc comment says
+  `Sign.tsx` reuses the route for the signing-time preview *and* the
+  post-submit download button.
+
+Dedup (the `viewed` treatment) is not a remedy: it would fire on the first PDF
+*render* and mislabel a view as a download.
+
+**Path forward, for Item 5** (where the frontend is already in scope): the two
+real download callers (`useDocuments.ts`'s blob download and Sign.tsx's
+"Download Signed Document") pass an explicit `?download=1`, and the backend
+emits only on that. Note the consequence and label it as the plan already
+labels "reported IP": the event becomes **client-attested** — omit the flag and
+the download leaves no row. Until then, `downloaded` is a verb permitted by both
+the CHECK constraint and `DOCUMENT_EVENT_TYPES` with no writer; Item 5's label
+map should not assume it appears.
 
 ## Risks & open questions
 
@@ -463,7 +491,116 @@ branding colours (hex-regex validated); signers reaching the activity endpoints
 
 ## Agent critiques considered — diff stage
 
-*(filled in at Gate 2)*
+### Item 3 · pass 1
+
+Panel: `security-critic`, `architecture-critic`, both read-only against the real
+diff. **4 high, 6 medium, 11 low.** Actioned unless recorded below.
+
+**High — actioned**
+
+- **`architecture` (high/high) — `scheduledSendWorker` is the other
+  draft→pending seam and emitted no `sent`.** Every scheduled send would leave a
+  permanently gapped timeline, no backfill possible, on exactly the "did we ever
+  send this?" question the feature exists to answer. **Actioned:** the worker now
+  emits `sent` with `metadata.scheduled = true`.
+
+**High — recorded, out of this item's scope**
+
+- **`security` (high/high) — `updateDocument` has no state-transition
+  validation.** It does a blind `SET status = $n`; the controller checks enum
+  membership only. So `completed → draft` is accepted and re-opens `canEdit()` on
+  a fully-signed document, and `→ pending` is accepted directly, bypassing
+  `sendForSignature` entirely (signable, no emails, no `sent` event). **Partially
+  actioned:** the `cancelled` emit now keys off a pre-read transition rather than
+  the echoed request value, so it cannot emit duplicates — and the code comment
+  claiming the service validates transitions was wrong and has been corrected.
+  **The underlying flaw is a separate security fix**, not Item 3's: it predates
+  this plan, and folding a state-machine change into an audit item would hide it.
+  Raised to the user as its own decision.
+- **`security` (high/high) — `audit_events.document_id` is `ON DELETE CASCADE`
+  and `deleteDocument` is a hard delete.** Deleting a document destroys its
+  entire audit trail, and no `deleted` event is emitted, so the most
+  audit-worthy action leaves zero trace. **Recorded, not actioned:** the fix
+  (FK → `SET NULL`, snapshot `document_id`/`title` into metadata, emit `deleted`
+  before the delete, or soft-delete) is a schema and lifecycle decision beyond
+  this item, and it is the same CASCADE shape already accepted for `email_logs`
+  in Item 2. Raised to the user.
+
+**Medium — actioned**
+
+- **`architecture` (medium/high) — none of the six emissions were asserted.**
+  `documentController.test.ts` used `mockPool = {} as Pool`, so both its
+  emissions died inside `recordEvent`'s catch, and the four
+  `signingController.test.ts` edits were positional mock-chain filler that
+  asserted nothing. **Actioned:** `auditService` is now an optional injected
+  constructor parameter on both controllers, tests inject a spy and assert
+  `event_type` + `metadata` per site, and the filler rows are deleted.
+- **`architecture` (medium/high) + `security` (high/high) — the `cancelled`
+  guard confirmed the write rather than detecting a transition.** **Actioned:**
+  pre-read status; emit only on `previous !== 'cancelled'`.
+- **`security` (medium/high) — the `viewed_at` gate could be consumed while the
+  audit row was lost.** The UPDATE autocommits before `recordEvent`, which
+  swallows failures — BUG-1's shape with the 500 removed. **Actioned:**
+  `recordEvent` returns a boolean and the caller resets `viewed_at` to NULL on
+  failure, so a later open retries.
+- **`architecture` (medium/medium) — four writers, invariants on only the new
+  ones.** **Partially actioned:** `signerController`'s hand-rolled try/catch (an
+  exact duplicate of `recordEvent`, written days earlier in Item 1.3) now routes
+  through it. The two remaining raw writers (`settingsService`,
+  `adminUsersController`) write `document_id = NULL` rows, which Item 4's
+  `WHERE document_id = $1` excludes by construction — so converging them buys
+  the timeline nothing and is left alone deliberately.
+
+**Medium — rejected, with reason**
+
+- **`architecture` (medium/medium) — move the `viewed` emit before the
+  signability gates**, so post-deadline and out-of-turn opens are visible.
+  **Rejected.** `viewed_at` is a one-shot gate: an out-of-turn signer who opens
+  early would burn it, and the genuine later view — the one that matters as
+  evidence — would then never be recorded. In a signing product's trail `viewed`
+  means "was served the document", not "hit the URL". The critic's own concern is
+  real but the proposed fix makes the primary case strictly worse.
+- **`security` (low/high) — move the `sent` emit below the "no signer could be
+  notified" 500 branch.** **Rejected.** The status UPDATE has already committed
+  at that point and `canSend()` forbids re-sending from `pending`, so the
+  document *is* pending. Suppressing `sent` would produce the exact gap the
+  architecture critic's high finding is about. The event records the state
+  transition; the send outcome is what `email_logs` is for.
+
+**Medium — accepted as inherent**
+
+- **`security` (medium/high) — the trail is lossy by construction** (swallowed
+  failures; a crash between COMMIT and the post-commit emit loses
+  `signed`/`completed`). True, and the price of never failing a user operation
+  for an audit write. Closing it needs a transactional outbox, which is a
+  different design. **Item 5 must label the timeline best-effort and reconcile
+  against `signers.signed_at` / `documents.completed_at` rather than presenting
+  `audit_events` as complete.**
+- **`security` (medium/high) — mail security scanners burn the `viewed` gate.**
+  Defender Safe Links and Proofpoint fetch every link and pass every gate, so the
+  recorded IP/user-agent will routinely be a datacenter scanner and the real
+  signer's first view is then never recorded. Real, and it makes `viewed` the
+  least trustworthy row in a trail where it is the most likely to be relied on.
+  Not fixable without recording every view (which is what the once-per-signer
+  gate exists to avoid). **Item 5 must not present `viewed` as attested.**
+
+**Low — actioned:** IP validated with `net.isIP` and stored NULL rather than
+truncating fabricated `X-Forwarded-For` text (the original truncation comment was
+factually wrong and is corrected); `user_agent` capped at 512 chars; `actor_email`
+snapshotted into metadata so attribution survives user deletion; `workflow_type`
+added to `sent` metadata so a sequential send does not read as "sent to 3" beside
+one email; `viewed_at` added to `SignerData` and both row mappers, and the
+per-request UPDATE skipped when the model already shows it set; `ip`/`get` added
+to the `documentController` test doubles.
+
+**Low — recorded, no action:** the `signed`/`completed` ordering tiebreaker
+(each is its own autocommit separated by a round trip, and `timestamp` has
+microsecond resolution, so the tie the tiebreaker cannot break does not occur);
+the `allSigned` READ COMMITTED race on concurrent final submissions
+(pre-existing, needs `SELECT … FOR UPDATE`, out of scope); **and for Item 4:
+project `activityService`'s columns explicitly and omit `ip_address`/`user_agent`
+— the planned `UNION ALL` bypasses `AuditEvent.toPublicJSON()`, which is what
+strips them today.**
 
 ## Run stats
 

@@ -10,6 +10,7 @@ describe('Signer Model', () => {
     status: 'pending' as SignerStatus,
     access_token: 'abc123token',
     signed_at: null,
+    viewed_at: null,
     ip_address: null,
     user_agent: null,
     last_reminder_sent_at: null,

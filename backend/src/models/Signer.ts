@@ -11,6 +11,12 @@ export interface SignerData {
   status: SignerStatus;
   access_token: string;
   signed_at: Date | null;
+  /**
+   * First time this signer opened the signing link; NULL until then.
+   * Optional on the input shape because it was added after the fact and the
+   * constructor defaults it - every existing caller stays valid.
+   */
+  viewed_at?: Date | null;
   ip_address: string | null;
   user_agent: string | null;
   last_reminder_sent_at: Date | null;
@@ -43,6 +49,7 @@ export class Signer {
   status: SignerStatus;
   access_token: string;
   signed_at: Date | null;
+  viewed_at: Date | null;
   ip_address: string | null;
   user_agent: string | null;
   last_reminder_sent_at: Date | null;
@@ -59,6 +66,7 @@ export class Signer {
     this.status = data.status;
     this.access_token = data.access_token;
     this.signed_at = data.signed_at;
+    this.viewed_at = data.viewed_at ?? null;
     this.ip_address = data.ip_address;
     this.user_agent = data.user_agent;
     this.last_reminder_sent_at = data.last_reminder_sent_at;
@@ -298,6 +306,7 @@ export class Signer {
       status: this.status,
       access_token: this.access_token,
       signed_at: this.signed_at,
+      viewed_at: this.viewed_at,
       ip_address: this.ip_address,
       user_agent: this.user_agent,
       last_reminder_sent_at: this.last_reminder_sent_at,
@@ -319,6 +328,7 @@ export class Signer {
       signing_order: this.signing_order,
       status: this.status,
       signed_at: this.signed_at,
+      viewed_at: this.viewed_at,
       ip_address: this.ip_address,
       user_agent: this.user_agent,
       last_reminder_sent_at: this.last_reminder_sent_at,

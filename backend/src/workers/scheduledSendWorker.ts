@@ -4,6 +4,7 @@ import { Signer, SignerData } from '@/models/Signer';
 import { Branding } from '@/models/Branding';
 import { EmailService, EmailBranding } from '@/services/emailService';
 import { BrandingService } from '@/services/brandingService';
+import { AuditService } from '@/services/auditService';
 import { ScheduledSendJobData } from '@/services/scheduledSendService';
 import { socketService } from '@/services/socketService';
 import { createEmailLogService } from '@/services/emailLogService';
@@ -23,11 +24,17 @@ import logger from '@/services/loggerService';
  */
 export class ScheduledSendWorker {
   private pool: Pool;
+  private auditService: AuditService;
   private emailService: EmailService;
   private brandingService: BrandingService;
 
-  constructor(pool: Pool) {
+  // `auditService` is injectable for the same reason it is on the two
+  // controllers: against a mocked pool every emission dies inside
+  // `recordEvent`'s catch, so without a spy to assert on, deleting this
+  // worker's `sent` emit leaves the suite green.
+  constructor(pool: Pool, auditService?: AuditService) {
     this.pool = pool;
+    this.auditService = auditService ?? new AuditService(pool);
     this.brandingService = new BrandingService(pool);
 
     // Initialize email service. Config (SMTP + app URL) is resolved fresh
@@ -108,6 +115,23 @@ export class ScheduledSendWorker {
          WHERE id = $1`,
         [documentId]
       );
+
+      // Item 3.2: this worker is the *other* draft -> pending seam. Without
+      // this emit, every scheduled send produces a document with email logs
+      // and no `sent` event - a permanently gapped timeline, with no backfill
+      // possible, on exactly the "did we ever send this?" question the
+      // activity view exists to answer. Recorded against the document owner,
+      // since a scheduled job has no request actor.
+      await this.auditService.recordEvent({
+        document_id: documentId,
+        user_id: userId,
+        event_type: 'sent',
+        metadata: {
+          signer_count: signersResult.rows.length,
+          workflow_type: docRow.workflow_type || 'parallel',
+          scheduled: true,
+        },
+      });
 
       // Get sender info
       const userResult = await this.pool.query(
@@ -271,7 +295,10 @@ export class ScheduledSendWorker {
 }
 
 // Factory function to create and register the worker
-export const createScheduledSendWorker = async (pool: Pool): Promise<void> => {
-  const worker = new ScheduledSendWorker(pool);
+export const createScheduledSendWorker = async (
+  pool: Pool,
+  auditService?: AuditService
+): Promise<void> => {
+  const worker = new ScheduledSendWorker(pool, auditService);
   await worker.register();
 };

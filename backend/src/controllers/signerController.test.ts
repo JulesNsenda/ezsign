@@ -466,12 +466,18 @@ describe('SignerController - resendSigningEmail', () => {
         ['signer-123']
       );
 
+      // Item 3.1: the hand-rolled INSERT this used to assert was replaced by
+      // `AuditService.recordEvent`, which writes the same row through
+      // `logEvent` - hence the wider column list (ip_address/user_agent) and
+      // the metadata moving to the last position.
       expect(mockPool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO audit_events'),
         [
           'doc-123',
           'user-123',
           'signer_reminder_sent',
+          null,
+          null,
           expect.stringContaining('signer-123'),
         ]
       );
