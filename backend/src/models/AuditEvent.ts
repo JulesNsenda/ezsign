@@ -142,7 +142,11 @@ export class AuditEvent {
     if (!this.metadata) return {};
 
     return {
-      email: this.metadata.user_email,
+      // `actor_email` is what the lifecycle emits actually write; nothing in
+      // the codebase has ever written `user_email`, so reading only that key
+      // meant this returned undefined for every row ever recorded. Kept as a
+      // fallback in case an older row carries it.
+      email: this.metadata.actor_email ?? this.metadata.user_email,
       name: this.metadata.user_name,
       role: this.metadata.user_role,
     };

@@ -43,7 +43,20 @@ export interface ActivityItem {
   subject: string | null;
   /** Who the email went to; null on audit rows. */
   recipientEmail: string | null;
-  /** The signed-in user behind the action, resolved to an email. */
+  /**
+   * The user behind the action, as an email.
+   *
+   * Live identity first (joined from `users`), falling back to the address
+   * recorded in the row's own metadata at the time. Those are two different
+   * answers - a renamed or re-emailed user shows their current address, while
+   * a *deleted* user is nulled out of the join by `ON DELETE SET NULL` and
+   * survives only in the snapshot.
+   *
+   * A support timeline wants the live value (you want to contact the person
+   * who exists now), so it wins; the snapshot exists so a deleted actor still
+   * resolves to something instead of vanishing. Item 5 should render this
+   * field and not also render `metadata.actor_email` beside it.
+   */
   actorEmail: string | null;
   /**
    * The signer this row concerns. Projected as a real uuid column rather than
@@ -105,7 +118,7 @@ const ACTIVITY_UNION = `
     NULL::text                    AS error_message,
     NULL::text                    AS subject,
     NULL::varchar                 AS recipient_email,
-    u.email                       AS actor_email,
+    COALESCE(u.email, a.metadata->>'actor_email') AS actor_email,
     s.id                          AS signer_id,
     s.email                       AS signer_email,
     s.name                        AS signer_name,

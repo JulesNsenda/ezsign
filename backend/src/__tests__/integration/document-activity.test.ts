@@ -305,6 +305,31 @@ describe('Document activity timeline (real DB)', () => {
     expect(emailRow?.recipientEmail).toBe(signerEmail);
   });
 
+  it('falls back to the recorded actor email when the user row is gone', async () => {
+    // `audit_events.user_id` is ON DELETE SET NULL, so deleting a user nulls
+    // the join and the actor would otherwise vanish from the timeline. The
+    // snapshot written at emit time is what keeps a deleted actor resolvable.
+    await pool.query(
+      `INSERT INTO audit_events (document_id, user_id, event_type, metadata, created_at)
+       VALUES ($1, NULL, 'created', $2, '2026-08-01T10:00:00Z')`,
+      [testDocumentId, JSON.stringify({ actor_email: 'deleted-user@example.com' })]
+    );
+
+    const { items } = await activityService.getByDocumentId(testDocumentId, 1, 20);
+
+    expect(items[0]?.actorEmail).toBe('deleted-user@example.com');
+  });
+
+  it('prefers the live user identity over the recorded snapshot', async () => {
+    // A renamed or re-emailed user should show their current address - you
+    // contact the person who exists now, not the one who existed then.
+    await insertAudit('created', '2026-08-01T10:00:00Z', { actor_email: 'stale@example.com' });
+
+    const { items } = await activityService.getByDocumentId(testDocumentId, 1, 20);
+
+    expect(items[0]?.actorEmail).toBe(testEmail);
+  });
+
   it('survives a metadata signer_id that is not a uuid', async () => {
     // The join casts `signers.id` to text rather than casting the metadata
     // value to uuid: `(metadata->>'signer_id')::uuid` would throw for the

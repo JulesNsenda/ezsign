@@ -696,6 +696,17 @@ doing); `page` capped so a deep offset cannot force a full scan; dead
 comment recording *why* offset pagination is right here so it is not
 re-litigated.
 
+- **`architecture` (low/medium, follow-up pass) — two paths to actor identity.**
+  The join reflects who the user *is*; `metadata.actor_email` reflects who they
+  *were* when the event fired, and both would appear in the same payload.
+  **Actioned:** `COALESCE(u.email, a.metadata->>'actor_email')` — live identity
+  wins (a support timeline wants the person who exists now), with the snapshot
+  keeping a deleted actor resolvable rather than vanishing, since `user_id` is
+  `ON DELETE SET NULL`. Documented on the field so Item 5 renders one, not both.
+  Found while confirming this: `AuditEvent.getUserInfo()` read
+  `metadata.user_email`, a key **no writer has ever produced**, so it returned
+  undefined for every row ever recorded. Now reads `actor_email`.
+
 **Medium — recorded, not actioned**
 
 - **`architecture` (medium/high) — the bypass grants read with no matching
