@@ -340,6 +340,11 @@ describe('SignerController - resendSigningEmail', () => {
         signingUrl: 'http://localhost:3000/sign/token-123',
         message: undefined,
         isReminder: true,
+        // Item 2.2: logging context so this send's email_logs row is
+        // reachable from the per-document/per-signer endpoints.
+        documentId: 'doc-123',
+        signerId: 'signer-123',
+        userId: 'user-123',
       });
     });
   });
@@ -449,6 +454,11 @@ describe('SignerController - resendSigningEmail', () => {
         signingUrl: 'http://localhost:3000/sign/token-123',
         message: undefined,
         isReminder: true,
+        // Item 2.2: logging context so this send's email_logs row is
+        // reachable from the per-document/per-signer endpoints.
+        documentId: 'doc-123',
+        signerId: 'signer-123',
+        userId: 'user-123',
       });
 
       expect(mockPool.query).toHaveBeenCalledWith(
@@ -524,6 +534,11 @@ describe('SignerController - resendSigningEmail', () => {
         signingUrl: 'http://localhost:3000/sign/token-123',
         message: 'Please review this urgently',
         isReminder: true,
+        // Item 2.2: logging context so this send's email_logs row is
+        // reachable from the per-document/per-signer endpoints.
+        documentId: 'doc-123',
+        signerId: 'signer-123',
+        userId: 'user-123',
       });
 
       expect(mockResponse.status).toHaveBeenCalledWith(200);
@@ -531,8 +546,13 @@ describe('SignerController - resendSigningEmail', () => {
   });
 
   describe('Error handling', () => {
-    it('should return 500 if unexpected error occurs', async () => {
-      mockPool.query.mockRejectedValue(new Error('Database connection failed'));
+    // G1: this catch also covers `emailService.sendSigningRequest` failures
+    // - raw nodemailer text (host/port/credential-adjacent details) - and
+    // this route is reachable by any team member with document access via
+    // checkDocumentAccess, not just the owner. The response must carry the
+    // categorized string, never the raw error.
+    it('should return 500 with a categorized (non-raw) message for an unexpected error', async () => {
+      mockPool.query.mockRejectedValue(new Error('Something unexpectedly exploded'));
 
       await controller.resendSigningEmail(mockRequest, mockResponse);
 
@@ -540,8 +560,28 @@ describe('SignerController - resendSigningEmail', () => {
       expect(mockResponse.json).toHaveBeenCalledWith({
         success: false,
         error: 'Internal Server Error',
-        message: 'Failed to resend signing email: Database connection failed',
+        // No SMTP-specific keyword in the raw message, so this falls through
+        // to categorizeSmtpError's fallback rather than any raw text.
+        message: 'Failed to resend signing email',
       });
+    });
+
+    it('never echoes a raw nodemailer connection error (host/port) back to the caller', async () => {
+      const rawError = Object.assign(new Error('connect ECONNREFUSED 10.0.0.5:587'), {
+        code: 'ECONNREFUSED',
+      });
+      mockPool.query.mockRejectedValue(rawError);
+
+      await controller.resendSigningEmail(mockRequest, mockResponse);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(500);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'Internal Server Error',
+        message: 'SMTP connection failed',
+      });
+      const [responseBody] = mockResponse.json.mock.calls[0];
+      expect(JSON.stringify(responseBody)).not.toContain('10.0.0.5');
     });
   });
 });

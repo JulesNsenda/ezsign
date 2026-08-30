@@ -2,6 +2,7 @@ import nodemailer, { Transporter } from 'nodemailer';
 import logger from '@/services/loggerService';
 import { EmailLogService, EmailType } from '@/services/emailLogService';
 import { buildSigningUrl, buildDownloadUrl } from '@/utils/urlBuilder';
+import { escapeHtml, safeUrl, safeMailto } from '@/utils/emailTemplate';
 
 export interface EmailConfig {
   host: string;
@@ -21,7 +22,7 @@ export interface EmailConfig {
  * without restarting the process - typically backed by
  * `settingsService.getEmailConfig()`.
  */
-export type EmailConfigProvider = () => Promise<EmailConfig & { baseUrl: string }>;
+export type EmailConfigProvider = () => Promise<EmailConfig>;
 
 /**
  * Raw email payload for `EmailService.sendCustomEmail` - used by callers
@@ -32,6 +33,16 @@ export interface CustomEmailData {
   subject: string;
   html: string;
   text: string;
+  /**
+   * How this send is logged in `email_logs`. Defaults to `'welcome'` - the
+   * closest existing value in email_logs' email_type CHECK constraint
+   * (migration `1769442694565_add-email-logs-table.js`); there is no
+   * dedicated `'invitation'` value yet and adding one is a migration change,
+   * out of scope here.
+   */
+  emailType?: EmailType;
+  /** Logging context - see `EmailContext`. */
+  context?: EmailContext;
 }
 
 export interface EmailContext {
@@ -187,45 +198,55 @@ export class EmailService {
   }
 
   /**
-   * Resolves the transporter/from-address/baseUrl to use for the send that
-   * is about to happen. In provider mode this calls the injected provider
-   * (e.g. `settingsService.getEmailConfig()`) and builds a fresh transporter
-   * every time - avoids ever caching a stale SMTP config. In legacy mode it
-   * just returns the values captured at construction.
+   * Resolves the transporter/from-address to use for the send that is about
+   * to happen. In provider mode this calls the injected provider (e.g.
+   * `settingsService.getEmailConfig()`) and builds a fresh transporter every
+   * time - avoids ever caching a stale SMTP config. In legacy mode it just
+   * returns the values captured at construction.
    */
-  private async resolveSendConfig(): Promise<{ transporter: Transporter; fromEmail: string; baseUrl: string }> {
+  private async resolveSendConfig(): Promise<{ transporter: Transporter; fromEmail: string }> {
     if (this.configProvider) {
       const config = await this.configProvider();
       return {
         transporter: this.createTransporter(config),
         fromEmail: config.from,
-        baseUrl: config.baseUrl,
       };
     }
 
     return {
       transporter: this.transporter as Transporter,
       fromEmail: this.fromEmail as string,
-      baseUrl: this.baseUrl as string,
     };
   }
 
   /**
-   * Internal helper to send email with logging. Resolves config itself
-   * unless the caller already resolved it (e.g. because it also needed
-   * `baseUrl` - see `sendEmailVerification`), in which case pass it in to
-   * avoid a second resolve.
+   * Internal helper to send email with logging.
+   *
+   * Item 2.1: the log row is created *first*, before config resolution -
+   * `resolveSendConfig()` now runs inside the same try that reports failure,
+   * so a throw during resolution (e.g. `decryptSecret` on `smtp.pass` or
+   * `coerceFromStorage` on `smtp.port`/`smtp.secure`; a bad SMTP *host* does
+   * NOT throw here, since `nodemailer.createTransport` never connects) still
+   * leaves a visible `failed` row instead of no row at all. There is no
+   * `resolved?` bypass anymore - every caller (including
+   * `sendEmailVerification` and `sendCustomEmail`) goes through this single
+   * path, so every email type gets a failure row.
+   *
+   * `generateHtml`/`generateText` are lazy (called inside the same try as
+   * `resolveSendConfig`/`sendMail`, not pre-computed by the caller) so that a
+   * throw from template generation - e.g. `requireStructuralUrl` rejecting an
+   * unrenderable signing/verification/reset-password/download URL - also
+   * produces a `failed` row instead of an unhandled rejection with no
+   * visible evidence at all.
    */
   private async sendWithLogging(
     recipientEmail: string,
     subject: string,
     emailType: EmailType,
-    html: string,
-    text: string,
-    context: EmailContext = {},
-    resolved?: { transporter: Transporter; fromEmail: string }
+    generateHtml: () => string,
+    generateText: () => string,
+    context: EmailContext = {}
   ): Promise<void> {
-    const { transporter, fromEmail } = resolved ?? (await this.resolveSendConfig());
     let logId: string | undefined;
 
     // Create log entry if service is available
@@ -247,6 +268,9 @@ export class EmailService {
     }
 
     try {
+      const html = generateHtml();
+      const text = generateText();
+      const { transporter, fromEmail } = await this.resolveSendConfig();
       const result = await transporter.sendMail({
         from: fromEmail,
         to: recipientEmail,
@@ -255,9 +279,21 @@ export class EmailService {
         html,
       });
 
-      // Mark as sent with message ID
+      // Mark as sent with message ID - guarded in its own try/catch (mirrors
+      // the `markAsFailed` guard below) so a DB failure here, after
+      // nodemailer has already accepted the message, cannot fall into the
+      // outer catch and get misreported as a failed send. Without this, a
+      // resend of a message the recipient already received would put a
+      // second, live signing link in their inbox.
       if (logId && this.emailLogService) {
-        await this.emailLogService.markAsSent(logId, result.messageId);
+        try {
+          await this.emailLogService.markAsSent(logId, result.messageId);
+        } catch (markError) {
+          logger.warn('Failed to mark email log as sent', {
+            error: (markError as Error).message,
+            emailLogId: logId,
+          });
+        }
       }
 
       logger.debug('Email sent successfully', {
@@ -267,9 +303,18 @@ export class EmailService {
         messageId: result.messageId,
       });
     } catch (error) {
-      // Mark as failed
+      // Mark as failed - guarded in its own try/catch (mirrors the
+      // `createLog` guard above) so a DB failure here cannot mask the
+      // original send/resolution error that is rethrown below.
       if (logId && this.emailLogService) {
-        await this.emailLogService.markAsFailed(logId, (error as Error).message);
+        try {
+          await this.emailLogService.markAsFailed(logId, (error as Error).message);
+        } catch (markError) {
+          logger.warn('Failed to mark email log as failed', {
+            error: (markError as Error).message,
+            emailLogId: logId,
+          });
+        }
       }
 
       logger.error('Failed to send email', {
@@ -290,17 +335,14 @@ export class EmailService {
     const baseSubject = `${data.senderName} has requested your signature on "${data.documentTitle}"`;
     const subject = data.isReminder ? `Reminder: ${baseSubject}` : baseSubject;
 
-    const html = this.generateSigningRequestHtml(data);
-    const text = this.generateSigningRequestText(data);
-
     const emailType: EmailType = data.isReminder ? 'reminder' : 'signing_request';
 
     await this.sendWithLogging(
       data.recipientEmail,
       subject,
       emailType,
-      html,
-      text,
+      () => this.generateSigningRequestHtml(data),
+      () => this.generateSigningRequestText(data),
       {
         documentId: data.documentId,
         signerId: data.signerId,
@@ -315,15 +357,12 @@ export class EmailService {
   async sendCompletionNotification(data: CompletionEmailData): Promise<void> {
     const subject = `Document "${data.documentTitle}" has been completed`;
 
-    const html = this.generateCompletionHtml(data);
-    const text = this.generateCompletionText(data);
-
     await this.sendWithLogging(
       data.recipientEmail,
       subject,
       'completion',
-      html,
-      text,
+      () => this.generateCompletionHtml(data),
+      () => this.generateCompletionText(data),
       {
         documentId: data.documentId,
         userId: data.userId,
@@ -337,15 +376,12 @@ export class EmailService {
   async sendReminder(data: ReminderEmailData): Promise<void> {
     const subject = `Reminder: Please sign "${data.documentTitle}"`;
 
-    const html = this.generateReminderHtml(data);
-    const text = this.generateReminderText(data);
-
     await this.sendWithLogging(
       data.recipientEmail,
       subject,
       'reminder',
-      html,
-      text,
+      () => this.generateReminderHtml(data),
+      () => this.generateReminderText(data),
       {
         documentId: data.documentId,
         signerId: data.signerId,
@@ -362,15 +398,12 @@ export class EmailService {
   ): Promise<void> {
     const subject = 'Password Changed - EzSign';
 
-    const html = this.generatePasswordChangeHtml(data);
-    const text = this.generatePasswordChangeText(data);
-
     await this.sendWithLogging(
       data.recipientEmail,
       subject,
       'password_change',
-      html,
-      text,
+      () => this.generatePasswordChangeHtml(data),
+      () => this.generatePasswordChangeText(data),
       {
         userId: data.userId,
       }
@@ -378,16 +411,60 @@ export class EmailService {
   }
 
   /**
+   * Validates a "structural" URL - one the email exists to deliver
+   * (signing/verification/reset-password/download links) - and throws if it
+   * fails `safeUrl` validation, e.g. if `app.url` is misconfigured without a
+   * scheme (only the admin-write path validates it via `appUrlSchema`;
+   * env-sourced `APP_URL`/`BASE_URL` do not go through that check - see
+   * `SettingsService.getAppUrl()`). A blank `href` here is worse than the
+   * injection Item 0 fixes: it silently breaks the one thing the email
+   * exists to deliver. Since generation now runs inside `sendWithLogging`'s
+   * try, the throw is recorded as a `failed` email_logs row with a real
+   * reason instead of a warn line nobody reads.
+   *
+   * Decorative URLs (logoUrl/supportUrl/privacyUrl/termsUrl) are NOT routed
+   * through here - a missing logo or footer link is cosmetic, so those keep
+   * the drop-and-continue behavior of a bare `safeUrl()` call.
+   *
+   * Returns `''` unchanged (no throw) when `original` itself is empty -
+   * omitting an *optional* structural URL (e.g. no `downloadUrl` on a
+   * completion email) is a valid choice, not a validation failure.
+   */
+  private requireStructuralUrl(label: string, original: string | undefined): string {
+    if (!original) {
+      return '';
+    }
+    const validated = safeUrl(original);
+    if (!validated) {
+      throw new Error(`Email ${label} URL failed validation: "${original}"`);
+    }
+    return validated;
+  }
+
+  /**
    * Generate signing request HTML email
    */
   private generateSigningRequestHtml(data: SigningRequestEmailData): string {
     const branding = data.branding || {};
-    const companyName = branding.companyName || DEFAULT_BRANDING.companyName;
-    const primaryColor = branding.primaryColor || DEFAULT_BRANDING.primaryColor;
+    const rawCompanyName = branding.companyName || DEFAULT_BRANDING.companyName;
+    const companyName = escapeHtml(rawCompanyName);
+    // Escaped even though this is typically a hex color already validated
+    // upstream (Branding.validate/isValidHexColor) - EmailBranding here is a
+    // plain caller-supplied object with no guarantee it went through that
+    // validation, and escapeHtml is the identity function on a well-formed
+    // hex value (e.g. '#4F46E5'), so escaping costs nothing when the input
+    // is valid and closes the gap when it isn't.
+    const primaryColor = escapeHtml(branding.primaryColor || DEFAULT_BRANDING.primaryColor);
     const headerColor = data.isReminder ? '#f59e0b' : primaryColor;
     const buttonColor = data.isReminder ? '#f59e0b' : primaryColor;
     const headerTitle = data.isReminder ? 'Signature Reminder' : 'Signature Request';
-    const footerText = branding.footerText || `This is an automated email from ${companyName}. Please do not reply to this email.`;
+    const footerText = escapeHtml(branding.footerText || `This is an automated email from ${rawCompanyName}. Please do not reply to this email.`);
+    const logoUrl = safeUrl(branding.logoUrl);
+    const signingUrl = this.requireStructuralUrl('signing', data.signingUrl);
+    const recipientName = escapeHtml(data.recipientName);
+    const senderName = escapeHtml(data.senderName);
+    const documentTitle = escapeHtml(data.documentTitle);
+    const message = escapeHtml(data.message);
 
     return `
       <!DOCTYPE html>
@@ -421,24 +498,24 @@ export class EmailService {
         <body>
           <div class="container">
             <div class="header">
-              ${branding.logoUrl ? `<img src="${branding.logoUrl}" alt="${companyName}" class="logo" />` : ''}
+              ${logoUrl ? `<img src="${logoUrl}" alt="${companyName}" class="logo" />` : ''}
               <h1>${headerTitle}</h1>
             </div>
             <div class="content">
-              <p>Hello ${data.recipientName},</p>
+              <p>Hello ${recipientName},</p>
               ${data.isReminder
-                ? `<p>This is a friendly reminder that <strong>${data.senderName}</strong> is waiting for your signature on the following document:</p>`
-                : `<p><strong>${data.senderName}</strong> has requested your signature on the following document:</p>`
+                ? `<p>This is a friendly reminder that <strong>${senderName}</strong> is waiting for your signature on the following document:</p>`
+                : `<p><strong>${senderName}</strong> has requested your signature on the following document:</p>`
               }
-              <h3>${data.documentTitle}</h3>
+              <h3>${documentTitle}</h3>
               ${data.isReminder ? '<div class="reminder"><strong>⏰ Action Required:</strong> Please review and sign this document at your earliest convenience.</div>' : ''}
-              ${data.message ? `<div class="message"><strong>Message:</strong><br>${data.message}</div>` : ''}
+              ${message ? `<div class="message"><strong>Message:</strong><br>${message}</div>` : ''}
               <p>Please click the button below to review and sign the document:</p>
               <div style="text-align: center;">
-                <a href="${data.signingUrl}" class="button">Review & Sign Document</a>
+                <a href="${signingUrl}" class="button">Review & Sign Document</a>
               </div>
               <p style="font-size: 13px; color: #6b7280;">If the button doesn't work, copy and paste this link into your browser:</p>
-              <div class="link-box"><a href="${data.signingUrl}">${data.signingUrl}</a></div>
+              <div class="link-box"><a href="${signingUrl}">${signingUrl}</a></div>
             </div>
             <div class="footer">
               <p>${footerText}</p>
@@ -480,9 +557,16 @@ This is an automated email from EzSign. Please do not reply to this email.
    */
   private generateCompletionHtml(data: CompletionEmailData): string {
     const branding = data.branding || {};
-    const companyName = branding.companyName || DEFAULT_BRANDING.companyName;
-    const secondaryColor = branding.secondaryColor || DEFAULT_BRANDING.secondaryColor;
-    const footerText = branding.footerText || `This is an automated email from ${companyName}. Please do not reply to this email.`;
+    const rawCompanyName = branding.companyName || DEFAULT_BRANDING.companyName;
+    const companyName = escapeHtml(rawCompanyName);
+    // Escaped for the same reason as generateSigningRequestHtml's
+    // primaryColor - see that comment.
+    const secondaryColor = escapeHtml(branding.secondaryColor || DEFAULT_BRANDING.secondaryColor);
+    const footerText = escapeHtml(branding.footerText || `This is an automated email from ${rawCompanyName}. Please do not reply to this email.`);
+    const logoUrl = safeUrl(branding.logoUrl);
+    const downloadUrl = this.requireStructuralUrl('download', data.downloadUrl);
+    const recipientName = escapeHtml(data.recipientName);
+    const documentTitle = escapeHtml(data.documentTitle);
 
     const formattedDate = data.completedAt.toLocaleString('en-US', {
       dateStyle: 'long',
@@ -518,20 +602,20 @@ This is an automated email from EzSign. Please do not reply to this email.
         <body>
           <div class="container">
             <div class="header">
-              ${branding.logoUrl ? `<img src="${branding.logoUrl}" alt="${companyName}" class="logo" />` : ''}
+              ${logoUrl ? `<img src="${logoUrl}" alt="${companyName}" class="logo" />` : ''}
               <h1>✓ Document Completed</h1>
             </div>
             <div class="content">
-              <p>Hello ${data.recipientName},</p>
+              <p>Hello ${recipientName},</p>
               <p>Great news! The following document has been fully signed and completed:</p>
-              <h3>${data.documentTitle}</h3>
+              <h3>${documentTitle}</h3>
               <div class="info">
                 <strong>Completed on:</strong> ${formattedDate}
               </div>
-              ${data.downloadUrl ? `
+              ${downloadUrl ? `
               <p>You can download the signed document using the button below:</p>
               <div style="text-align: center;">
-                <a href="${data.downloadUrl}" class="button">Download Document</a>
+                <a href="${downloadUrl}" class="button">Download Document</a>
               </div>
               ` : ''}
             </div>
@@ -575,8 +659,14 @@ This is an automated email from EzSign. Please do not reply to this email.
    */
   private generateReminderHtml(data: ReminderEmailData): string {
     const branding = data.branding || {};
-    const companyName = branding.companyName || DEFAULT_BRANDING.companyName;
-    const footerText = branding.footerText || `This is an automated email from ${companyName}. Please do not reply to this email.`;
+    const rawCompanyName = branding.companyName || DEFAULT_BRANDING.companyName;
+    const companyName = escapeHtml(rawCompanyName);
+    const footerText = escapeHtml(branding.footerText || `This is an automated email from ${rawCompanyName}. Please do not reply to this email.`);
+    const logoUrl = safeUrl(branding.logoUrl);
+    const signingUrl = this.requireStructuralUrl('signing', data.signingUrl);
+    const recipientName = escapeHtml(data.recipientName);
+    const senderName = escapeHtml(data.senderName);
+    const documentTitle = escapeHtml(data.documentTitle);
     // Reminders use amber color for urgency, regardless of branding
     const reminderColor = '#f59e0b';
 
@@ -611,22 +701,22 @@ This is an automated email from EzSign. Please do not reply to this email.
         <body>
           <div class="container">
             <div class="header">
-              ${branding.logoUrl ? `<img src="${branding.logoUrl}" alt="${companyName}" class="logo" />` : ''}
+              ${logoUrl ? `<img src="${logoUrl}" alt="${companyName}" class="logo" />` : ''}
               <h1>Signature Reminder</h1>
             </div>
             <div class="content">
-              <p>Hello ${data.recipientName},</p>
-              <p>This is a friendly reminder that <strong>${data.senderName}</strong> is waiting for your signature on:</p>
-              <h3>${data.documentTitle}</h3>
+              <p>Hello ${recipientName},</p>
+              <p>This is a friendly reminder that <strong>${senderName}</strong> is waiting for your signature on:</p>
+              <h3>${documentTitle}</h3>
               <div class="reminder">
                 <strong>Waiting for:</strong> ${data.daysWaiting} day${data.daysWaiting !== 1 ? 's' : ''}
               </div>
               <p>Please take a moment to review and sign the document:</p>
               <div style="text-align: center;">
-                <a href="${data.signingUrl}" class="button">Sign Document Now</a>
+                <a href="${signingUrl}" class="button">Sign Document Now</a>
               </div>
               <p style="font-size: 13px; color: #6b7280;">If the button doesn't work, copy and paste this link into your browser:</p>
-              <div class="link-box"><a href="${data.signingUrl}">${data.signingUrl}</a></div>
+              <div class="link-box"><a href="${signingUrl}">${signingUrl}</a></div>
             </div>
             <div class="footer">
               <p>${footerText}</p>
@@ -669,6 +759,9 @@ This is an automated email from EzSign. Please do not reply to this email.
       dateStyle: 'long',
       timeStyle: 'short',
     });
+    const recipientName = escapeHtml(data.recipientName);
+    const ipAddress = escapeHtml(data.ipAddress);
+    const resetPasswordUrl = this.requireStructuralUrl('reset-password', data.resetPasswordUrl);
 
     return `
       <!DOCTYPE html>
@@ -700,18 +793,18 @@ This is an automated email from EzSign. Please do not reply to this email.
               <h1>🔒 Password Changed</h1>
             </div>
             <div class="content">
-              <p>Hello ${data.recipientName},</p>
+              <p>Hello ${recipientName},</p>
               <p>Your password was successfully changed for your EzSign account.</p>
               <div class="info">
                 <strong>Changed on:</strong> ${formattedDate}<br>
-                ${data.ipAddress ? `<strong>IP Address:</strong> ${data.ipAddress}<br>` : ''}
+                ${ipAddress ? `<strong>IP Address:</strong> ${ipAddress}<br>` : ''}
               </div>
               <div class="warning">
                 <strong>⚠️ Didn't make this change?</strong><br>
                 If you did not change your password, someone may have accessed your account. Please reset your password immediately.
-                ${data.resetPasswordUrl ? `
+                ${resetPasswordUrl ? `
                 <div style="text-align: center; margin-top: 15px;">
-                  <a href="${data.resetPasswordUrl}" class="button">Reset Password</a>
+                  <a href="${resetPasswordUrl}" class="button">Reset Password</a>
                 </div>
                 ` : ''}
               </div>
@@ -761,18 +854,22 @@ If you have any concerns, please contact support.
   private generateFooterLinks(branding: EmailBranding): string {
     const links: string[] = [];
 
-    if (branding.supportUrl) {
-      links.push(`<a href="${branding.supportUrl}">Support</a>`);
-    } else if (branding.supportEmail) {
-      links.push(`<a href="mailto:${branding.supportEmail}">Contact Support</a>`);
+    const supportUrl = safeUrl(branding.supportUrl);
+    const supportMailto = safeMailto(branding.supportEmail);
+    if (supportUrl) {
+      links.push(`<a href="${supportUrl}">Support</a>`);
+    } else if (supportMailto) {
+      links.push(`<a href="${supportMailto}">Contact Support</a>`);
     }
 
-    if (branding.privacyUrl) {
-      links.push(`<a href="${branding.privacyUrl}">Privacy Policy</a>`);
+    const privacyUrl = safeUrl(branding.privacyUrl);
+    if (privacyUrl) {
+      links.push(`<a href="${privacyUrl}">Privacy Policy</a>`);
     }
 
-    if (branding.termsUrl) {
-      links.push(`<a href="${branding.termsUrl}">Terms of Service</a>`);
+    const termsUrl = safeUrl(branding.termsUrl);
+    if (termsUrl) {
+      links.push(`<a href="${termsUrl}">Terms of Service</a>`);
     }
 
     if (links.length === 0) {
@@ -833,46 +930,53 @@ If you have any concerns, please contact support.
    * Sends a fully custom (non-templated) email using the resolved
    * transporter/from-address. Replaces callers that used to reach into
    * `(emailService as any).transporter`/`.fromEmail` directly (see
-   * InvitationController.sendInvitationEmail). No email log entry is
-   * created here, matching that caller's prior behavior.
+   * InvitationController.sendInvitationEmail, the only current caller, which
+   * passes neither `emailType` nor `context` and so is logged as `'welcome'`
+   * with no linked document/signer/user - see `CustomEmailData.emailType`
+   * doc). Routed through `sendWithLogging` like every other send path so
+   * invitation emails get a visible row in email_logs instead of being
+   * invisible to that surface.
    */
   async sendCustomEmail(data: CustomEmailData): Promise<void> {
-    const { transporter, fromEmail } = await this.resolveSendConfig();
-    await transporter.sendMail({
-      from: fromEmail,
-      to: data.to,
-      subject: data.subject,
-      text: data.text,
-      html: data.html,
-    });
+    await this.sendWithLogging(
+      data.to,
+      data.subject,
+      data.emailType ?? 'welcome',
+      () => data.html,
+      () => data.text,
+      data.context ?? {}
+    );
   }
 
   /**
-   * Send email verification email
+   * Send email verification email.
+   *
+   * Item 2.1: `baseUrl` is supplied by the caller (resolved via
+   * `settingsService.getAppUrl()`, the pattern `signingController.ts` and
+   * `signerController.ts` already use) rather than pre-resolved here via
+   * `resolveSendConfig()`. Pre-resolving used to bypass `sendWithLogging`'s
+   * log-first ordering, which would have left `verification` as the one
+   * email type with no failed row on a resolution error.
    */
   async sendEmailVerification(data: {
     recipientEmail: string;
     recipientName: string;
     verificationToken: string;
+    baseUrl: string;
     userId?: string;
   }): Promise<void> {
-    const resolved = await this.resolveSendConfig();
-    const verificationUrl = `${resolved.baseUrl}/verify-email?token=${data.verificationToken}`;
+    const verificationUrl = `${data.baseUrl}/verify-email?token=${data.verificationToken}`;
     const subject = 'Verify your email address - EzSign';
-
-    const html = this.generateEmailVerificationHtml(data.recipientName, verificationUrl);
-    const text = this.generateEmailVerificationText(data.recipientName, verificationUrl);
 
     await this.sendWithLogging(
       data.recipientEmail,
       subject,
       'verification',
-      html,
-      text,
+      () => this.generateEmailVerificationHtml(data.recipientName, verificationUrl),
+      () => this.generateEmailVerificationText(data.recipientName, verificationUrl),
       {
         userId: data.userId,
-      },
-      { transporter: resolved.transporter, fromEmail: resolved.fromEmail }
+      }
     );
   }
 
@@ -880,6 +984,8 @@ If you have any concerns, please contact support.
    * Generate email verification HTML
    */
   private generateEmailVerificationHtml(recipientName: string, verificationUrl: string): string {
+    const safeRecipientName = escapeHtml(recipientName);
+    const safeVerificationUrl = this.requireStructuralUrl('verification', verificationUrl);
     return `
       <!DOCTYPE html>
       <html>
@@ -911,17 +1017,17 @@ If you have any concerns, please contact support.
               <h1>Welcome to EzSign!</h1>
             </div>
             <div class="content">
-              <p>Hello ${recipientName},</p>
+              <p>Hello ${safeRecipientName},</p>
               <p>Thank you for registering with EzSign. To complete your registration and start using our document signing platform, please verify your email address.</p>
               <div class="info">
                 <strong>⏰ Important:</strong> This verification link will expire in 24 hours.
               </div>
               <p>Click the button below to verify your email:</p>
               <div style="text-align: center;">
-                <a href="${verificationUrl}" class="button">Verify Email Address</a>
+                <a href="${safeVerificationUrl}" class="button">Verify Email Address</a>
               </div>
               <p style="font-size: 13px; color: #6b7280;">If the button doesn't work, copy and paste this link into your browser:</p>
-              <div class="link-box"><a href="${verificationUrl}">${verificationUrl}</a></div>
+              <div class="link-box"><a href="${safeVerificationUrl}">${safeVerificationUrl}</a></div>
               <p>If you didn't create an account with EzSign, you can safely ignore this email.</p>
             </div>
             <div class="footer">

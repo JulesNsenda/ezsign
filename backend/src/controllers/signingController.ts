@@ -5,7 +5,7 @@ import { Signer } from '@/models/Signer';
 import { Signature } from '@/models/Signature';
 import { Field } from '@/models/Field';
 import { Branding } from '@/models/Branding';
-import { EmailService, EmailBranding } from '@/services/emailService';
+import { EmailService, EmailBranding, CompletionEmailData, SigningRequestEmailData } from '@/services/emailService';
 import { PdfService } from '@/services/pdfService';
 import { StorageService } from '@/services/storageService';
 import { BrandingService } from '@/services/brandingService';
@@ -13,6 +13,7 @@ import { socketService } from '@/services/socketService';
 import { ReminderService } from '@/services/reminderService';
 import { getSettingsService } from '@/services/settingsService';
 import { buildSigningUrl, buildDownloadUrl } from '@/utils/urlBuilder';
+import { categorizeSmtpError } from '@/utils/smtpErrorCategorizer';
 import logger from '@/services/loggerService';
 import {
   resolveSigningContext,
@@ -238,26 +239,18 @@ export class SigningController {
       // Fetch branding for email customization
       const emailBranding = await this.getEmailBranding(document.team_id, baseUrl);
 
-      // Send signing requests to all signers (or first signer if sequential)
+      // Send signing requests to all signers (or first signer if sequential).
+      // BUG-3 / Item 1.4: each send is wrapped in its own try/catch - the
+      // document is already `pending` by this point (and `canSend()`
+      // requires `draft`, so a mid-loop throw used to strand it), so one bad
+      // address must not stop the remaining signers from being notified or
+      // skip reminder scheduling below.
       const signers = signersResult.rows.map((row) => new Signer(mapRowToSignerData(row)));
+      const signersFailed: Array<{ signer_id: string; email: string; error: string }> = [];
+      let signersNotifiedCount = 0;
 
-      if (document.workflow_type === 'sequential') {
-        // For sequential workflow, only send to first signer
-        const firstSigner = signers.find((s) => s.signing_order === 0);
-        if (firstSigner) {
-          await this.emailService.sendSigningRequest({
-            recipientEmail: firstSigner.email,
-            recipientName: firstSigner.name,
-            documentTitle: document.title,
-            senderName,
-            signingUrl: buildSigningUrl(baseUrl, firstSigner.access_token),
-            message,
-            branding: emailBranding,
-          });
-        }
-      } else {
-        // For parallel or single workflow, send to all signers
-        for (const signer of signers) {
+      const sendToSigner = async (signer: Signer): Promise<void> => {
+        try {
           await this.emailService.sendSigningRequest({
             recipientEmail: signer.email,
             recipientName: signer.name,
@@ -266,7 +259,40 @@ export class SigningController {
             signingUrl: buildSigningUrl(baseUrl, signer.access_token),
             message,
             branding: emailBranding,
+            documentId,
+            signerId: signer.id,
+            userId,
           });
+          signersNotifiedCount++;
+        } catch (error) {
+          logger.error('Failed to send signing request to signer', {
+            documentId,
+            signerId: signer.id,
+            error: (error as Error).message,
+            correlationId: req.correlationId,
+          });
+          // G2: this reaches any team member with document access (the
+          // response to this same request), not just the owner or an admin -
+          // categorize rather than echo the raw nodemailer error (host/port/
+          // credential-adjacent details). The raw message is logged above.
+          signersFailed.push({
+            signer_id: signer.id,
+            email: signer.email,
+            error: categorizeSmtpError(error, 'Failed to send signing request'),
+          });
+        }
+      };
+
+      if (document.workflow_type === 'sequential') {
+        // For sequential workflow, only send to first signer
+        const firstSigner = signers.find((s) => s.signing_order === 0);
+        if (firstSigner) {
+          await sendToSigner(firstSigner);
+        }
+      } else {
+        // For parallel or single workflow, send to all signers
+        for (const signer of signers) {
+          await sendToSigner(signer);
         }
       }
 
@@ -289,13 +315,59 @@ export class SigningController {
         }
       }
 
+      // G5: a send that notifies nobody deserves a server-side signal even
+      // when it isn't surfaced as an error response below (the all-attempted-
+      // and-failed case, which stays 200 - see the Item 1.4 comment).
+      if (signersNotifiedCount === 0) {
+        logger.error('No signer was notified when sending document for signature', {
+          documentId,
+          workflowType: document.workflow_type,
+          signersFailedCount: signersFailed.length,
+          correlationId: req.correlationId,
+        });
+      }
+
+      // G5: `signers.find(s => s.signing_order === 0)` (sequential workflow,
+      // above) silently sends nothing if signing_order values don't start at
+      // 0 - `signerService.create` only requires `signing_order !== null`,
+      // and nothing else enforces consecutive-from-0 ordering. That leaves
+      // both counters at zero: nobody was notified AND nobody was even
+      // attempted, so `signers_failed` is empty and there is nothing for the
+      // per-signer resend endpoint to retry. Unlike the "attempted and all
+      // failed" case below (where `signers_failed` gives the UI a retry
+      // path), this is reported as a failure rather than a success.
+      if (signersNotifiedCount === 0 && signersFailed.length === 0) {
+        res.status(500).json({
+          success: false,
+          error:
+            'Failed to send document: no signer could be notified. Check that signing_order values are configured correctly for a sequential workflow.',
+          data: {
+            document_id: documentId,
+            status: 'pending',
+            signers_notified: 0,
+            signers_failed: [],
+          },
+        });
+        return;
+      }
+
+      // Item 1.4 all-failed decision: still 200. The document is durably
+      // `pending` regardless of email outcome (the UPDATE above already
+      // committed, and `canSend()` forbids re-sending from `pending`), so a
+      // transport-level error status here would misrepresent what actually
+      // happened - the send was attempted and reminders were scheduled. The
+      // per-signer resend endpoint (BUG-1, fixed in Item 1) is the intended
+      // recovery path, and `signers_failed` is what the UI needs to offer it.
       res.status(200).json({
         success: true,
-        message: 'Document sent for signature',
+        message: signersFailed.length > 0
+          ? 'Document sent for signature with some notification failures'
+          : 'Document sent for signature',
         data: {
           document_id: documentId,
           status: 'pending',
-          signers_notified: document.workflow_type === 'sequential' ? 1 : signers.length,
+          signers_notified: signersNotifiedCount,
+          signers_failed: signersFailed,
         },
       });
     } catch (error) {
@@ -412,6 +484,25 @@ export class SigningController {
       // opening the transaction below (avoid holding a client while awaiting).
       const baseUrl = await getSettingsService(this.pool).getAppUrl();
 
+      // BUG-4 / Item 1.5: the completion-notification and next-signer emails
+      // used to be awaited *inside* the BEGIN/COMMIT span below - an SMTP
+      // failure there hit the catch, which ROLLBACKs a signature that had
+      // already been emailed about. Everything each send needs is staged
+      // into these locals while the transaction is open; the sends
+      // themselves (and the completion reminder-cancellation, which sat in
+      // the same span) run only after COMMIT succeeds, so a send failure can
+      // never roll back a persisted signature.
+      let allSigned = false;
+      let completionEmailStaged: { data: CompletionEmailData; teamId: string | null | undefined } | undefined;
+      let nextSignerEmailStaged: { data: SigningRequestEmailData; teamId: string | null | undefined } | undefined;
+      let cancelDocumentRemindersAfterCommit = false;
+      // G4: the completion WebSocket emit was still inside the BEGIN/COMMIT
+      // span - a later statement in this same transaction (the owner SELECT,
+      // the next-signer lookup, or COMMIT itself) throwing would ROLLBACK
+      // after clients were already told "completed". Staged like the emails
+      // above and fired only after COMMIT succeeds.
+      let completionBroadcastStaged: { documentId: string; ownerId: string } | undefined;
+
       const client = await this.pool.connect();
       try {
         await client.query('BEGIN');
@@ -523,7 +614,7 @@ export class SigningController {
           [signer.document_id]
         );
 
-        const allSigned = allSignersResult.rows.every((s) => s.status === 'signed');
+        allSigned = allSignersResult.rows.every((s) => s.status === 'signed');
 
         if (allSigned) {
           // All signers have signed - complete the document
@@ -818,15 +909,16 @@ export class SigningController {
             ['completed', signer.document_id]
           );
 
-          // Emit WebSocket event for document completion
-          socketService.emitDocumentUpdate({
+          // G4: stage the completion WebSocket emit - sent after COMMIT
+          // (see completionBroadcastStaged's declaration above), never inside
+          // this transaction.
+          completionBroadcastStaged = {
             documentId: signer.document_id,
-            status: 'completed',
-            updatedAt: new Date().toISOString(),
             ownerId: document.user_id,
-          });
+          };
 
-          // Send completion notification to document owner
+          // Stage the completion notification for the document owner - sent
+          // after COMMIT (BUG-4 / Item 1.5), never inside this transaction.
           const ownerResult = await client.query(
             'SELECT email FROM users WHERE id = $1',
             [document.user_id]
@@ -834,35 +926,23 @@ export class SigningController {
 
           if (ownerResult.rows.length > 0) {
             const owner = ownerResult.rows[0];
-            // Fetch branding for email customization
-            const completionBranding = await this.getEmailBranding(document.team_id, baseUrl);
-            await this.emailService.sendCompletionNotification({
-              recipientEmail: owner.email,
-              recipientName: owner.email,
-              documentTitle: document.title,
-              completedAt: new Date(),
-              downloadUrl: buildDownloadUrl(baseUrl, document.id),
-              branding: completionBranding,
-            });
+            completionEmailStaged = {
+              data: {
+                recipientEmail: owner.email,
+                recipientName: owner.email,
+                documentTitle: document.title,
+                completedAt: new Date(),
+                downloadUrl: buildDownloadUrl(baseUrl, document.id),
+                documentId: document.id,
+                userId: document.user_id,
+              },
+              teamId: document.team_id,
+            };
           }
 
-          // Cancel all remaining reminders for the completed document
-          if (this.reminderService) {
-            try {
-              const cancelledCount = await this.reminderService.cancelRemindersForDocument(signer.document_id);
-              if (cancelledCount > 0) {
-                logger.info('Cancelled remaining reminders for completed document', {
-                  documentId: signer.document_id,
-                  cancelledCount,
-                });
-              }
-            } catch (error) {
-              logger.warn('Failed to cancel document reminders on completion', {
-                documentId: signer.document_id,
-                error: (error as Error).message,
-              });
-            }
-          }
+          // Reminder cancellation for the completed document sits in the
+          // same span as the completion email above - deferred alongside it.
+          cancelDocumentRemindersAfterCommit = true;
         } else {
           // Check if next signer should be notified (sequential workflow)
           const docResult = await client.query(
@@ -888,36 +968,107 @@ export class SigningController {
               );
               const senderName = userResult.rows[0]?.email || 'Someone';
 
-              // Fetch branding for email customization
-              const nextSignerBranding = await this.getEmailBranding(document.team_id, baseUrl);
-
-              await this.emailService.sendSigningRequest({
-                recipientEmail: nextSigner.email,
-                recipientName: nextSigner.name,
-                documentTitle: document.title,
-                senderName,
-                signingUrl: buildSigningUrl(baseUrl, nextSigner.access_token),
-                branding: nextSignerBranding,
-              });
+              // Stage the next-signer signing request - sent after COMMIT
+              // (BUG-4 / Item 1.5), never inside this transaction.
+              nextSignerEmailStaged = {
+                data: {
+                  recipientEmail: nextSigner.email,
+                  recipientName: nextSigner.name,
+                  documentTitle: document.title,
+                  senderName,
+                  signingUrl: buildSigningUrl(baseUrl, nextSigner.access_token),
+                  documentId: document.id,
+                  signerId: nextSigner.id,
+                  userId: document.user_id,
+                },
+                teamId: document.team_id,
+              };
             }
           }
         }
 
         await client.query('COMMIT');
-
-        res.status(200).json({
-          success: true,
-          message: 'Signature submitted successfully',
-          data: {
-            document_completed: allSigned,
-          },
-        });
       } catch (error) {
         await client.query('ROLLBACK');
         throw error;
       } finally {
         client.release();
       }
+
+      // Post-commit, best-effort I/O (BUG-4 / Item 1.5): the signature is
+      // already durably saved at this point, so a failure below must be
+      // logged and swallowed - never surfaced as an error to the signer, and
+      // never allowed to undo the commit above.
+      if (completionBroadcastStaged) {
+        socketService
+          .emitDocumentUpdate({
+            documentId: completionBroadcastStaged.documentId,
+            status: 'completed',
+            updatedAt: new Date().toISOString(),
+            ownerId: completionBroadcastStaged.ownerId,
+          })
+          .catch((error) => {
+            logger.warn('Failed to emit completed-document WebSocket update (signature already committed)', {
+              documentId: signer.document_id,
+              error: (error as Error).message,
+            });
+          });
+      }
+
+      if (completionEmailStaged) {
+        try {
+          const completionBranding = await this.getEmailBranding(completionEmailStaged.teamId, baseUrl);
+          await this.emailService.sendCompletionNotification({
+            ...completionEmailStaged.data,
+            branding: completionBranding,
+          });
+        } catch (error) {
+          logger.warn('Failed to send completion notification email (signature already committed)', {
+            documentId: signer.document_id,
+            error: (error as Error).message,
+          });
+        }
+      }
+
+      if (nextSignerEmailStaged) {
+        try {
+          const nextSignerBranding = await this.getEmailBranding(nextSignerEmailStaged.teamId, baseUrl);
+          await this.emailService.sendSigningRequest({
+            ...nextSignerEmailStaged.data,
+            branding: nextSignerBranding,
+          });
+        } catch (error) {
+          logger.warn('Failed to send next-signer signing request email (signature already committed)', {
+            documentId: signer.document_id,
+            error: (error as Error).message,
+          });
+        }
+      }
+
+      if (cancelDocumentRemindersAfterCommit && this.reminderService) {
+        try {
+          const cancelledCount = await this.reminderService.cancelRemindersForDocument(signer.document_id);
+          if (cancelledCount > 0) {
+            logger.info('Cancelled remaining reminders for completed document', {
+              documentId: signer.document_id,
+              cancelledCount,
+            });
+          }
+        } catch (error) {
+          logger.warn('Failed to cancel document reminders on completion', {
+            documentId: signer.document_id,
+            error: (error as Error).message,
+          });
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Signature submitted successfully',
+        data: {
+          document_completed: allSigned,
+        },
+      });
     } catch (error) {
       if (error instanceof SigningContextError) {
         res.status(error.statusCode).json({ success: false, error: error.message });

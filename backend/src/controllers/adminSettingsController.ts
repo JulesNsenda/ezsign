@@ -4,6 +4,7 @@ import nodemailer from 'nodemailer';
 import { getSettingsService, SettingsService, SettingsValidationError } from '@/services/settingsService';
 import { putSettingsSchema } from '@/validators/settingsSchemas';
 import { getStorageRoot } from '@/config/storage';
+import { categorizeSmtpError } from '@/utils/smtpErrorCategorizer';
 import logger from '@/services/loggerService';
 
 /**
@@ -15,34 +16,6 @@ function getSystemInfo() {
     storagePath: getStorageRoot(),
     databaseConfigured: true,
   };
-}
-
-/**
- * Categorizes an SMTP send failure into one of a small set of safe,
- * non-identifying messages. The raw error (which can include host/port/
- * credential-adjacent details) is logged server-side only - never returned
- * in the API response.
- */
-function categorizeSmtpError(error: unknown): string {
-  const message = error instanceof Error ? error.message.toLowerCase() : '';
-  const code = (error as { code?: string } | undefined)?.code;
-
-  if (code === 'EAUTH' || message.includes('auth') || message.includes('invalid login')) {
-    return 'Authentication failed';
-  }
-  if (
-    code === 'ECONNECTION' ||
-    code === 'ETIMEDOUT' ||
-    code === 'ECONNREFUSED' ||
-    code === 'ENOTFOUND' ||
-    code === 'ESOCKET' ||
-    message.includes('connect') ||
-    message.includes('timeout') ||
-    message.includes('timed out')
-  ) {
-    return 'SMTP connection failed';
-  }
-  return 'Failed to send test email';
 }
 
 export class AdminSettingsController {
@@ -161,7 +134,10 @@ export class AdminSettingsController {
 
       res.status(502).json({
         success: false,
-        error: { code: 'TEST_EMAIL_FAILED', message: categorizeSmtpError(error) },
+        error: {
+          code: 'TEST_EMAIL_FAILED',
+          message: categorizeSmtpError(error, 'Failed to send test email'),
+        },
       });
     }
   };
