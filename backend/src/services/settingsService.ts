@@ -550,8 +550,13 @@ export class SettingsService {
    * are non-empty. Fetches all six SMTP/from keys in a single query (same
    * `key = ANY($1::text[])` pattern as `getAll()`) instead of firing a
    * separate `getValue` round-trip per key.
+   *
+   * Does not include `baseUrl` - no caller reads it (`EmailService`'s
+   * `sendEmailVerification` resolves `app.url` itself via `getAppUrl()`
+   * instead of through this config, and every other send path never needed
+   * it), so it was dead plumbing.
    */
-  async getEmailConfig(): Promise<EmailConfig & { baseUrl: string }> {
+  async getEmailConfig(): Promise<EmailConfig> {
     const keys = ['smtp.host', 'smtp.port', 'smtp.secure', 'smtp.user', 'smtp.pass', 'email.from'];
 
     const result = await this.pool.query<{ key: string; value: string; is_secret: boolean }>(
@@ -576,7 +581,6 @@ export class SettingsService {
     const userStr = String(resolve('smtp.user'));
     const passStr = String(resolve('smtp.pass'));
     const from = resolve('email.from');
-    const baseUrl = await this.getAppUrl();
 
     return {
       host: String(host),
@@ -584,13 +588,46 @@ export class SettingsService {
       secure: Boolean(secure),
       ...(userStr !== '' && passStr !== '' ? { auth: { user: userStr, pass: passStr } } : {}),
       from: String(from),
-      baseUrl,
     };
   }
 
+  /**
+   * `app.url` only goes through `appUrlSchema` (scheme/localhost checks) on
+   * the admin-write path (`set()`) - env-sourced `APP_URL`/`BASE_URL` reach
+   * `getValue()` directly and are never validated, so a schemeless env value
+   * (a real deployment shape - env-configured `APP_URL` with no scheme)
+   * would otherwise flow straight into every signing/verification/
+   * reset-password link. Rather than failing every send until an admin can
+   * log in and fix it in Settings -> Instance, normalize a schemeless value
+   * to `https://`; a value that still doesn't parse as a URL after that is a
+   * genuine misconfiguration (not just a missing scheme) and fails loudly
+   * instead of silently shipping a broken link.
+   */
   async getAppUrl(): Promise<string> {
-    const value = String(await this.getValue('app.url'));
-    return value.replace(/\/+$/, '') || value;
+    const raw = String(await this.getValue('app.url'));
+    const trimmed = raw.replace(/\/+$/, '') || raw;
+
+    const isParseableUrl = (candidate: string): boolean => {
+      try {
+        // eslint-disable-next-line no-new
+        new URL(candidate);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    if (isParseableUrl(trimmed)) {
+      return trimmed;
+    }
+
+    const withScheme = `https://${trimmed}`;
+    if (isParseableUrl(withScheme)) {
+      logger.warn('app.url has no scheme; normalizing to https://', { value: trimmed });
+      return withScheme;
+    }
+
+    throw new Error(`app.url is not a valid URL: "${trimmed}"`);
   }
 
   /**

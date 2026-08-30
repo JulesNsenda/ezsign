@@ -147,12 +147,12 @@ export class ScheduledSendWorker {
         // For sequential workflow, only send to first pending signer
         const firstSigner = signers.find((s) => s.status === 'pending' && s.signing_order === 0) || signers[0];
         if (firstSigner) {
-          await this.sendSigningEmail(firstSigner, docRow.title, senderName, baseUrl, emailBranding);
+          await this.sendSigningEmail(firstSigner, documentId, docRow.title, senderName, baseUrl, userId, emailBranding);
         }
       } else {
         // For parallel workflow, send to all signers
         await Promise.all(
-          signers.map((signer) => this.sendSigningEmail(signer, docRow.title, senderName, baseUrl, emailBranding))
+          signers.map((signer) => this.sendSigningEmail(signer, documentId, docRow.title, senderName, baseUrl, userId, emailBranding))
         );
       }
 
@@ -229,9 +229,11 @@ export class ScheduledSendWorker {
    */
   private async sendSigningEmail(
     signer: Signer,
+    documentId: string,
     documentTitle: string,
     senderName: string,
     baseUrl: string,
+    userId: string,
     branding?: EmailBranding
   ): Promise<void> {
     try {
@@ -242,6 +244,9 @@ export class ScheduledSendWorker {
         senderName,
         signingUrl: buildSigningUrl(baseUrl, signer.access_token),
         branding,
+        documentId,
+        signerId: signer.id,
+        userId,
       });
 
       // Update signer to show email was sent

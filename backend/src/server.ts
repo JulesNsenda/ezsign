@@ -5,6 +5,7 @@ dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 import express, { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
+
 import { Pool } from 'pg';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -32,6 +33,7 @@ import { HealthService } from '@/services/healthService';
 import { errorHandler } from '@/middleware/errorHandler';
 import { apiLimiter } from '@/middleware/rateLimiter';
 import { correlationIdMiddleware } from '@/middleware/correlationId';
+import { rawBodyJsonParser } from '@/middleware/rawBody';
 import { createWebhookWorker } from '@/workers/webhookWorker';
 import { createPdfWorker } from '@/workers/pdfWorker';
 import { createCleanupWorker } from '@/workers/cleanupWorker';
@@ -48,6 +50,19 @@ import logger from '@/services/loggerService';
 // Environment variables
 const PORT = process.env.PORT || 3001;
 const NODE_ENV = process.env.NODE_ENV || 'development';
+
+// G7: `docker-compose.dev.yml` ships a committed WEBHOOK_SECRET default,
+// which is now security-load-bearing (it HMAC-gates the inbound email-
+// delivery webhook - see emailLogController.handleDeliveryWebhook). Warn
+// loudly rather than silently accept it: that value is public in the
+// repository, so any deployment still running it has an attacker-known
+// webhook secret.
+const DEV_WEBHOOK_SECRET_DEFAULT = 'dev-webhook-secret-change-in-production';
+if (process.env.WEBHOOK_SECRET === DEV_WEBHOOK_SECRET_DEFAULT) {
+  logger.warn(
+    'WEBHOOK_SECRET is set to the committed docker-compose.dev.yml default value - change it before exposing this instance; that value is public in the repository history.'
+  );
+}
 
 // Database configuration
 // Prefer DATABASE_URL (e.g. injected by a hosting platform) over discrete vars
@@ -236,8 +251,24 @@ app.use((req: Request, res: Response, next: NextFunction): void => {
   next();
 });
 
-// Body parsing middleware
-app.use(express.json({ limit: '50mb' }));
+// G6: the email delivery status webhook needs `req.rawBody` (the exact bytes
+// the sender HMAC-signed) to verify its signature - previously the global
+// 50mb JSON parser below captured that Buffer on *every* JSON request via a
+// `verify` callback, pinning it to `req` for the whole request lifetime even
+// though `submitSignature` alone (up to 50 base64 signatures) routinely
+// carries multi-MB bodies, roughly doubling peak memory for a route that
+// receives no comparable traffic. Scoped instead to just this path, ahead of
+// the global parser: body-parser's JSON middleware (which express.json()
+// wraps) skips re-parsing a request whose body is already parsed, so the
+// global parser below is a no-op here.
+app.use('/api/webhooks/email-status', rawBodyJsonParser);
+
+// Body parsing middleware for everything else.
+app.use(
+  express.json({
+    limit: '50mb',
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Rate limiting

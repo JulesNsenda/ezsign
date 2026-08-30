@@ -178,6 +178,15 @@ describe('scheduledSendWorker (pg-boss)', () => {
 
     expect(result.success).toBe(true);
     expect(mockSendSigningRequest).toHaveBeenCalledTimes(1);
+    // Item 2.2: logging context so this send's email_logs row is reachable
+    // from the per-document/per-signer endpoints.
+    expect(mockSendSigningRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentId,
+        signerId: signerRow.id,
+        userId,
+      })
+    );
     expect(mockEmitDocumentUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ documentId, status: 'pending' })
     );
