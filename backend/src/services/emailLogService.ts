@@ -16,13 +16,7 @@ export type EmailType =
   | 'welcome'
   | 'password_reset';
 
-export type EmailStatus =
-  | 'queued'
-  | 'sent'
-  | 'delivered'
-  | 'bounced'
-  | 'failed'
-  | 'opened';
+export type EmailStatus = 'queued' | 'sent' | 'delivered' | 'bounced' | 'failed' | 'opened';
 
 export interface EmailLogData {
   documentId?: string;
@@ -52,6 +46,14 @@ export interface EmailLog {
   createdAt: Date;
 }
 
+/**
+ * `EmailLog` without `metadata` - the JSONB blob of template data/headers
+ * that `mapRowToEmailLog` otherwise returns to any team member with
+ * document access. Routes serving non-admins (the per-document endpoints)
+ * go through `mapRowToPublicEmailLog` instead.
+ */
+export type PublicEmailLog = Omit<EmailLog, 'metadata'>;
+
 export interface EmailLogFilter {
   documentId?: string;
   signerId?: string;
@@ -63,8 +65,8 @@ export interface EmailLogFilter {
   endDate?: Date;
 }
 
-export interface PaginatedEmailLogs {
-  logs: EmailLog[];
+export interface PaginatedEmailLogs<T = EmailLog> {
+  logs: T[];
   total: number;
   page: number;
   pageSize: number;
@@ -110,10 +112,7 @@ export const createEmailLogService = (pool: Pool) => {
   /**
    * Update email status to 'sent' with message ID
    */
-  const markAsSent = async (
-    logId: string,
-    messageId?: string
-  ): Promise<void> => {
+  const markAsSent = async (logId: string, messageId?: string): Promise<void> => {
     const query = `
       UPDATE email_logs
       SET status = 'sent', message_id = $2, sent_at = CURRENT_TIMESTAMP
@@ -142,10 +141,7 @@ export const createEmailLogService = (pool: Pool) => {
   /**
    * Update email status to 'failed' with error message
    */
-  const markAsFailed = async (
-    logId: string,
-    errorMessage: string
-  ): Promise<void> => {
+  const markAsFailed = async (logId: string, errorMessage: string): Promise<void> => {
     const query = `
       UPDATE email_logs
       SET status = 'failed', error_message = $2
@@ -159,10 +155,7 @@ export const createEmailLogService = (pool: Pool) => {
   /**
    * Update email status to 'bounced'
    */
-  const markAsBounced = async (
-    logId: string,
-    errorMessage?: string
-  ): Promise<void> => {
+  const markAsBounced = async (logId: string, errorMessage?: string): Promise<void> => {
     const query = `
       UPDATE email_logs
       SET status = 'bounced', error_message = $2
@@ -216,46 +209,40 @@ export const createEmailLogService = (pool: Pool) => {
   };
 
   /**
-   * Get emails by document ID
+   * Get emails by document ID. Routes through the public mapper (no
+   * `metadata`) - this backs the per-document endpoint, which is reachable
+   * by any team member with document access, not just an admin.
    */
   const getByDocumentId = async (
     documentId: string,
     page = 1,
-    pageSize = 20
-  ): Promise<PaginatedEmailLogs> => {
-    return queryLogs({ documentId }, page, pageSize);
+    pageSize = 20,
+  ): Promise<PaginatedEmailLogs<PublicEmailLog>> => {
+    return queryPublicLogs({ documentId }, page, pageSize);
   };
 
   /**
-   * Get emails by signer ID
+   * Explicit column projection for email_logs, shared by every query below
+   * so no query-site can regress back to `SELECT *`. `metadata` is included
+   * here; `mapRowToPublicEmailLog` is what actually drops it from the
+   * response for non-admin callers.
    */
-  const getBySignerId = async (
-    signerId: string,
-    page = 1,
-    pageSize = 20
-  ): Promise<PaginatedEmailLogs> => {
-    return queryLogs({ signerId }, page, pageSize);
-  };
+  const EMAIL_LOG_COLUMNS = `
+    id, document_id, signer_id, user_id, recipient_email, email_type,
+    subject, status, error_message, message_id, metadata,
+    sent_at, delivered_at, opened_at, created_at
+  `;
 
   /**
-   * Get emails by user ID
+   * Query logs with filters and pagination, mapping each row with `mapRow`.
+   * Shared by `queryLogs` (full, admin) and `queryPublicLogs` (no metadata).
    */
-  const getByUserId = async (
-    userId: string,
-    page = 1,
-    pageSize = 20
-  ): Promise<PaginatedEmailLogs> => {
-    return queryLogs({ userId }, page, pageSize);
-  };
-
-  /**
-   * Query logs with filters and pagination
-   */
-  const queryLogs = async (
+  const queryLogsInternal = async <T>(
     filter: EmailLogFilter,
-    page = 1,
-    pageSize = 20
-  ): Promise<PaginatedEmailLogs> => {
+    page: number,
+    pageSize: number,
+    mapRow: (row: Record<string, unknown>) => T,
+  ): Promise<PaginatedEmailLogs<T>> => {
     const conditions: string[] = [];
     const params: unknown[] = [];
     let paramIndex = 1;
@@ -300,8 +287,7 @@ export const createEmailLogService = (pool: Pool) => {
       params.push(filter.endDate);
     }
 
-    const whereClause =
-      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     // Count total
     const countQuery = `SELECT COUNT(*) FROM email_logs ${whereClause}`;
@@ -311,7 +297,7 @@ export const createEmailLogService = (pool: Pool) => {
     // Get page of results
     const offset = (page - 1) * pageSize;
     const dataQuery = `
-      SELECT * FROM email_logs
+      SELECT ${EMAIL_LOG_COLUMNS} FROM email_logs
       ${whereClause}
       ORDER BY created_at DESC
       LIMIT $${paramIndex++} OFFSET $${paramIndex++}
@@ -320,7 +306,7 @@ export const createEmailLogService = (pool: Pool) => {
     const dataResult = await pool.query(dataQuery, [...params, pageSize, offset]);
 
     return {
-      logs: dataResult.rows.map(mapRowToEmailLog),
+      logs: dataResult.rows.map(mapRow),
       total,
       page,
       pageSize,
@@ -329,10 +315,34 @@ export const createEmailLogService = (pool: Pool) => {
   };
 
   /**
+   * Full query, including `metadata` and the raw `error_message` - for
+   * admin routes only.
+   */
+  const queryLogs = async (
+    filter: EmailLogFilter,
+    page = 1,
+    pageSize = 20,
+  ): Promise<PaginatedEmailLogs<EmailLog>> => {
+    return queryLogsInternal(filter, page, pageSize, mapRowToEmailLog);
+  };
+
+  /**
+   * Public query, omitting `metadata` - for endpoints reachable by any
+   * team member with document access, not just an admin.
+   */
+  const queryPublicLogs = async (
+    filter: EmailLogFilter,
+    page = 1,
+    pageSize = 20,
+  ): Promise<PaginatedEmailLogs<PublicEmailLog>> => {
+    return queryLogsInternal(filter, page, pageSize, mapRowToPublicEmailLog);
+  };
+
+  /**
    * Get email statistics for a document
    */
   const getDocumentEmailStats = async (
-    documentId: string
+    documentId: string,
   ): Promise<{
     total: number;
     byStatus: Record<EmailStatus, number>;
@@ -377,16 +387,19 @@ export const createEmailLogService = (pool: Pool) => {
   };
 
   /**
-   * Delete old email logs (for cleanup/retention)
+   * Delete old email logs (for cleanup/retention). `days` is parameterized
+   * rather than string-interpolated into the INTERVAL literal - there is no
+   * caller today so no live injection, but a future retention setting would
+   * make this admin-reachable.
    */
   const deleteOlderThan = async (days: number): Promise<number> => {
     const query = `
       DELETE FROM email_logs
-      WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '${days} days'
+      WHERE created_at < CURRENT_TIMESTAMP - ($1::int * INTERVAL '1 day')
       RETURNING id
     `;
 
-    const result = await pool.query(query);
+    const result = await pool.query(query, [days]);
     const deletedCount = result.rowCount || 0;
 
     logger.info('Deleted old email logs', { deletedCount, olderThanDays: days });
@@ -404,9 +417,8 @@ export const createEmailLogService = (pool: Pool) => {
     getById,
     getByMessageId,
     getByDocumentId,
-    getBySignerId,
-    getByUserId,
     queryLogs,
+    queryPublicLogs,
     getDocumentEmailStats,
     deleteOlderThan,
   };
@@ -428,6 +440,30 @@ function mapRowToEmailLog(row: Record<string, unknown>): EmailLog {
     errorMessage: row.error_message as string | null,
     messageId: row.message_id as string | null,
     metadata: row.metadata as Record<string, unknown> | null,
+    sentAt: row.sent_at ? new Date(row.sent_at as string) : null,
+    deliveredAt: row.delivered_at ? new Date(row.delivered_at as string) : null,
+    openedAt: row.opened_at ? new Date(row.opened_at as string) : null,
+    createdAt: new Date(row.created_at as string),
+  };
+}
+
+/**
+ * Map database row to PublicEmailLog - same as mapRowToEmailLog but omits
+ * `metadata`, which can carry template data/headers not meant for every
+ * team member with document access.
+ */
+function mapRowToPublicEmailLog(row: Record<string, unknown>): PublicEmailLog {
+  return {
+    id: row.id as string,
+    documentId: row.document_id as string | null,
+    signerId: row.signer_id as string | null,
+    userId: row.user_id as string | null,
+    recipientEmail: row.recipient_email as string,
+    emailType: row.email_type as EmailType,
+    subject: row.subject as string,
+    status: row.status as EmailStatus,
+    errorMessage: row.error_message as string | null,
+    messageId: row.message_id as string | null,
     sentAt: row.sent_at ? new Date(row.sent_at as string) : null,
     deliveredAt: row.delivered_at ? new Date(row.delivered_at as string) : null,
     openedAt: row.opened_at ? new Date(row.opened_at as string) : null,

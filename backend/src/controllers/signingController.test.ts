@@ -5,6 +5,7 @@ import { EmailService } from '@/services/emailService';
 import { PdfService } from '@/services/pdfService';
 import { StorageService } from '@/services/storageService';
 import { getSettingsService } from '@/services/settingsService';
+import { socketService } from '@/services/socketService';
 import logger from '@/services/loggerService';
 
 jest.mock('@/services/loggerService', () => ({
@@ -173,6 +174,240 @@ describe('SigningController', () => {
 
   afterAll(() => {
     process.env.SIGNING_ENFORCE_EXPIRY = originalEnforceExpiry;
+  });
+
+  describe('sendForSignature - Item 1.4 (BUG-3 partial-send)', () => {
+    let reminderController: SigningController;
+    let mockReminderService: { scheduleRemindersForDocument: jest.Mock };
+
+    const signers = [
+      { id: 'signer-1', document_id: 'doc-1', email: 'signer1@example.com', name: 'Signer One', access_token: 'tok-1', signing_order: null },
+      { id: 'signer-2', document_id: 'doc-1', email: 'signer2@example.com', name: 'Signer Two', access_token: 'tok-2', signing_order: null },
+      { id: 'signer-3', document_id: 'doc-1', email: 'signer3@example.com', name: 'Signer Three', access_token: 'tok-3', signing_order: null },
+    ];
+    const field = { id: 'field-1', document_id: 'doc-1', signer_email: 'signer1@example.com' };
+
+    beforeEach(() => {
+      mockReminderService = {
+        scheduleRemindersForDocument: jest.fn().mockResolvedValue([{ id: 'reminder-1' }]),
+      };
+      reminderController = new SigningController(
+        mockPool as unknown as Pool,
+        mockEmailService as EmailService,
+        mockPdfService as PdfService,
+        mockStorageService as unknown as StorageService,
+        mockReminderService as any
+      );
+
+      mockRequest = {
+        params: { id: 'doc-1' },
+        body: {},
+        user: { userId: 'user-1' },
+      } as any;
+    });
+
+    it('continues past a failing signer, notifies the rest, keeps the document pending, reports the failure per signer, and still schedules reminders', async () => {
+      const document = makeDocumentRow({
+        status: 'draft',
+        workflow_type: 'parallel',
+        expires_at: new Date(Date.now() + 86_400_000),
+      });
+
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [document] }) // SELECT document
+        .mockResolvedValueOnce({ rows: [field] }) // SELECT fields
+        .mockResolvedValueOnce({ rows: signers }) // SELECT signers
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE documents -> pending
+        .mockResolvedValueOnce({ rows: [{ email: 'owner@example.com' }] }); // sender lookup
+
+      (mockEmailService.sendSigningRequest as jest.Mock).mockImplementation((data: any) => {
+        if (data.recipientEmail === 'signer2@example.com') {
+          return Promise.reject(new Error('SMTP rejected signer2@example.com'));
+        }
+        return Promise.resolve();
+      });
+
+      await reminderController.sendForSignature(mockRequest as Request, mockResponse as Response);
+
+      // All three signers were attempted - the loop did not stop at signer 2.
+      expect(mockEmailService.sendSigningRequest).toHaveBeenCalledTimes(3);
+      for (const signer of signers) {
+        expect(mockEmailService.sendSigningRequest).toHaveBeenCalledWith(
+          expect.objectContaining({
+            recipientEmail: signer.email,
+            documentId: 'doc-1',
+            signerId: signer.id,
+            userId: 'user-1',
+          })
+        );
+      }
+
+      // Reminder scheduling still runs despite the mid-loop failure.
+      expect(mockReminderService.scheduleRemindersForDocument).toHaveBeenCalledWith('doc-1');
+
+      // Document stays pending - assert the actual write, not just the
+      // response's own (hardcoded) status literal.
+      expect(mockPool.query).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE documents SET status'),
+        ['pending', 'doc-1']
+      );
+
+      // Response is 200 with per-signer outcomes.
+      expect(responseStatus).toHaveBeenCalledWith(200);
+      expect(responseJson).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+            document_id: 'doc-1',
+            status: 'pending',
+            signers_notified: 2,
+            // G2 (deliberate tightening): this response is reachable by any
+            // team member with document access, so the raw nodemailer error
+            // is categorized rather than echoed verbatim.
+            signers_failed: [
+              { signer_id: 'signer-2', email: 'signer2@example.com', error: 'Failed to send signing request' },
+            ],
+          }),
+        })
+      );
+    });
+
+    it('Item 1.4 all-failed decision: still 200 with signers_notified:0 and every signer reported failed - recovery is the per-signer resend endpoint, not a retry of this request', async () => {
+      const document = makeDocumentRow({ status: 'draft', workflow_type: 'parallel', expires_at: null });
+
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [document] })
+        .mockResolvedValueOnce({ rows: [field] })
+        .mockResolvedValueOnce({ rows: signers })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ email: 'owner@example.com' }] });
+
+      (mockEmailService.sendSigningRequest as jest.Mock).mockRejectedValue(new Error('SMTP down'));
+
+      await reminderController.sendForSignature(mockRequest as Request, mockResponse as Response);
+
+      expect(responseStatus).toHaveBeenCalledWith(200);
+      expect(responseJson).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+            status: 'pending',
+            signers_notified: 0,
+            signers_failed: expect.arrayContaining([
+              expect.objectContaining({ signer_id: 'signer-1' }),
+              expect.objectContaining({ signer_id: 'signer-2' }),
+              expect.objectContaining({ signer_id: 'signer-3' }),
+            ]),
+          }),
+        })
+      );
+    });
+
+    it('sequential workflow: sends only to the signing_order:0 signer, carrying the logging context, and still schedules reminders if that send fails', async () => {
+      const sequentialSigners = [
+        { ...signers[0], signing_order: 0 },
+        { ...signers[1], signing_order: 1 },
+        { ...signers[2], signing_order: 2 },
+      ];
+      const document = makeDocumentRow({
+        status: 'draft',
+        workflow_type: 'sequential',
+        expires_at: new Date(Date.now() + 86_400_000),
+      });
+
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [document] })
+        .mockResolvedValueOnce({ rows: [field] })
+        .mockResolvedValueOnce({ rows: sequentialSigners })
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE documents -> pending
+        .mockResolvedValueOnce({ rows: [{ email: 'owner@example.com' }] });
+
+      (mockEmailService.sendSigningRequest as jest.Mock).mockRejectedValue(
+        new Error('SMTP rejected signer1@example.com')
+      );
+
+      await reminderController.sendForSignature(mockRequest as Request, mockResponse as Response);
+
+      // Only the first-in-sequence signer is ever attempted.
+      expect(mockEmailService.sendSigningRequest).toHaveBeenCalledTimes(1);
+      expect(mockEmailService.sendSigningRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipientEmail: 'signer1@example.com',
+          documentId: 'doc-1',
+          signerId: 'signer-1',
+          userId: 'user-1',
+        })
+      );
+
+      // A failure on that single send still schedules reminders and returns
+      // 200 with the failure reported, per the same all-failed decision.
+      expect(mockReminderService.scheduleRemindersForDocument).toHaveBeenCalledWith('doc-1');
+      expect(responseStatus).toHaveBeenCalledWith(200);
+      expect(responseJson).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+            signers_notified: 0,
+            // G2 (deliberate tightening): categorized, not the raw error.
+            signers_failed: [
+              { signer_id: 'signer-1', email: 'signer1@example.com', error: 'Failed to send signing request' },
+            ],
+          }),
+        })
+      );
+    });
+
+    // G5: `signers.find(s => s.signing_order === 0)` finds nothing if
+    // `signing_order` values don't start at 0 (`signerService.create` only
+    // requires `signing_order !== null` - nothing enforces consecutive-
+    // from-0 ordering). No send is even attempted, so unlike the test above
+    // (one attempted send that failed, reported in `signers_failed`), both
+    // counters land on zero: nobody notified AND nobody attempted, so there
+    // is nothing for the per-signer resend endpoint to retry either. This
+    // must be reported as a failure, not the 200/success response above.
+    it('sequential workflow with no signing_order:0 signer: reports failure instead of a false 200 success with signers_notified:0', async () => {
+      const misconfiguredSigners = [
+        { ...signers[0], signing_order: 1 },
+        { ...signers[1], signing_order: 2 },
+        { ...signers[2], signing_order: 3 },
+      ];
+      const document = makeDocumentRow({
+        status: 'draft',
+        workflow_type: 'sequential',
+        expires_at: null,
+      });
+
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [document] })
+        .mockResolvedValueOnce({ rows: [field] })
+        .mockResolvedValueOnce({ rows: misconfiguredSigners })
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE documents -> pending
+        .mockResolvedValueOnce({ rows: [{ email: 'owner@example.com' }] });
+
+      await reminderController.sendForSignature(mockRequest as Request, mockResponse as Response);
+
+      // No signer was ever attempted.
+      expect(mockEmailService.sendSigningRequest).not.toHaveBeenCalled();
+
+      // Reported as a failure, not the "success with failures" response.
+      expect(responseStatus).toHaveBeenCalledWith(500);
+      expect(responseJson).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          data: expect.objectContaining({
+            signers_notified: 0,
+            signers_failed: [],
+          }),
+        })
+      );
+
+      // The gap is still logged server-side even though it isn't a thrown
+      // exception.
+      expect(logger.error).toHaveBeenCalledWith(
+        'No signer was notified when sending document for signature',
+        expect.objectContaining({ documentId: 'doc-1', workflowType: 'sequential' })
+      );
+    });
   });
 
   describe('submitSignature - payload validation (item 4.6)', () => {
@@ -647,6 +882,355 @@ describe('SigningController', () => {
       );
       expect(capturedQueries).toContain('ROLLBACK');
       expect(capturedQueries.some((q) => q.startsWith('UPDATE documents SET status'))).toBe(false);
+    });
+  });
+
+  describe('submitSignature - Item 1.5 (BUG-4: post-commit email sends)', () => {
+    it('CRITICAL (BUG-4): a completion-notification email failure does not roll back the already-committed signature', async () => {
+      const signer = makeSignerRow();
+      const document = makeDocumentRow();
+
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [signer] })
+        .mockResolvedValueOnce({ rows: [document] })
+        .mockResolvedValueOnce({ rows: [signer] });
+
+      mockPdfService.getPdfInfo = jest.fn().mockResolvedValue({ pages: [{ pageNumber: 0, height: 792 }] });
+      mockPdfService.addMultipleFields = jest.fn().mockResolvedValue(Buffer.from('signed-pdf'));
+      mockStorageService.downloadFile.mockResolvedValue(Buffer.from('original-pdf'));
+      mockStorageService.uploadFile.mockResolvedValue(undefined);
+
+      const capturedQueries: string[] = [];
+      const release = jest.fn();
+      const clientQuery = jest.fn((sql: string) => {
+        const text = normalizeSql(sql);
+        capturedQueries.push(text);
+        if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+          return Promise.resolve({ rows: [] });
+        }
+        if (text.startsWith('SELECT id FROM fields WHERE id = ANY')) {
+          return Promise.resolve({ rows: [{ id: VALID_FIELD_ID }] });
+        }
+        if (text.startsWith('INSERT INTO signatures')) {
+          return Promise.resolve({ rows: [] });
+        }
+        if (text.startsWith("UPDATE signers SET status = 'signed'")) {
+          return Promise.resolve({ rows: [] });
+        }
+        if (text.startsWith('SELECT user_id FROM documents')) {
+          return Promise.resolve({ rows: [{ user_id: 'user-1' }] });
+        }
+        if (text.startsWith('SELECT * FROM signers WHERE document_id')) {
+          return Promise.resolve({ rows: [{ ...signer, status: 'signed' }] });
+        }
+        if (text.startsWith('SELECT * FROM documents WHERE id')) {
+          return Promise.resolve({ rows: [document] });
+        }
+        if (text.startsWith('SELECT COUNT(*)')) {
+          return Promise.resolve({ rows: [{ count: 0 }] });
+        }
+        if (text.startsWith('SELECT s.*, f.page')) {
+          return Promise.resolve({
+            rows: [
+              {
+                signer_id: signer.id,
+                field_id: VALID_FIELD_ID,
+                page: 0,
+                x: '0',
+                y: '0',
+                width: '100',
+                height: '50',
+                type: 'signature',
+                properties: {},
+                signature_data: 'text:hi',
+                text_value: 'hi',
+              },
+            ],
+          });
+        }
+        if (text.startsWith('UPDATE documents SET status')) {
+          return Promise.resolve({ rows: [] });
+        }
+        if (text.startsWith('SELECT email FROM users WHERE id')) {
+          return Promise.resolve({ rows: [{ email: 'owner@example.com' }] });
+        }
+        throw new Error(`Unexpected client query in test: ${text}`);
+      });
+      mockPool.connect.mockResolvedValue({ query: clientQuery, release });
+
+      // Capture the transaction/release state *at the moment the send is
+      // attempted* - not just "COMMIT eventually happened somewhere in the
+      // test". A wrong implementation that keeps the send inside the
+      // transaction but wraps it in a swallowing try/catch would still leave
+      // COMMIT in `capturedQueries` and never reach ROLLBACK, so that alone
+      // can't distinguish "sent after commit" from "failure swallowed before
+      // commit". These snapshots can.
+      let queriesAtSendTime: string[] = [];
+      let clientReleasedBeforeSend = false;
+      (mockEmailService.sendCompletionNotification as jest.Mock).mockImplementation(() => {
+        queriesAtSendTime = capturedQueries.slice();
+        clientReleasedBeforeSend = release.mock.calls.length > 0;
+        return Promise.reject(new Error('SMTP rejected owner@example.com'));
+      });
+
+      mockRequest = {
+        params: { token: 'good-token' },
+        ip: '127.0.0.1',
+        get: jest.fn().mockReturnValue('test-agent'),
+        body: {
+          signatures: [
+            { field_id: VALID_FIELD_ID, signature_type: 'typed', signature_data: 'text:hi', text_value: 'hi' },
+          ],
+        },
+      } as any;
+
+      await controller.submitSignature(mockRequest as Request, mockResponse as Response);
+
+      // The transaction committed - COMMIT was reached and ROLLBACK never
+      // ran, even though the completion email (sent after COMMIT) failed.
+      expect(capturedQueries).toContain('COMMIT');
+      expect(capturedQueries).not.toContain('ROLLBACK');
+      expect(capturedQueries.some((q) => q.startsWith('UPDATE documents SET status'))).toBe(true);
+      expect(release).toHaveBeenCalled();
+
+      // The send itself only happened *after* COMMIT and after the client
+      // was released - pins the ordering, not just the eventual outcome.
+      expect(queriesAtSendTime).toContain('COMMIT');
+      expect(clientReleasedBeforeSend).toBe(true);
+
+      // The request still succeeds - a post-commit email failure must never
+      // be surfaced as an error to the signer, and must never undo the
+      // commit above.
+      expect(responseStatus).toHaveBeenCalledWith(200);
+      expect(responseJson).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true, data: { document_completed: true } })
+      );
+
+      expect(mockEmailService.sendCompletionNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipientEmail: 'owner@example.com',
+          documentId: document.id,
+          userId: document.user_id,
+        })
+      );
+    });
+
+    // G4: the completion WebSocket broadcast was still inside the BEGIN/
+    // COMMIT span - a later statement in that same transaction throwing
+    // (the owner SELECT, the next-signer lookup, or COMMIT itself) would
+    // ROLLBACK after clients were already told "completed". Same ordering
+    // proof as the completion-notification-email test above, applied to the
+    // socket emit instead.
+    it('G4: the "completed" WebSocket broadcast fires only after COMMIT and after the client is released, not from inside the transaction', async () => {
+      const signer = makeSignerRow();
+      const document = makeDocumentRow();
+
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [signer] })
+        .mockResolvedValueOnce({ rows: [document] })
+        .mockResolvedValueOnce({ rows: [signer] });
+
+      mockPdfService.getPdfInfo = jest.fn().mockResolvedValue({ pages: [{ pageNumber: 0, height: 792 }] });
+      mockPdfService.addMultipleFields = jest.fn().mockResolvedValue(Buffer.from('signed-pdf'));
+      mockStorageService.downloadFile.mockResolvedValue(Buffer.from('original-pdf'));
+      mockStorageService.uploadFile.mockResolvedValue(undefined);
+
+      const capturedQueries: string[] = [];
+      const release = jest.fn();
+      const clientQuery = jest.fn((sql: string) => {
+        const text = normalizeSql(sql);
+        capturedQueries.push(text);
+        if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+          return Promise.resolve({ rows: [] });
+        }
+        if (text.startsWith('SELECT id FROM fields WHERE id = ANY')) {
+          return Promise.resolve({ rows: [{ id: VALID_FIELD_ID }] });
+        }
+        if (text.startsWith('INSERT INTO signatures')) {
+          return Promise.resolve({ rows: [] });
+        }
+        if (text.startsWith("UPDATE signers SET status = 'signed'")) {
+          return Promise.resolve({ rows: [] });
+        }
+        if (text.startsWith('SELECT user_id FROM documents')) {
+          return Promise.resolve({ rows: [{ user_id: 'user-1' }] });
+        }
+        if (text.startsWith('SELECT * FROM signers WHERE document_id')) {
+          return Promise.resolve({ rows: [{ ...signer, status: 'signed' }] });
+        }
+        if (text.startsWith('SELECT * FROM documents WHERE id')) {
+          return Promise.resolve({ rows: [document] });
+        }
+        if (text.startsWith('SELECT COUNT(*)')) {
+          return Promise.resolve({ rows: [{ count: 0 }] });
+        }
+        if (text.startsWith('SELECT s.*, f.page')) {
+          return Promise.resolve({
+            rows: [
+              {
+                signer_id: signer.id,
+                field_id: VALID_FIELD_ID,
+                page: 0,
+                x: '0',
+                y: '0',
+                width: '100',
+                height: '50',
+                type: 'signature',
+                properties: {},
+                signature_data: 'text:hi',
+                text_value: 'hi',
+              },
+            ],
+          });
+        }
+        if (text.startsWith('UPDATE documents SET status')) {
+          return Promise.resolve({ rows: [] });
+        }
+        if (text.startsWith('SELECT email FROM users WHERE id')) {
+          return Promise.resolve({ rows: [{ email: 'owner@example.com' }] });
+        }
+        throw new Error(`Unexpected client query in test: ${text}`);
+      });
+      mockPool.connect.mockResolvedValue({ query: clientQuery, release });
+
+      let queriesAtEmitTime: string[] = [];
+      let clientReleasedBeforeEmit = false;
+      const emitSpy = jest.spyOn(socketService, 'emitDocumentUpdate').mockImplementation(async (event) => {
+        if (event.status === 'completed') {
+          queriesAtEmitTime = capturedQueries.slice();
+          clientReleasedBeforeEmit = release.mock.calls.length > 0;
+        }
+      });
+
+      mockRequest = {
+        params: { token: 'good-token' },
+        ip: '127.0.0.1',
+        get: jest.fn().mockReturnValue('test-agent'),
+        body: {
+          signatures: [
+            { field_id: VALID_FIELD_ID, signature_type: 'typed', signature_data: 'text:hi', text_value: 'hi' },
+          ],
+        },
+      } as any;
+
+      await controller.submitSignature(mockRequest as Request, mockResponse as Response);
+
+      expect(capturedQueries).toContain('COMMIT');
+      expect(capturedQueries).not.toContain('ROLLBACK');
+
+      // The "completed" broadcast fired, and only after COMMIT + release.
+      expect(emitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ documentId: signer.document_id, status: 'completed' })
+      );
+      expect(queriesAtEmitTime).toContain('COMMIT');
+      expect(clientReleasedBeforeEmit).toBe(true);
+
+      emitSpy.mockRestore();
+    });
+
+    it('a next-signer email failure (sequential) does not roll back the just-signed signer either', async () => {
+      const signer = makeSignerRow({ signing_order: 0 });
+      const otherSigner = makeSignerRow({
+        id: 'signer-2',
+        email: 'other@example.com',
+        access_token: 'other-token',
+        signing_order: 1,
+      });
+      const document = makeDocumentRow({ workflow_type: 'sequential' });
+
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [signer] })
+        .mockResolvedValueOnce({ rows: [document] })
+        .mockResolvedValueOnce({ rows: [signer, otherSigner] });
+
+      const capturedQueries: string[] = [];
+      const clientQuery = jest.fn((sql: string) => {
+        const text = normalizeSql(sql);
+        capturedQueries.push(text);
+        if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+          return Promise.resolve({ rows: [] });
+        }
+        if (text.startsWith('SELECT id FROM fields WHERE id = ANY')) {
+          return Promise.resolve({ rows: [{ id: VALID_FIELD_ID }] });
+        }
+        if (text.startsWith('INSERT INTO signatures')) {
+          return Promise.resolve({ rows: [] });
+        }
+        if (text.startsWith("UPDATE signers SET status = 'signed'")) {
+          return Promise.resolve({ rows: [] });
+        }
+        if (text.startsWith('SELECT user_id FROM documents')) {
+          return Promise.resolve({ rows: [{ user_id: 'user-1' }] });
+        }
+        // More specific next-signer lookup must be checked before the
+        // generic `allSignersResult` prefix below - both queries share the
+        // same "SELECT * FROM signers WHERE document_id" prefix.
+        if (text.startsWith('SELECT * FROM signers WHERE document_id = $1 AND signing_order')) {
+          return Promise.resolve({ rows: [otherSigner] });
+        }
+        if (text.startsWith('SELECT * FROM signers WHERE document_id')) {
+          return Promise.resolve({
+            rows: [
+              { ...signer, status: 'signed' },
+              { ...otherSigner, status: 'pending' },
+            ],
+          });
+        }
+        if (text.startsWith('SELECT * FROM documents WHERE id')) {
+          return Promise.resolve({ rows: [document] });
+        }
+        if (text.startsWith('SELECT email FROM users WHERE id')) {
+          return Promise.resolve({ rows: [{ email: 'owner@example.com' }] });
+        }
+        throw new Error(`Unexpected client query in test: ${text}`);
+      });
+      const release = jest.fn();
+      mockPool.connect.mockResolvedValue({ query: clientQuery, release });
+
+      // Same ordering pin as the completion-email test above: snapshot the
+      // transaction/release state at the moment the send is attempted, so a
+      // swallowed-inside-the-transaction implementation can't pass this test
+      // just by never reaching ROLLBACK.
+      let queriesAtSendTime: string[] = [];
+      let clientReleasedBeforeSend = false;
+      (mockEmailService.sendSigningRequest as jest.Mock).mockImplementation(() => {
+        queriesAtSendTime = capturedQueries.slice();
+        clientReleasedBeforeSend = release.mock.calls.length > 0;
+        return Promise.reject(new Error('SMTP rejected other@example.com'));
+      });
+
+      mockRequest = {
+        params: { token: 'good-token' },
+        ip: '127.0.0.1',
+        get: jest.fn().mockReturnValue('test-agent'),
+        body: {
+          signatures: [
+            { field_id: VALID_FIELD_ID, signature_type: 'typed', signature_data: 'text:hi', text_value: 'hi' },
+          ],
+        },
+      } as any;
+
+      await controller.submitSignature(mockRequest as Request, mockResponse as Response);
+
+      expect(capturedQueries).toContain('COMMIT');
+      expect(capturedQueries).not.toContain('ROLLBACK');
+      expect(responseStatus).toHaveBeenCalledWith(200);
+      expect(responseJson).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true, data: { document_completed: false } })
+      );
+      expect(mockEmailService.sendSigningRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipientEmail: 'other@example.com',
+          documentId: document.id,
+          signerId: otherSigner.id,
+          userId: document.user_id,
+        })
+      );
+
+      // The send itself only happened after COMMIT and after the client was
+      // released - pins the ordering, not just the eventual outcome.
+      expect(queriesAtSendTime).toContain('COMMIT');
+      expect(clientReleasedBeforeSend).toBe(true);
     });
   });
 

@@ -375,6 +375,36 @@ describe('SettingsService', () => {
     });
   });
 
+  describe('getAppUrl', () => {
+    it('normalizes a schemeless env-sourced app.url to https:// instead of shipping it broken', async () => {
+      // set()'s appUrlSchema never runs on the env path - APP_URL/BASE_URL
+      // reach getValue() directly, so a schemeless value like this is a real
+      // deployment shape, not just a hypothetical.
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+      process.env.APP_URL = 'ezsign.example.com';
+
+      const url = await service.getAppUrl();
+
+      expect(url).toBe('https://ezsign.example.com');
+    });
+
+    it('passes a valid https app.url through unchanged', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+      process.env.APP_URL = 'https://ezsign.example.com';
+
+      const url = await service.getAppUrl();
+
+      expect(url).toBe('https://ezsign.example.com');
+    });
+
+    it('throws when the value still is not a valid URL even after adding a scheme', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+      process.env.APP_URL = 'not a valid url at all';
+
+      await expect(service.getAppUrl()).rejects.toThrow('app.url is not a valid URL');
+    });
+  });
+
   describe('set: smtp.pass tombstone on transport change', () => {
     it('writes an encrypted-empty tombstone (upsert, not delete) when host changes without an explicit pass', async () => {
       // currentEffective check for smtp.host, via pool.query (pre-transaction)

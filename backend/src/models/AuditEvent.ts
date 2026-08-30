@@ -1,14 +1,33 @@
-export type AuditEventType =
-  | 'created'
-  | 'updated'
-  | 'sent'
-  | 'viewed'
-  | 'signed'
-  | 'declined'
-  | 'completed'
-  | 'cancelled'
-  | 'deleted'
-  | 'downloaded';
+// The document lifecycle verbs - one row per state transition of a single
+// document. Kept as a runtime constant (not just a type) so the DB's CHECK
+// constraint list and the TS union are derived from one source and cannot
+// drift apart again (see the migration this ships alongside).
+export const DOCUMENT_EVENT_TYPES = [
+  'created',
+  'updated',
+  'sent',
+  'viewed',
+  'signed',
+  'declined',
+  'completed',
+  'cancelled',
+  'deleted',
+  'downloaded',
+] as const;
+
+// Events that are not a document lifecycle transition - instance-level or
+// signer-action events. document_id is NULL on 'settings.updated' and
+// 'user.sessions_revoked'; 'signer_reminder_sent' does carry a document_id
+// but is an action log entry, not a document state change.
+export const SYSTEM_EVENT_TYPES = [
+  'settings.updated',
+  'signer_reminder_sent',
+  'user.sessions_revoked',
+] as const;
+
+export type DocumentEventType = (typeof DOCUMENT_EVENT_TYPES)[number];
+export type SystemEventType = (typeof SYSTEM_EVENT_TYPES)[number];
+export type AuditEventType = DocumentEventType | SystemEventType;
 
 export interface AuditEventData {
   id: string;
@@ -55,19 +74,10 @@ export class AuditEvent {
    * Validate event type
    */
   static isValidEventType(type: string): type is AuditEventType {
-    const validTypes: AuditEventType[] = [
-      'created',
-      'updated',
-      'sent',
-      'viewed',
-      'signed',
-      'declined',
-      'completed',
-      'cancelled',
-      'deleted',
-      'downloaded',
-    ];
-    return validTypes.includes(type as AuditEventType);
+    return (
+      DOCUMENT_EVENT_TYPES.includes(type as DocumentEventType) ||
+      SYSTEM_EVENT_TYPES.includes(type as SystemEventType)
+    );
   }
 
   /**
@@ -85,6 +95,9 @@ export class AuditEvent {
       cancelled: 'Document cancelled',
       deleted: 'Document deleted',
       downloaded: 'Document downloaded',
+      'settings.updated': 'Instance settings updated',
+      signer_reminder_sent: 'Signing reminder sent',
+      'user.sessions_revoked': 'User sessions revoked',
     };
     return descriptions[this.event_type] || 'Unknown event';
   }

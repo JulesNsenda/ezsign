@@ -210,10 +210,16 @@ export class AuthController {
       // Send verification email
       if (this.emailService) {
         try {
+          // Item 2.1: baseUrl resolved by the caller (same pattern as
+          // signingController.ts/signerController.ts) rather than inside
+          // EmailService, so a resolution failure there can't bypass
+          // sendWithLogging's log-first ordering.
+          const baseUrl = await this.settingsService.getAppUrl();
           await this.emailService.sendEmailVerification({
             recipientEmail: user.email,
             recipientName: user.email.split('@')[0] || user.email, // Use email prefix as name
             verificationToken: token,
+            baseUrl,
           });
         } catch (emailError) {
           logger.warn('Failed to send verification email', { error: (emailError as Error).message, email, correlationId: req.correlationId });
