@@ -64,6 +64,14 @@ export class ActivityController {
       res.json({
         items: canSeeRawSmtpError(req.user?.role) ? items : redactSmtpErrors(items),
         pagination: { total, page, limit, total_pages: totalPages },
+        // Whether the caller may act on what they are reading. An instance
+        // admin reaches this timeline through `allowAdmin`, but the resend
+        // endpoint it would offer (`POST /:id/signers/:signerId/resend`) is
+        // `checkDocumentAccess`-only - so a Resend button rendered for them
+        // would 403 for exactly the user the bypass exists to help. The
+        // server knows which door the caller came through; the client cannot
+        // infer it, so it is stated here rather than guessed.
+        permissions: { canResend: !req.usedAdminBypass },
       });
 
       // An instance admin reading a document they do not own is the one

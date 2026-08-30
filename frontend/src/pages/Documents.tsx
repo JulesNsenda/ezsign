@@ -161,6 +161,13 @@ export const Documents: React.FC = () => {
           <Button
             size="sm"
             variant="outline"
+            onClick={() => navigate(`/documents/${row.id}/activity`)}
+          >
+            Activity
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             onClick={() => handleDownload(row.id)}
             disabled={downloadMutation.isPending}
           >
@@ -432,6 +439,16 @@ export const Documents: React.FC = () => {
                     Manage Schedule
                   </Button>
                 )}
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSelectedDocument(null);
+                    navigate(`/documents/${selectedDocument.id}/activity`);
+                  }}
+                  fullWidth
+                >
+                  Activity
+                </Button>
                 <Button
                   variant="outline"
                   onClick={() => {

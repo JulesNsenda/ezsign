@@ -17,6 +17,7 @@ import Dashboard from './pages/Dashboard';
 import ForcePasswordChange from './pages/ForcePasswordChange';
 import Documents from './pages/Documents';
 import PrepareDocument from './pages/PrepareDocument';
+import DocumentActivity from './pages/DocumentActivity';
 import Sign from './pages/Sign';
 import Templates from './pages/Templates';
 import Settings from './pages/Settings';
@@ -111,6 +112,14 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <PrepareDocument />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/documents/:id/activity"
+                  element={
+                    <ProtectedRoute>
+                      <DocumentActivity />
                     </ProtectedRoute>
                   }
                 />

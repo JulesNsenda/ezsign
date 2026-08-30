@@ -1,6 +1,6 @@
 # Envelope activity log + editable email content
 
-**Status:** Items 0–3 merged (PRs #46, #48). Item 4 implemented and green (885 unit + 215 integration tests). Items 5–6 not started.
+**Status:** Items 0–4 merged (PRs #46, #48, #50). Item 5 implemented, green, and **observed running against a real backend**. Item 6 not started.
 **Date:** 2026-08-23
 
 ## Goal
@@ -319,9 +319,17 @@ hole, it is one file plus a validator, and it is a prerequisite for Item 6.
     `signer_id` at the emit rather than carrying a COALESCE forever.
 
 **Item 5 — activity UI**
-- [ ] 5.1 `EmailLog`/`ActivityItem` types, service, hook
-- [ ] 5.2 `DocumentActivity.tsx` — failures prominent, Resend on failed rows
-- [ ] 5.3 Route + entry points in `Documents.tsx`; delete `AuditTrail.tsx`
+- [x] 5.1 `ActivityItem` type, service, hook (mirrored field-for-field from the backend service)
+- [x] 5.2 `DocumentActivity.tsx` — failures prominent, Resend on failed rows
+- [x] 5.3 Route + entry points in `Documents.tsx`; deleted `AuditTrail.tsx` and the now-unused `AuditEvent` type
+  - **CSV export dropped rather than ported.** Its four columns were Timestamp,
+    Event Type, **IP Address, User Agent** — and Item 4 deliberately never
+    projects the last two. The plan's escaping requirement was conditional on
+    carrying it over; the data it exported no longer exists, so it went with the
+    page. If wanted later it is a new feature over new columns.
+  - **`/emails` left alone.** The recorded shape-alignment finding assumed Item 5
+    would consume it; `/activity` supersedes it for this screen, so realigning a
+    shipped endpoint with no consumer was scope this item did not need.
 
 **Item 6 — editable email content**
 - [ ] 6.1 `email_templates` + revisions migration

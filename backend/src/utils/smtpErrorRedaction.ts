@@ -23,8 +23,19 @@ export function canSeeRawSmtpError(role: string | undefined): boolean {
  * Replaces raw SMTP errors with their categorized form on any page of rows
  * carrying an `errorMessage`. Rows without one pass through untouched.
  */
-export function redactSmtpErrors<T extends { errorMessage: string | null }>(rows: T[]): T[] {
+export function redactSmtpErrors<
+  T extends { errorMessage: string | null; recipientEmail?: string | null },
+>(rows: T[]): T[] {
   return rows.map((row) =>
-    row.errorMessage ? { ...row, errorMessage: categorizeSmtpError(row.errorMessage) } : row
+    row.errorMessage
+      ? {
+          ...row,
+          errorMessage: categorizeSmtpError(
+            row.errorMessage,
+            undefined,
+            row.recipientEmail?.split('@')[1]
+          ),
+        }
+      : row
   );
 }

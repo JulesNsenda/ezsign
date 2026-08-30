@@ -191,6 +191,25 @@ describe('ActivityController', () => {
     });
   });
 
+  describe('permissions.canResend', () => {
+    it('is true for a caller who reached the document normally', async () => {
+      await controller.getDocumentActivity(req as Request, res as Response, next);
+
+      expect(res.json.mock.calls[0][0].permissions).toEqual({ canResend: true });
+    });
+
+    it('is false for an admin who came through the bypass', async () => {
+      // The resend endpoint is `checkDocumentAccess`-only, so offering the
+      // action here would 403 for exactly the user the bypass exists for.
+      req.user.role = 'admin';
+      req.usedAdminBypass = true;
+
+      await controller.getDocumentActivity(req as Request, res as Response, next);
+
+      expect(res.json.mock.calls[0][0].permissions).toEqual({ canResend: false });
+    });
+  });
+
   describe('admin bypass is itself recorded', () => {
     it('records the privileged read when an admin used the bypass', async () => {
       // A compromised admin enumerating tenants is otherwise

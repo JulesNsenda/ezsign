@@ -416,17 +416,6 @@ export interface Template {
   updated_at: string;
 }
 
-export interface AuditEvent {
-  id: string;
-  document_id: string;
-  user_id?: string;
-  event_type: string;
-  ip_address?: string;
-  user_agent?: string;
-  metadata?: Record<string, any>;
-  created_at: string;
-}
-
 export interface PaginationParams {
   page?: number;
   limit?: number;
