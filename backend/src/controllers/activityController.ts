@@ -2,6 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { createActivityService } from '@/services/activityService';
 import { AuditService } from '@/services/auditService';
+import { DocumentService } from '@/services/documentService';
+import { createStorageAdapter } from '@/config/storage';
+import { createStorageService } from '@/services/storageService';
 import { parsePageParam, parsePageSizeParam } from '@/utils/pagination';
 import { canSeeRawSmtpError, redactSmtpErrors } from '@/utils/smtpErrorRedaction';
 
@@ -16,10 +19,13 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export class ActivityController {
   private activityService: ReturnType<typeof createActivityService>;
   private auditService: AuditService;
+  private documentService: DocumentService;
 
-  constructor(pool: Pool, auditService?: AuditService) {
+  constructor(pool: Pool, auditService?: AuditService, documentService?: DocumentService) {
     this.activityService = createActivityService(pool);
     this.auditService = auditService ?? new AuditService(pool);
+    this.documentService =
+      documentService ?? new DocumentService(pool, createStorageService(createStorageAdapter()));
   }
 
   /**
@@ -55,6 +61,18 @@ export class ActivityController {
       const page = parsePageParam(req.query.page);
       const limit = parsePageSizeParam(req.query.pageSize);
 
+      // Ask, don't infer. `allowAdmin` sets `usedAdminBypass` for *every*
+      // admin, before the guard runs - it means "the caller is an admin", not
+      // "the caller needed the bypass". Deriving anything from it alone tells
+      // an admin who owns the document that they cannot act on it, and on a
+      // self-hosted instance where the first-boot admin is the primary user
+      // that is everyone.
+      const hasDocumentAccess = await this.documentService.canAccessDocument(
+        documentId,
+        req.user!.userId
+      );
+      const cameThroughBypass = !!req.usedAdminBypass && !hasDocumentAccess;
+
       const { items, total, totalPages } = await this.activityService.getByDocumentId(
         documentId,
         page,
@@ -65,13 +83,15 @@ export class ActivityController {
         items: canSeeRawSmtpError(req.user?.role) ? items : redactSmtpErrors(items),
         pagination: { total, page, limit, total_pages: totalPages },
         // Whether the caller may act on what they are reading. An instance
-        // admin reaches this timeline through `allowAdmin`, but the resend
-        // endpoint it would offer (`POST /:id/signers/:signerId/resend`) is
-        // `checkDocumentAccess`-only - so a Resend button rendered for them
-        // would 403 for exactly the user the bypass exists to help. The
-        // server knows which door the caller came through; the client cannot
-        // infer it, so it is stated here rather than guessed.
-        permissions: { canResend: !req.usedAdminBypass },
+        // admin who reached this timeline *only* through `allowAdmin` cannot
+        // use the resend endpoint, which is `checkDocumentAccess`-only - so a
+        // Resend button would 403 for exactly the user the bypass exists to
+        // help. This says whether the caller has the document access the
+        // action needs; it is not a claim that any particular row is
+        // resendable (the endpoint also requires a pending document, a
+        // pending signer, the signer's turn in a sequential workflow, and
+        // reminder headroom, and reports its own reason when they fail).
+        permissions: { canResend: hasDocumentAccess },
       });
 
       // An instance admin reading a document they do not own is the one
@@ -81,7 +101,7 @@ export class ActivityController {
       // after the response so it can never delay or fail the read, and as a
       // system event rather than a document lifecycle verb - reusing `viewed`
       // would mean "the signer opened this" in every timeline that renders it.
-      if (req.usedAdminBypass && req.user) {
+      if (cameThroughBypass && req.user) {
         await this.auditService.recordEvent({
           document_id: documentId,
           user_id: req.user.userId,

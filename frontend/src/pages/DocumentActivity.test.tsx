@@ -16,6 +16,12 @@ vi.mock('@/services/signerService', () => ({
   default: { resend: vi.fn() },
 }));
 
+// The page reads the document for its header and to know whether the document
+// is still in a state the resend endpoint accepts.
+vi.mock('@/hooks/useDocuments', () => ({
+  useDocument: () => ({ data: { id: 'doc-1', title: 'Q3 Vendor Agreement', status: 'pending' } }),
+}));
+
 const mockToast = { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() };
 vi.mock('@/hooks/useToast', () => ({
   useToast: () => mockToast,
@@ -45,10 +51,10 @@ function makeItem(overrides: Partial<ActivityItem> = {}): ActivityItem {
   };
 }
 
-function respondWith(items: ActivityItem[], canResend = true) {
+function respondWith(items: ActivityItem[], canResend = true, totalPages = 1) {
   (activityService.getDocumentActivity as ReturnType<typeof vi.fn>).mockResolvedValue({
     items,
-    pagination: { total: items.length, page: 1, limit: 20, total_pages: 1 },
+    pagination: { total: items.length, page: 1, limit: 20, total_pages: totalPages },
     permissions: { canResend },
   });
 }
@@ -203,6 +209,70 @@ describe('DocumentActivity', () => {
       expect(screen.queryAllByTestId('activity-row')).toHaveLength(0);
     });
     expect(screen.getAllByTestId('activity-row-failed')).toHaveLength(1);
+  });
+
+  it('shows which document the activity belongs to', async () => {
+    // A bookmarked or shared activity URL is otherwise context-free: just the
+    // word "Activity" with no indication of which document.
+    respondWith([makeItem()]);
+
+    renderPage();
+
+    expect(await screen.findByText('Q3 Vendor Agreement')).toBeInTheDocument();
+  });
+
+  it('shows the delivery status on successful email rows too', async () => {
+    // A still-queued send is otherwise indistinguishable from a delivered one,
+    // which makes "it says sent but they never got it" unanswerable.
+    respondWith([makeItem({ status: 'queued' })]);
+
+    renderPage();
+
+    expect(await screen.findByText('queued')).toBeInTheDocument();
+  });
+
+  describe('pagination', () => {
+    it('advances the query to the next page and disables Previous on page 1', async () => {
+      // `page` feeds the query key, so a regression here silently pins every
+      // user to page 1.
+      respondWith([makeItem()], true, 3);
+
+      renderPage();
+
+      const previous = await screen.findByRole('button', { name: /previous/i });
+      expect(previous).toBeDisabled();
+
+      await userEvent.click(screen.getByRole('button', { name: /next/i }));
+
+      await waitFor(() => {
+        expect(activityService.getDocumentActivity).toHaveBeenLastCalledWith('doc-1', 2, 20);
+      });
+    });
+
+    it('hides the pager when there is only one page', async () => {
+      respondWith([makeItem()], true, 1);
+
+      renderPage();
+
+      await screen.findByTestId('activity-row');
+      expect(screen.queryByRole('button', { name: /next/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it('surfaces the server reason when the timeline cannot be loaded', async () => {
+    // Without unwrapping the error envelope this renders axios's "Request
+    // failed with status code 403" instead of what the server actually said.
+    (activityService.getDocumentActivity as ReturnType<typeof vi.fn>).mockRejectedValue({
+      response: {
+        data: { error: { message: 'You do not have permission to access this document' } },
+      },
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/do not have permission to access this document/i)
+    ).toBeInTheDocument();
   });
 
   it('falls back to the raw type when a label is missing', async () => {

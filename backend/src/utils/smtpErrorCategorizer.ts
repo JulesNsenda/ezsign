@@ -1,27 +1,84 @@
 /**
  * SMTP Error Categorizer
  *
- * Categorizes an SMTP send failure into one of a small set of safe,
- * non-identifying messages. The raw error (which can include host/port/
- * credential-adjacent details) is safe to log server-side, but must never
- * be returned to a caller who isn't the document owner or an instance
- * admin.
+ * Turns an SMTP send failure into one of a small set of fixed messages. The
+ * raw error can name the instance's host, port and auth username, so it is
+ * safe to log server-side but must never reach a caller who is not an
+ * instance admin - see `smtpErrorRedaction.ts`, which owns that policy.
  *
- * Extracted from `adminSettingsController.ts`'s `categorizeSmtpError`
- * (which still keeps its own copy guarding the admin-only SMTP test-send
- * route) so the same categorization logic also covers the per-document
- * email log endpoints in `emailLogController.ts`.
+ * Live call sites (all four share this classification, so a change here
+ * changes what every one of them tells its caller):
+ *   - `utils/smtpErrorRedaction.ts` - the per-document email log and activity
+ *     timeline endpoints
+ *   - `controllers/adminSettingsController.ts` - the admin SMTP test-send
+ *   - `controllers/signerController.ts` - the per-signer resend
+ *   - `controllers/signingController.ts` - send-for-signature
+ *
+ * **Reply codes are parsed, never substring-matched.** An SMTP status code is
+ * a token at a known position; searching for `'550'` anywhere in the text
+ * matches `Connection timed out after 5500 ms`, and searching for `'5.1.1'`
+ * matches the IP literal in `ENOTFOUND smtp-host-at-195.1.16.4`. Both invert
+ * the whole point of the recipient categories: they would tell an operator
+ * their signer's address is bad when the instance's own mail transport is
+ * down.
  */
+
+export interface CategorizeOptions {
+  /** Returned when nothing matches. */
+  fallbackMessage?: string;
+}
+
+/** Leading three-digit SMTP reply code, e.g. `550 5.1.1 User unknown`. */
+const REPLY_CODE = /(?:^|[\s(])(\d{3})[\s-]/;
+/** Enhanced status code, e.g. `5.1.1`. Bounded so an IP literal cannot match. */
+const ENHANCED_CODE = /(?:^|[\s(])([245])\.(\d{1,3})\.(\d{1,3})(?=$|[\s,;)])/;
+
+const RECIPIENT_REJECTED_REPLY_CODES = new Set(['550', '551', '553', '450']);
+const MAILBOX_FULL_REPLY_CODES = new Set(['452', '552']);
+
+const RECIPIENT_REJECTED_PHRASES = [
+  'user unknown',
+  'no such user',
+  'no such recipient',
+  'recipient address rejected',
+  'mailbox unavailable',
+  'address does not exist',
+];
+const MAILBOX_FULL_PHRASES = ['mailbox full', 'over quota', 'exceeded storage allocation'];
+const DOMAIN_NOT_FOUND_PHRASES = ['domain not found', 'host unknown', 'unrouteable address'];
+
+const TRANSPORT_CODES = new Set([
+  'ECONNECTION',
+  'ETIMEDOUT',
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'ESOCKET',
+]);
+/**
+ * `email_logs` stores the error *text*, so everything arriving on a read path
+ * is a plain string with no `code` property at all. Without these the stored
+ * form of a transport failure fell through to the generic fallback - which is
+ * how a DNS failure came to read "Email delivery failed" on the activity page.
+ */
+const TRANSPORT_PHRASES = [
+  'enotfound',
+  'econnrefused',
+  'etimedout',
+  'econnection',
+  'esocket',
+  'connect',
+  'timeout',
+  'timed out',
+];
+
 export function categorizeSmtpError(
   error: unknown,
-  fallbackMessage = 'Email delivery failed',
-  /**
-   * The domain the message was addressed to, when known. Used only to tell a
-   * DNS failure for the *recipient's* domain apart from one for the
-   * instance's own SMTP host - without it, both read as a transport problem.
-   */
-  recipientDomain?: string,
+  options: CategorizeOptions | string = {},
 ): string {
+  // A bare string second argument is the older signature (fallback message).
+  const { fallbackMessage = 'Email delivery failed' } =
+    typeof options === 'string' ? { fallbackMessage: options } : options;
+
   const message =
     typeof error === 'string'
       ? error.toLowerCase()
@@ -30,76 +87,64 @@ export function categorizeSmtpError(
         : '';
   const code = (error as { code?: string } | undefined)?.code;
 
-  if (code === 'EAUTH' || message.includes('auth') || message.includes('invalid login')) {
+  // Credentials first: an auth failure can carry the username, and no other
+  // branch should be able to claim it.
+  if (code === 'EAUTH' || message.includes('invalid login') || /\bauth\w*\b/.test(message)) {
     return 'Authentication failed';
   }
 
-  // Recipient-side failures, checked BEFORE the transport cases below.
+  const replyCode = REPLY_CODE.exec(message)?.[1];
+  const enhanced = ENHANCED_CODE.exec(message);
+  const enhancedSubject = enhanced ? `${enhanced[2]}.${enhanced[3]}` : null;
+
+  // A recipient domain that does not resolve, as reported *by the relay* in
+  // an SMTP reply. Deliberately not inferred from a local `ENOTFOUND`:
+  // nodemailer connects to the configured SMTP host, not to the recipient's
+  // MX, so a `getaddrinfo` failure names the instance's own host and says
+  // nothing about the recipient.
   //
-  // These are safe to name precisely, and naming them is the point of the
-  // whole activity feature: the categories above and below describe the
+  // An earlier version of this file tried to tell the two apart by checking
+  // whether the raw error text contained the recipient's domain. That both
+  // misfired on the ordinary self-hosted case (host `smtp.example.com`,
+  // recipient `@example.com` - the owner was told their signer's domain was
+  // missing while the instance's own transport was down) and, because the
+  // recipient address is caller-chosen, turned the returned category into a
+  // one-bit oracle over exactly the text the admin-only gate withholds.
+  if (
+    enhancedSubject === '1.2' ||
+    DOMAIN_NOT_FOUND_PHRASES.some((phrase) => message.includes(phrase))
+  ) {
+    return 'Recipient domain not found';
+  }
+
+  // Recipient-side failures. Safe to name precisely, and naming them is the
+  // point of the activity timeline: the other categories describe the
   // *instance's* mail setup, which a document owner has no business seeing,
   // but "that address does not exist" describes the address they typed in
-  // themselves. Collapsing it into a generic "Email delivery failed" recreates
-  // the exact complaint the feature exists to answer - the owner can see that
-  // it failed and still not why.
-  //
-  // Matched on SMTP reply codes and standard status codes rather than free
-  // text where possible, since those cannot carry a hostname.
+  // themselves. Collapsing it into a generic failure recreates the exact
+  // complaint the feature exists to answer.
   if (
-    message.includes('550') ||
-    message.includes('551') ||
-    message.includes('553') ||
-    message.includes('5.1.1') ||
-    message.includes('5.1.0') ||
-    message.includes('user unknown') ||
-    message.includes('no such user') ||
-    message.includes('recipient address rejected') ||
-    message.includes('mailbox unavailable') ||
-    message.includes('does not exist')
+    (replyCode && RECIPIENT_REJECTED_REPLY_CODES.has(replyCode)) ||
+    enhancedSubject === '1.1' ||
+    enhancedSubject === '1.0' ||
+    RECIPIENT_REJECTED_PHRASES.some((phrase) => message.includes(phrase))
   ) {
     return 'Recipient address rejected';
   }
   if (
-    message.includes('452') ||
-    message.includes('552') ||
-    message.includes('5.2.2') ||
-    message.includes('quota') ||
-    message.includes('mailbox full')
+    (replyCode && MAILBOX_FULL_REPLY_CODES.has(replyCode)) ||
+    enhancedSubject === '2.2' ||
+    MAILBOX_FULL_PHRASES.some((phrase) => message.includes(phrase))
   ) {
     return 'Recipient mailbox is full';
   }
-  // A DNS lookup that named the recipient's own domain. Checked before the
-  // transport branch, which would otherwise swallow it as "SMTP connection
-  // failed" and point the reader at the instance instead of at the address.
+
   if (
-    (code === 'ENOTFOUND' || message.includes('enotfound') || message.includes('getaddrinfo')) &&
-    recipientDomain &&
-    message.includes(recipientDomain.toLowerCase())
-  ) {
-    return 'Recipient domain not found';
-  }
-  if (
-    code === 'ECONNECTION' ||
-    code === 'ETIMEDOUT' ||
-    code === 'ECONNREFUSED' ||
-    code === 'ENOTFOUND' ||
-    code === 'ESOCKET' ||
-    // The code checks above only fire for a live Error object. `email_logs`
-    // stores the *message text*, so every categorisation on the read path
-    // arrives as a string with no `code` at all - without these substring
-    // checks a stored transport failure fell through to the generic fallback,
-    // which is how a DNS failure came out as "Email delivery failed".
-    message.includes('enotfound') ||
-    message.includes('econnrefused') ||
-    message.includes('etimedout') ||
-    message.includes('econnection') ||
-    message.includes('esocket') ||
-    message.includes('connect') ||
-    message.includes('timeout') ||
-    message.includes('timed out')
+    (code && TRANSPORT_CODES.has(code)) ||
+    TRANSPORT_PHRASES.some((phrase) => message.includes(phrase))
   ) {
     return 'SMTP connection failed';
   }
+
   return fallbackMessage;
 }

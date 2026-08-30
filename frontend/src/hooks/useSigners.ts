@@ -87,9 +87,23 @@ export const useSendDocument = () => {
   });
 };
 
+/**
+ * Resend the signing email to one signer.
+ *
+ * Invalidates the document's activity timeline as well as its signers: the
+ * point of offering this from the activity view is that someone looking at a
+ * failed send wants the new attempt - success or failure - to appear in the
+ * list they are already looking at.
+ */
 export const useResendToSigner = () => {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: ({ documentId, signerId }: { documentId: string; signerId: string }) =>
       signerService.resend(documentId, signerId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['document-activity', variables.documentId] });
+      queryClient.invalidateQueries({ queryKey: ['signers', variables.documentId] });
+    },
   });
 };

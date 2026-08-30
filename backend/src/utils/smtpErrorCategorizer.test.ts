@@ -56,25 +56,12 @@ describe('categorizeSmtpError', () => {
       expect(categorizeSmtpError(raw)).toBe(expected);
     });
 
-    it("names a DNS failure for the recipient's own domain", () => {
-      expect(
-        categorizeSmtpError(
-          'getaddrinfo ENOTFOUND nonexistent-domain.invalid',
-          undefined,
-          'nonexistent-domain.invalid'
-        )
-      ).toBe('Recipient domain not found');
+    it('names a missing recipient domain only when the relay reports one', () => {
+      expect(categorizeSmtpError('550 5.1.2 Domain not found')).toBe('Recipient domain not found');
     });
 
-    it("still reports a DNS failure for the instance's SMTP host as a transport problem", () => {
-      // The hostname is the instance's, not the recipient's - the reader must
-      // not be pointed at the address they typed, and the host must not be
-      // named.
-      const result = categorizeSmtpError(
-        'getaddrinfo ENOTFOUND smtp.internal.example',
-        undefined,
-        'recipient-domain.test'
-      );
+    it('never names the instance host, whatever the failure', () => {
+      const result = categorizeSmtpError('getaddrinfo ENOTFOUND smtp.internal.example');
       expect(result).toBe('SMTP connection failed');
       expect(result).not.toContain('smtp.internal.example');
     });
@@ -83,5 +70,54 @@ describe('categorizeSmtpError', () => {
       const raw = '550 5.1.1 rejected by mx.internal.example for a@b.test';
       expect(categorizeSmtpError(raw)).not.toContain('mx.internal.example');
     });
+  });
+
+  describe('reply codes are parsed, not substring-matched', () => {
+    // Each of these contains a digit run that a naive `includes()` check
+    // treats as an SMTP reply code, and each is really a transport failure.
+    // Misclassifying them tells an operator to fix the signer's address when
+    // the instance's own mail setup is broken - the exact misdirection the
+    // recipient categories were added to remove.
+    it.each([
+      ['Connection timed out after 5500 ms', 'SMTP connection failed'],
+      ['connect ETIMEDOUT 195.1.16.4:587', 'SMTP connection failed'],
+      ['connect ECONNREFUSED 127.0.0.1:5500', 'SMTP connection failed'],
+      ['getaddrinfo ENOTFOUND smtp-host-at-195.1.16.4', 'SMTP connection failed'],
+    ])('still reads %s as transport', (raw, expected) => {
+      expect(categorizeSmtpError(raw)).toBe(expected);
+    });
+
+    it('reads a real leading reply code as a recipient rejection', () => {
+      expect(categorizeSmtpError('550 5.1.1 <a@b.test>: User unknown')).toBe(
+        'Recipient address rejected'
+      );
+    });
+  });
+
+  describe('a local DNS failure is never blamed on the recipient', () => {
+    it("reads ENOTFOUND as transport, because it names the instance's own SMTP host", () => {
+      // nodemailer connects to the configured SMTP host, not to the
+      // recipient's MX, so `getaddrinfo ENOTFOUND` says nothing about the
+      // recipient. The ordinary self-hosted case - host `smtp.example.com`,
+      // recipient `@example.com` - is exactly where inferring otherwise
+      // misfires, and it told the owner their signer's domain was missing
+      // while the instance's own transport was down.
+      expect(categorizeSmtpError('getaddrinfo ENOTFOUND smtp.example.com')).toBe(
+        'SMTP connection failed'
+      );
+    });
+
+    it('classifies on the error text alone, with no caller-supplied input', () => {
+      // If the category varied with the recipient address - which the caller
+      // chooses - it would be a one-bit oracle over the raw text that the
+      // admin-only gate exists to withhold.
+      expect(categorizeSmtpError.length).toBeLessThanOrEqual(2);
+    });
+  });
+
+  it('still accepts a bare string as the fallback message (older signature)', () => {
+    expect(categorizeSmtpError('something unrecognised', 'Failed to send test email')).toBe(
+      'Failed to send test email'
+    );
   });
 });

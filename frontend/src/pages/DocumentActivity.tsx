@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import Button from '@/components/Button';
-import { useDocumentActivity, useResendSignerEmail } from '@/hooks/useDocumentActivity';
+import { useDocumentActivity } from '@/hooks/useDocumentActivity';
+import { useResendToSigner } from '@/hooks/useSigners';
+import { useDocument } from '@/hooks/useDocuments';
 import { useToast } from '@/hooks/useToast';
 import type { ActivityItem } from '@/services/activityService';
 
@@ -21,6 +23,25 @@ import type { ActivityItem } from '@/services/activityService';
 
 const PAGE_SIZE = 20;
 
+/**
+ * Pulls a human message out of an API error.
+ *
+ * This backend emits two envelopes: `errorHandler` produces
+ * `{ error: { message } }`, while several controllers answer with a flat
+ * `{ error }` or `{ message }`. Without covering both, a 403 on someone
+ * else's document surfaces axios's "Request failed with status code 403"
+ * instead of the reason the server actually gave.
+ */
+function extractApiErrorMessage(err: unknown, fallback: string): string {
+  const data = (err as { response?: { data?: unknown } })?.response?.data as
+    | { message?: string; error?: string | { message?: string } }
+    | undefined;
+  if (data && typeof data.error === 'object' && data.error?.message) return data.error.message;
+  if (typeof data?.error === 'string') return data.error;
+  if (data?.message) return data.message;
+  return (err as Error)?.message || fallback;
+}
+
 /** Email statuses that represent a delivery failure worth acting on. */
 const FAILED_STATUSES = new Set(['failed', 'bounced']);
 
@@ -28,14 +49,32 @@ function isFailure(item: ActivityItem): boolean {
   return item.kind === 'email' && !!item.status && FAILED_STATUSES.has(item.status);
 }
 
+/** Only these email types represent a signing invitation worth resending. */
+const RESENDABLE_EMAIL_TYPES = new Set(['signing_request', 'reminder']);
+
 /**
- * A failed row is resendable only when the signer actually resolved. The
- * signer join returns null where a row's recorded signer no longer matches
- * one on this document, and the resend endpoint is addressed by signer id -
- * so without it there is nothing to resend to.
+ * Whether to offer Resend on a row.
+ *
+ * `canResend` from the API answers only "does this caller have the document
+ * access the endpoint requires" - it is not a claim about any particular row.
+ * The endpoint additionally requires a pending document, a pending signer,
+ * the signer's turn in a sequential workflow, and reminder headroom, and it
+ * reports its own reason when those fail. The checks here remove the cases
+ * knowable from what this page already has, so the button is not offered
+ * where it certainly cannot work:
+ *
+ * - a row whose signer did not resolve has no address for an endpoint keyed
+ *   by signer id;
+ * - a document that has completed or been cancelled can never be resent.
  */
-function canResendItem(item: ActivityItem, canResend: boolean): boolean {
-  return canResend && isFailure(item) && !!item.signerId;
+function canResendItem(
+  item: ActivityItem,
+  canResend: boolean,
+  documentStatus: string | undefined
+): boolean {
+  if (!canResend || !isFailure(item) || !item.signerId) return false;
+  if (!RESENDABLE_EMAIL_TYPES.has(item.type)) return false;
+  return documentStatus !== 'completed' && documentStatus !== 'cancelled';
 }
 
 const EVENT_LABELS: Record<string, string> = {
@@ -60,6 +99,7 @@ const EMAIL_LABELS: Record<string, string> = {
   signing_request: 'Signing request email',
   reminder: 'Reminder email',
   completion: 'Completion email',
+  welcome: 'Welcome email',
   verification: 'Email verification',
   password_reset: 'Password reset email',
   password_change: 'Password change notice',
@@ -116,13 +156,23 @@ export const DocumentActivity: React.FC = () => {
   const [showFailuresOnly, setShowFailuresOnly] = useState(false);
 
   const { data, isLoading, isError, error } = useDocumentActivity(id ?? '', page, PAGE_SIZE);
-  const resendMutation = useResendSignerEmail();
+  // The document itself, for the header. Without it the page is context-free -
+  // a bookmarked or shared activity URL shows "Activity" and nothing about
+  // which document - and Resend cannot know whether the document is still in a
+  // state the endpoint will accept.
+  const { data: document } = useDocument(id ?? '');
+  const resendMutation = useResendToSigner();
 
   const items = data?.items ?? [];
   const canResend = data?.permissions?.canResend ?? false;
   const visibleItems = showFailuresOnly ? items.filter(isFailure) : items;
   const failureCount = items.filter(isFailure).length;
   const totalPages = data?.pagination?.total_pages ?? 0;
+  // Only the row actually being resent should spin; one shared flag spins
+  // every Resend button on a multi-signer document.
+  const pendingSignerId = resendMutation.isPending
+    ? (resendMutation.variables?.signerId ?? null)
+    : null;
 
   const handleResend = async (item: ActivityItem) => {
     if (!id || !item.signerId) return;
@@ -134,9 +184,7 @@ export const DocumentActivity: React.FC = () => {
       // reason. Showing that verbatim matters: "you have already sent the
       // maximum number of reminders" is a different problem from "the address
       // bounced", and the whole point of this screen is to tell them apart.
-      const response = (err as { response?: { data?: { message?: string; error?: string } } })
-        .response;
-      toast.error(response?.data?.message ?? response?.data?.error ?? 'Could not resend the email');
+      toast.error(extractApiErrorMessage(err, 'Could not resend the email'));
     }
   };
 
@@ -146,6 +194,16 @@ export const DocumentActivity: React.FC = () => {
         <div className="flex items-start justify-between gap-4 mb-2">
           <div>
             <h1 className="text-2xl font-semibold">Activity</h1>
+            {document?.title && (
+              <p className="text-sm font-medium mt-1 break-words">
+                {document.title}
+                {document.status && (
+                  <span className="ml-2 rounded-full bg-base-300 px-2 py-0.5 text-xs font-normal">
+                    {document.status}
+                  </span>
+                )}
+              </p>
+            )}
             <p className="text-sm text-base-content/70 mt-1">
               Lifecycle events and every email we attempted for this document.
             </p>
@@ -194,7 +252,7 @@ export const DocumentActivity: React.FC = () => {
             className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error"
             role="alert"
           >
-            {(error as Error)?.message ?? 'Could not load this document’s activity.'}
+            {extractApiErrorMessage(error, 'Could not load this document’s activity.')}
           </div>
         )}
 
@@ -228,8 +286,16 @@ export const DocumentActivity: React.FC = () => {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline gap-x-2">
                       <span className="font-medium">{labelFor(item)}</span>
-                      {failed && (
-                        <span className="rounded-full bg-error/15 px-2 py-0.5 text-xs font-medium text-error">
+                      {item.kind === 'email' && item.status && (
+                        // Shown on every email row, not only failures: a
+                        // still-queued send is otherwise indistinguishable from
+                        // a delivered one, and "it says sent but they never got
+                        // it" is unanswerable without it.
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                            failed ? 'bg-error/15 text-error' : 'bg-base-300 text-base-content/70'
+                          }`}
+                        >
                           {item.status}
                         </span>
                       )}
@@ -271,12 +337,12 @@ export const DocumentActivity: React.FC = () => {
                     )}
                   </div>
 
-                  {canResendItem(item, canResend) && (
+                  {canResendItem(item, canResend, document?.status) && (
                     <Button
                       variant="secondary"
                       size="sm"
                       onClick={() => handleResend(item)}
-                      loading={resendMutation.isPending}
+                      loading={pendingSignerId === item.signerId}
                       disabled={resendMutation.isPending}
                     >
                       Resend

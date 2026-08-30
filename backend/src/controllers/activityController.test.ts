@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { ActivityController } from './activityController';
 import { allowAdmin } from '@/middleware/authorize';
 import { AuditService } from '@/services/auditService';
+import { DocumentService } from '@/services/documentService';
 import { createActivityService } from '@/services/activityService';
 
 jest.mock('@/services/activityService', () => ({
@@ -38,6 +39,7 @@ describe('ActivityController', () => {
   let controller: ActivityController;
   let getByDocumentId: jest.Mock;
   let mockAuditService: { recordEvent: jest.Mock };
+  let mockDocumentService: { canAccessDocument: jest.Mock };
   let req: any;
   let res: any;
   let next: NextFunction;
@@ -52,7 +54,14 @@ describe('ActivityController', () => {
     });
     mockCreateActivityService.mockReturnValue({ getByDocumentId });
     mockAuditService = { recordEvent: jest.fn().mockResolvedValue(true) };
-    controller = new ActivityController({} as Pool, mockAuditService as unknown as AuditService);
+    // Document access is now asked for directly rather than inferred from the
+    // admin flag, so the double has to answer it.
+    mockDocumentService = { canAccessDocument: jest.fn().mockResolvedValue(true) };
+    controller = new ActivityController(
+      {} as Pool,
+      mockAuditService as unknown as AuditService,
+      mockDocumentService as unknown as DocumentService
+    );
 
     req = {
       // A real uuid: the handler validates the shape now, because the admin
@@ -203,15 +212,32 @@ describe('ActivityController', () => {
       // action here would 403 for exactly the user the bypass exists for.
       req.user.role = 'admin';
       req.usedAdminBypass = true;
+      mockDocumentService.canAccessDocument.mockResolvedValue(false);
 
       await controller.getDocumentActivity(req as Request, res as Response, next);
 
       expect(res.json.mock.calls[0][0].permissions).toEqual({ canResend: false });
     });
+
+    it('is TRUE for an admin who owns the document', async () => {
+      // `allowAdmin` sets `usedAdminBypass` for every admin before the guard
+      // runs, so it means "is an admin", not "needed the bypass". Deriving the
+      // permission from that flag alone told an admin who owns the document
+      // that they could not act on it - and on a self-hosted instance where
+      // the first-boot admin is the primary user, that is everyone.
+      req.user.role = 'admin';
+      req.usedAdminBypass = true;
+      mockDocumentService.canAccessDocument.mockResolvedValue(true);
+
+      await controller.getDocumentActivity(req as Request, res as Response, next);
+
+      expect(res.json.mock.calls[0][0].permissions).toEqual({ canResend: true });
+    });
   });
 
   describe('admin bypass is itself recorded', () => {
     it('records the privileged read when an admin used the bypass', async () => {
+      mockDocumentService.canAccessDocument.mockResolvedValue(false);
       // A compromised admin enumerating tenants is otherwise
       // indistinguishable from normal operation after the fact - and in a
       // signing product the audit trail is the thing being read.
@@ -230,8 +256,21 @@ describe('ActivityController', () => {
     });
 
     it('records nothing when the caller reached the document normally', async () => {
-      // An owner, or an admin who owns the document, did not use the bypass -
-      // recording every read would bury the timeline in its own noise.
+      // An owner did not use the bypass - recording every read would bury the
+      // timeline in its own noise.
+      await controller.getDocumentActivity(req as Request, res as Response, next);
+
+      expect(mockAuditService.recordEvent).not.toHaveBeenCalled();
+    });
+
+    it('records nothing for an admin who owns the document', async () => {
+      // Otherwise an owner-admin opening their own activity page appends an
+      // `admin.activity_viewed` row to the very timeline it is rendering, and
+      // repeated visits push the real events off the first page.
+      req.user.role = 'admin';
+      req.usedAdminBypass = true;
+      mockDocumentService.canAccessDocument.mockResolvedValue(true);
+
       await controller.getDocumentActivity(req as Request, res as Response, next);
 
       expect(mockAuditService.recordEvent).not.toHaveBeenCalled();

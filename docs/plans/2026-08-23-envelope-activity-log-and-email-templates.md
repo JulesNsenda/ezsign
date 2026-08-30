@@ -749,6 +749,104 @@ re-litigated.
   contract is SQL. **Item 4's guarantees are manually gated until CI runs
   `npm run test:integration` against a Postgres service container.**
 
+### Item 5 · pass 1
+
+Panel: `security-critic`, `architecture-critic`, both read-only against the real
+diff. **2 high, 5 medium, 14 low.** Actioned unless recorded below.
+
+**High — actioned**
+
+- **Both critics (high/high, low/high) — `permissions.canResend` was derived
+  from `req.usedAdminBypass`, which means "the caller is an admin", not "the
+  caller needed the bypass."** `allowAdmin` sets the flag before the guard
+  runs, so an admin who *owns* the document was told they could not act on it -
+  and on a self-hosted instance where the first-boot admin is the primary user,
+  that is everyone. Worse, the same flag gated the `admin.activity_viewed`
+  write, so an owner-admin opening their own activity page appended a row to
+  the timeline it was rendering; repeated visits would push real events off
+  page 1 and the feature would corrode its own data. **Actioned:** the
+  controller asks `documentService.canAccessDocument` instead of inferring.
+  `canResend` is that answer; the audit write is gated on bypass **and** no
+  access.
+- **`architecture` (high/high) + `security` (low/medium) — the new recipient
+  categories matched bare reply codes as substrings**, before the transport
+  branch. `Connection timed out after 5500 ms` contains `550`;
+  `ENOTFOUND smtp-host-at-195.1.16.4` contains `5.1.1`. Both are transport
+  failures reported as the sender's own bad address - the exact misdirection
+  the categories were added to remove, inverted. **Actioned:** reply and
+  enhanced status codes are now parsed with anchored patterns and switched on,
+  with free-text phrases as a secondary pass.
+
+**Medium — actioned**
+
+- **`security` (medium/medium) + `architecture` (medium/high) — the
+  `recipientDomain` check was a substring test over the raw error**, which
+  (a) misfired on the ordinary self-hosted case (host `smtp.example.com`,
+  recipient `@example.com` → "Recipient domain not found" while the instance's
+  own transport was down) and (b) made the returned category a one-bit oracle
+  over the admin-only raw text, since the recipient address is caller-chosen.
+  **Actioned by removing the heuristic entirely**, not by tightening it: the
+  premise was wrong. nodemailer connects to the configured SMTP host, not the
+  recipient's MX, so a local `ENOTFOUND` names the *instance's* host and says
+  nothing about the recipient. "Recipient domain not found" is now driven only
+  by what the relay reports (`5.1.2`, "domain not found"), and the parameter -
+  along with the email-parsing that had crept into the disclosure-policy
+  module - is gone.
+- **`architecture` (medium/high) — the tests encoded the wrong assumption
+  rather than testing it.** The unit test set `usedAdminBypass` itself, so it
+  could only ever assert that the controller negates a flag the test supplied.
+  **Actioned:** an admin-who-owns-the-document case for both the permission and
+  the audit write, plus categorizer cases for every digit-collision shape.
+- **`architecture` (medium/high) — two resend hooks.** `useResendToSigner`
+  (zero callers) did not invalidate anything; the new one did. **Actioned:**
+  one hook, in `useSigners.ts` beside the other signer mutations.
+- **`architecture` (medium/high) — `canResend` was presented as *the* gate but
+  covered one of five refusal reasons.** **Partially actioned:** the page now
+  fetches the document (which it needed for its header anyway) and also
+  requires a non-terminal status and a resendable email type. The remaining
+  conditions - signer status, sequential turn, reminder headroom - stay
+  server-side and surface as the endpoint's own message; the field's doc
+  comment now says exactly what it does and does not claim.
+
+**Low — actioned:** per-row resend spinner (one shared flag spun every button on
+a multi-signer document); status badge on *every* email row, so a queued send is
+no longer indistinguishable from a delivered one; document title and status in
+the header; a shared `extractApiErrorMessage` covering both error envelopes, so
+a 403 shows the server's reason instead of axios's "Request failed with status
+code 403"; `welcome` added to the email label map; `encodeURIComponent` on the
+document id; the stale module header claiming `adminSettingsController` keeps
+its own copy of the categorizer; pagination and error-state tests.
+
+**Medium — recorded, not actioned**
+
+- **`architecture` (medium/medium) — "Show only failures" filters the current
+  page in memory** while presenting itself as a failure view, so on a long
+  timeline the failure the user came for may be pages away. The honest fix is a
+  server-side `failuresOnly` predicate with `pagination.total` carrying the real
+  count. Deferred: it is an API change, and the banner already says "on this
+  page". **Worth doing before this screen meets a document with many events.**
+
+**Low — recorded, not actioned**
+
+- **`security` (low/medium) — remote-influenced error text is rendered raw to
+  admins.** React escapes it, so this is UI spoofing rather than XSS: a party
+  controlling a recipient domain could plant bidi or homoglyph text an admin
+  reads inside the trusted UI. Worth stripping control characters and marking
+  the text as verbatim remote output.
+- **`security` (low/high) — `role` is a JWT claim never revalidated**, so a
+  demoted admin keeps the bypass until the token expires. Pre-existing; the fix
+  is to revoke sessions on role change.
+- **`architecture` (low/high) — `EMAIL_LABELS` is a third hand-maintained home
+  for the email-type vocabulary**, and Item 6 adds a fourth (`email_templates.type`).
+  **Item 6 should expose the type list from one backend source** and drive both
+  the activity labels and the template editor from it.
+- **`architecture` (low/medium) — emoji icons** where `Documents.tsx` and
+  `Templates.tsx` use inline SVG. Cosmetic, and `PrepareDocument.tsx` sets the
+  same precedent.
+- **`architecture` (low/high) — for an admin, a nonexistent document id returns
+  an empty timeline rather than 404**, because the bypass skips the only
+  existence check. Compounds the ambiguity the endpoint already documents.
+
 ## Run stats
 
 *(filled in at the end of Phase 2)*
