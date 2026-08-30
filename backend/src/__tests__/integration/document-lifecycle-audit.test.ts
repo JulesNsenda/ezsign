@@ -102,6 +102,19 @@ describe('Document lifecycle audit events (real DB)', () => {
     // rejects would otherwise vanish without a trace.
     const lifecycleEvents = ['created', 'sent', 'viewed', 'signed', 'completed', 'cancelled'] as const;
 
+    it('permits the admin.activity_viewed system event', async () => {
+      // Added by Item 4 so a privileged cross-tenant read of the trail shows
+      // up in the trail. `recordEvent` swallows a CHECK rejection, so without
+      // this the event would vanish silently.
+      const recorded = await auditService.recordEvent({
+        document_id: testDocumentId,
+        user_id: testUserId,
+        event_type: 'admin.activity_viewed',
+      });
+
+      expect(recorded).toBe(true);
+    });
+
     it.each(lifecycleEvents)('persists a %s event rather than silently swallowing it', async (eventType) => {
       const recorded = await auditService.recordEvent({
         document_id: testDocumentId,

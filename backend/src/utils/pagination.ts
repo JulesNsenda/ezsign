@@ -146,3 +146,28 @@ export function validatePaginationParams(
   }
   return Math.min(limit, maxLimit);
 }
+
+/**
+ * Parses a `page` query param, flooring at 1. `page=0` would otherwise
+ * produce a negative OFFSET, which Postgres rejects as an unhandled 500.
+ *
+ * `maxPage` caps how deep an offset a caller can ask for: Postgres still has
+ * to materialise and sort everything before the OFFSET before discarding it,
+ * so `?page=99999999` costs a full scan to return nothing.
+ */
+export function parsePageParam(value: unknown, maxPage = 10_000): number {
+  const parsed = parseInt(value as string, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 1;
+  return Math.min(parsed, maxPage);
+}
+
+/**
+ * Parses a `pageSize` query param through `validatePaginationParams`, which
+ * caps the upper bound so `?pageSize=10000000` cannot pull a whole table into
+ * memory. That helper only substitutes its default for a literal `undefined`,
+ * and `parseInt` of a missing query param yields NaN, so normalize first.
+ */
+export function parsePageSizeParam(value: unknown, max = 100, fallback = 20): number {
+  const parsed = parseInt(value as string, 10);
+  return validatePaginationParams(Number.isFinite(parsed) ? parsed : undefined, max, fallback);
+}

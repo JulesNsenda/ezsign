@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { UserRole } from '@/models/User';
 
 /**
@@ -261,3 +261,35 @@ export const createRequireTeamAdmin = (
     }
   };
 };
+
+/**
+ * Wraps an authorization middleware so an instance admin passes through it.
+ *
+ * Lives here, beside the other role checks, rather than next to the guard it
+ * usually wraps: it knows nothing about documents, and the next person who
+ * needs an admin bypass will look for it here.
+ *
+ * The wrapping form is necessary rather than stylistic.
+ * `createDocumentAccessMiddleware` answers 403 itself and never calls
+ * `next()`, so a controller cannot add an admin path after the fact - it
+ * never runs.
+ *
+ * Apply per route, never globally. An instance admin investigating a delivery
+ * failure needs to read the activity of a document they do not own; that is
+ * not a reason to let them read its contents, edit its fields, or download
+ * the PDF. Two things must travel with every use: the route has to be treated
+ * as privileged by `authenticate` (no query-string tokens - see the
+ * `isPrivilegedPath` check there), and the bypass has to be recorded, since a
+ * privileged cross-tenant read is exactly the access an audit trail should
+ * show.
+ */
+export const allowAdmin =
+  (guard: RequestHandler): RequestHandler =>
+  (req: Request, res: Response, next: NextFunction): void => {
+    if (req.user?.role === 'admin') {
+      req.usedAdminBypass = true;
+      next();
+      return;
+    }
+    guard(req, res, next);
+  };
