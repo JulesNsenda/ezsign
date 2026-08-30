@@ -1,3 +1,5 @@
+import { safeUrl } from '@/utils/emailTemplate';
+
 /**
  * Branding model for team customization
  */
@@ -176,6 +178,20 @@ export class Branding {
   }
 
   /**
+   * Validate that a URL parses and uses the http/https scheme. Delegates to
+   * `emailTemplate.safeUrl` rather than duplicating the check - the branding
+   * write path is the source for `logo_url`/`support_url`/`privacy_url`/
+   * `terms_url`, which are later interpolated into every email sent to every
+   * signer of a team's documents. A hand-duplicated check here could drift
+   * from what the read-side renderer actually accepts/normalizes, silently
+   * accepting a value at write time that gets treated differently at
+   * render time.
+   */
+  static isValidHttpUrl(value: string): boolean {
+    return safeUrl(value) !== '';
+  }
+
+  /**
    * Validate branding data
    */
   static validate(data: CreateBrandingData | UpdateBrandingData): { valid: boolean; errors: string[] } {
@@ -194,7 +210,11 @@ export class Branding {
     }
 
     if ('support_email' in data && data.support_email) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      // Excludes `? & = " ' < >` in addition to whitespace/@ - matches the
+      // tightened regex in `emailTemplate.safeMailto` (same header-injection
+      // concern: this value later renders as a `mailto:` href in outgoing
+      // emails).
+      const emailRegex = /^[^\s@?&="'<>]+@[^\s@?&="'<>]+\.[^\s@?&="'<>]+$/;
       if (!emailRegex.test(data.support_email)) {
         errors.push('Invalid support email format');
       }
@@ -202,6 +222,26 @@ export class Branding {
 
     if ('company_name' in data && data.company_name && data.company_name.length > 255) {
       errors.push('Company name must be 255 characters or less');
+    }
+
+    if ('logo_url' in data && data.logo_url && !Branding.isValidHttpUrl(data.logo_url)) {
+      errors.push('Invalid logo URL. Must be a valid http or https URL');
+    }
+
+    if ('support_url' in data && data.support_url && !Branding.isValidHttpUrl(data.support_url)) {
+      errors.push('Invalid support URL. Must be a valid http or https URL');
+    }
+
+    if ('privacy_url' in data && data.privacy_url && !Branding.isValidHttpUrl(data.privacy_url)) {
+      errors.push('Invalid privacy URL. Must be a valid http or https URL');
+    }
+
+    if ('terms_url' in data && data.terms_url && !Branding.isValidHttpUrl(data.terms_url)) {
+      errors.push('Invalid terms URL. Must be a valid http or https URL');
+    }
+
+    if ('email_footer_text' in data && data.email_footer_text && data.email_footer_text.length > 1000) {
+      errors.push('Email footer text must be 1000 characters or less');
     }
 
     return {

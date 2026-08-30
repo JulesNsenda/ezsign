@@ -9,6 +9,7 @@ import { UserService } from '@/services/userService';
 import { AuthenticatedRequest } from '@/middleware/auth';
 import { EmailService } from '@/services/emailService';
 import { getSettingsService } from '@/services/settingsService';
+import { escapeHtml, safeUrl } from '@/utils/emailTemplate';
 import logger from '@/services/loggerService';
 
 export class InvitationController {
@@ -575,13 +576,24 @@ export class InvitationController {
       ? `Reminder: You've been invited to join ${teamName} on EzSign`
       : `You've been invited to join ${teamName} on EzSign`;
 
+    // G3: `teamName` is free-form user input (teamController only validates
+    // length) and `inviterEmail`/`role` are interpolated alongside it, so all
+    // three must be escaped before landing in HTML - `sendCustomEmail` is
+    // deliberately un-escaped, same injection class Item 0 fixed everywhere
+    // else. `inviteUrl` goes through `safeUrl` for the same reason `href`
+    // attributes are escaped elsewhere in this codebase's emails.
+    const escapedTeamName = escapeHtml(teamName);
+    const escapedInviterEmail = escapeHtml(inviterEmail);
+    const escapedRole = escapeHtml(role);
+    const safeInviteUrl = safeUrl(inviteUrl);
+
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #4F46E5;">${isReminder ? 'Team Invitation Reminder' : 'Team Invitation'}</h2>
         <p>Hi there,</p>
-        <p>${isReminder ? 'This is a reminder that ' : ''}<strong>${inviterEmail}</strong> has invited you to join <strong>${teamName}</strong> on EzSign as a <strong>${role}</strong>.</p>
+        <p>${isReminder ? 'This is a reminder that ' : ''}<strong>${escapedInviterEmail}</strong> has invited you to join <strong>${escapedTeamName}</strong> on EzSign as a <strong>${escapedRole}</strong>.</p>
         <p style="margin: 30px 0;">
-          <a href="${inviteUrl}" style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+          <a href="${safeInviteUrl}" style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
             Accept Invitation
           </a>
         </p>
